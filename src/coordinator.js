@@ -89,6 +89,9 @@
       this.farm.advanceDay(); // seed baseline: obtain a sourced daily consumption ledger
       this.farmSnapshot=this.farm.snapshot();
       this.water=root.HomesteadWaterCore.buildPreset("E"); // stream -> pump -> RO -> outlet
+      // The illustrated site starts at 09:00 local scenario time for a useful daylight view.
+      // Farm biology still advances only when this local timeline crosses midnight.
+      this.startHour=9;
       this.hours=0;this.batteryWh=this.cfg.batteryStartWh;
       this.waterStoredL=this.cfg.waterStartL;
       this.cumulative={pvWh:0,baseWh:0,pumpWh:0,treatedL:0,waterConsumedL:0,overflowL:0,waterDeficitL:0,energyDeficitWh:0};
@@ -103,7 +106,7 @@
       return this.snapshot();
     }
     stepHour(){
-      const cfg=this.cfg, hour=this.hours%24, dayRecord=this.farmSnapshot.daily;
+      const cfg=this.cfg, hour=(this.hours+this.startHour)%24, dayRecord=this.farmSnapshot.daily;
       const farmDailyKWh=number("farm kWh",dayRecord?.kWh||0);
       const farmDailyWaterL=number("farm gal",dayRecord?.waterGal||0)*GALLON_TO_LITER;
       const pv=solarEnvelopeW(hour,cfg);
@@ -146,7 +149,7 @@
       this.cumulative.waterDeficitL+=shortfallL;
       this.cumulative.energyDeficitWh+=energy.unservedBaseWh;
       this.hours++;
-      if(this.hours%24===0){
+      if((this.hours+this.startHour)%24===0){
         this.farm.advanceDay();
         this.farmSnapshot=this.farm.snapshot();
       }
@@ -161,7 +164,7 @@
       return this.snapshot();
     }
     snapshot(){
-      return {schema:1,model:"experimental-coupled-scenario",clock:{hours:this.hours,hourOfDay:this.hours%24,date:this.farmSnapshot.date},
+      return {schema:1,model:"experimental-coupled-scenario",clock:{hours:this.hours,hourOfDay:(this.hours+this.startHour)%24,startHour:this.startHour,date:this.farmSnapshot.date},
         batteryWh:this.batteryWh,waterStoredL:this.waterStoredL,config:{...this.cfg},farm:this.farmSnapshot,
         cumulative:{...this.cumulative},last:this.last};
     }
