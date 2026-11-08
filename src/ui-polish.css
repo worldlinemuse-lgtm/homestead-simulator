@@ -1,0 +1,98 @@
+/* Unified homestead UI: the landscape is the workspace.
+   Controls stay present but avoid dividing the world into three panels. */
+:root{--panel:rgba(14,30,31,.83);--border:rgba(190,216,206,.22);--text:#f1f3eb;--muted:#c3cec7;--accent:#9de4c0;--amber:#e9bf83}
+html,body{height:100%;overflow:hidden;background:#162c2a}
+header{position:absolute;z-index:12;top:0;left:0;right:0;min-height:62px;padding:9px max(14px,2vw);
+  background:linear-gradient(180deg,rgba(10,25,27,.9),rgba(10,25,27,.68));
+  border-bottom:1px solid rgba(237,246,231,.1);backdrop-filter:blur(16px);box-shadow:0 9px 40px rgba(5,18,24,.15)}
+.brand{gap:11px}.brand .logo{width:35px;height:35px;border-radius:50%;background:#31544a;font-size:21px}
+.brand b{font-size:16px;letter-spacing:.005em}.brand small{font-size:10px;letter-spacing:.13em}
+nav{gap:4px;align-items:center;padding:3px;border-radius:30px;background:rgba(217,239,223,.09)}
+nav button{min-height:32px;padding:5px 13px;border:1px solid transparent;border-radius:24px;
+  background:transparent;font-size:12px;color:#e7eee5;font-weight:570}
+nav button.active{background:rgba(158,225,190,.19);border-color:rgba(158,225,190,.4);
+  box-shadow:0 1px 10px #02261b30;color:#d8ffe7}
+nav button:hover{background:rgba(255,255,255,.13);border-color:transparent}
+nav #inspectBtn{margin-left:5px;border-left:1px solid rgba(225,243,225,.2);border-radius:24px}
+.workspace{height:100dvh;min-height:0;background:#b8c9be}
+#world{inset:0}
+.glass{background:var(--panel);border:1px solid var(--border);border-radius:17px;
+  box-shadow:0 16px 38px rgba(8,18,17,.18);backdrop-filter:blur(15px)}
+#summary{top:81px;left:max(14px,2vw);width:258px;max-height:calc(100% - 185px);padding:14px 15px}
+#summary .eyebrow{font-size:9px;letter-spacing:.16em;color:#a5dbc7}
+#summary h1{font-size:18px;font-weight:650;margin-top:4px;letter-spacing:-.02em}
+#summary .sub{font-size:11px;color:#c8d4ce;line-height:1.45;margin-top:5px}
+#summary .metrics{gap:1px;margin-top:10px}
+#summary .metric{padding:8px 0 7px;border:0;border-bottom:1px solid rgba(231,245,230,.1);
+   border-radius:0;background:transparent}
+#summary .metric:last-child{border-bottom:0}
+#summary .metric .ico{font-size:15px;font-weight:500;letter-spacing:-.005em}
+#summary .metric .ico b{font-size:12px;font-weight:520}
+#summary .metric strong{font-size:15px;font-weight:730;font-variant-numeric:tabular-nums}
+#summary .metric .detail{font-size:10px;line-height:1.4;margin-top:4px}
+#alerts{margin-top:8px!important;font-size:10px;line-height:1.4;max-height:78px;overflow:auto}
+#inspector{display:none;top:80px;right:max(14px,2vw);width:min(350px,calc(100vw - 28px));
+  max-height:calc(100dvh - 162px);padding:17px 19px;background:rgba(17,36,37,.93);z-index:10}
+#inspector.open{display:block}
+#inspector .inspector-body{gap:15px}
+#closeInspector{display:block;min-height:30px;width:30px;padding:0;border-radius:50%;background:#34534c}
+#inspector a{color:#a6ebcd}
+.setting{border-top:1px solid rgba(234,246,235,.14)}
+.setting label{font-size:11px}
+.setting output{color:#adf0c9}
+input[type=range]{accent-color:#9ee5c6}
+button{transition:background .17s ease,border-color .17s ease,transform .17s ease}
+#toolbar{z-index:9;left:50%;right:auto;bottom:max(13px,2vh);transform:translateX(-50%);
+  display:flex;gap:14px;justify-content:center;align-items:center;max-width:calc(100vw - 25px);
+  width:max-content;padding:9px 11px 9px 16px;border-radius:16px;background:rgba(12,31,32,.89)}
+#toolbar .clock{font-size:13px;font-weight:650;white-space:nowrap}
+#toolbar .status{font-size:10px;max-width:210px}
+#toolbar .controls{display:flex;gap:5px;flex-wrap:nowrap}
+#toolbar button{min-height:35px;padding:6px 11px;font-size:12px;letter-spacing:.01em}
+#toolbar button.primary{background:#51866b;border-color:#80b99a;color:#f7fff8;font-weight:720}
+#toolbar button:hover{background:#3b6461}
+#toolbar .legend{display:none}
+#errors{top:80px;z-index:19}
+#sceneHint{position:absolute;right:19px;bottom:84px;pointer-events:none;
+  border-radius:50px;color:#eef8ed;background:rgba(12,31,29,.48);font-size:10px;
+  letter-spacing:.02em;padding:9px 13px;text-shadow:0 1px 3px #16302977}
+@media(max-width:900px){
+  header{flex-direction:row;align-items:center;flex-wrap:wrap;min-height:0}
+  .workspace{height:100dvh}
+  #summary{top:112px;width:236px}
+  #inspector{top:112px;max-height:calc(100dvh - 198px);width:300px}
+  #sceneHint{bottom:90px}
+}
+@media(max-width:650px){
+  header{height:auto;min-height:0;display:flex;flex-direction:column;gap:7px;
+    align-items:stretch;padding:8px 10px 6px}
+  .brand .logo{width:29px;height:29px;font-size:17px}
+  .brand b{font-size:14px}.brand small{font-size:9px}
+  nav{width:100%;justify-content:space-between;gap:1px;padding:3px}
+  nav button{padding:5px 7px;min-height:31px;font-size:11px}
+  nav #inspectBtn{margin:0}
+  .workspace{height:100dvh;min-height:0}
+  #summary{top:112px;left:10px;width:min(225px,calc(100vw - 82px));
+    max-height:200px;padding:9px 11px;background:rgba(12,29,30,.77)}
+  #summary h1{font-size:14px}
+  #summary .sub{display:none}
+  #summary .metrics{gap:0;margin-top:5px}
+  #summary .metric{padding:5px 0}
+  #summary .metric .ico{font-size:13px}
+  #summary .metric .ico b{font-size:11px}
+  #summary .metric strong{font-size:13px}
+  #summary .metric .detail{display:none}
+  #alerts{display:none}
+  #inspector{top:auto;left:9px;right:9px;bottom:88px;width:auto;
+    max-height:min(66dvh,580px);padding:13px 15px}
+  #inspector.open{display:block}
+  #toolbar{bottom:10px;left:9px;right:9px;transform:none;max-width:none;width:auto;
+    display:block;padding:9px;background:rgba(12,31,32,.90)}
+  #toolbar .toolbar-info{margin-bottom:6px;display:flex;align-items:center;justify-content:center}
+  #toolbar .clock{font-size:11px}
+  #toolbar .status{display:none}
+  #toolbar .controls{justify-content:space-between;gap:4px}
+  #toolbar button{min-height:31px;font-size:11px;padding:5px 8px;flex:1}
+  #sceneHint{right:10px;bottom:101px;font-size:9px;padding:6px 9px;max-width:155px;text-align:right}
+}
+@media(prefers-reduced-motion:reduce){button{transition:none}}
