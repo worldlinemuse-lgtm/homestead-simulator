@@ -42,3 +42,24 @@ test("repeatability for sequential, seeded simulation runs",()=>{
  const run=()=>{const c=new ctx.HomesteadCoordinator.Coordinator();for(let i=0;i<25;i++)c.stepHour();return JSON.stringify(c.snapshot());};
  assert.equal(run(),run());
 });
+
+test("capacity edits preserve physical inventory and reject invalid edits atomically",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator();
+ const before=c.snapshot();
+ for(const bad of [
+  {batteryCapacityWh:before.batteryWh-1},
+  {waterStorageCapacityL:before.waterStoredL-1},
+  {batteryReserveWh:before.batteryWh+1}
+ ]){
+  assert.throws(()=>c.configure(bad),/cannot|Inconsistent/);
+  const after=c.snapshot();
+  assert.equal(after.batteryWh,before.batteryWh);
+  assert.equal(after.waterStoredL,before.waterStoredL);
+  assert.equal(JSON.stringify(after.config),JSON.stringify(before.config));
+ }
+ const valid=c.configure({batteryCapacityWh:before.batteryWh,waterStorageCapacityL:before.waterStoredL});
+ assert.equal(valid.batteryWh,before.batteryWh);
+ assert.equal(valid.waterStoredL,before.waterStoredL);
+ assert.equal(valid.config.batteryCapacityWh,before.batteryWh);
+ assert.equal(valid.config.waterStorageCapacityL,before.waterStoredL);
+});
