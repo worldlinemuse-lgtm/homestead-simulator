@@ -100,9 +100,15 @@
     }
     configure(next={}){
       const updated=configuration({...this.cfg,...next});
+      // Inventory is physical state, not configuration. Never silently discard it.
+      // Validate every new constraint before mutating the active scenario.
+      must(this.batteryWh<=updated.batteryCapacityWh+EPS,
+        "Battery capacity cannot be less than currently stored energy");
+      must(this.batteryWh+EPS>=updated.batteryReserveWh,
+        "Battery reserve cannot exceed currently stored energy");
+      must(this.waterStoredL<=updated.waterStorageCapacityL+EPS,
+        "Water capacity cannot be less than currently stored water");
       this.cfg=updated;
-      if(this.batteryWh>updated.batteryCapacityWh)this.batteryWh=updated.batteryCapacityWh;
-      if(this.waterStoredL>updated.waterStorageCapacityL)this.waterStoredL=updated.waterStorageCapacityL;
       return this.snapshot();
     }
     stepHour(){
