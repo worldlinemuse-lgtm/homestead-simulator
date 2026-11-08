@@ -512,8 +512,13 @@ export function makeScene(canvas,onSelect=()=>{}){
     const width=Math.max(1,rect.width),height=Math.max(1,rect.height);
     renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix();
   });observer.observe(canvas);
-  let data=null,disposed=false;
+  let data=null,disposed=false,playing=false,visualTime=0,lastModelHour=-1;
   function update(snapshot){
+    // A numerical step changes the illustration; wall-clock rendering cannot drive the physics.
+    if(snapshot.clock.hours!==lastModelHour){
+      if(lastModelHour>=0){visualTime+=.8;for(const f of flows)f.phase=(f.phase+.045)%1}
+      lastModelHour=snapshot.clock.hours;
+    }
     data=snapshot;syncAnimals(snapshot.farm);
     const last=snapshot.last,c=snapshot.config;
     const ratio=Math.max(0,Math.min(1,snapshot.waterStoredL/Math.max(1,c.waterStorageCapacityL)));
@@ -535,10 +540,11 @@ export function makeScene(canvas,onSelect=()=>{}){
     if(disposed)return;
     requestAnimationFrame(animate);
     const dt=THREE.MathUtils.clamp((now-previous)/1000,0,.055);previous=now;
+    if(playing)visualTime+=dt;
     eye.lerp(toEye,.095);focus.lerp(toLook,.095);
     camera.position.copy(eye);camera.lookAt(focus);
     for(let i=0;i<agents.children.length;i++){
-      const a=agents.children[i],s=a.userData,phase=now*.0004+s.phase;
+      const a=agents.children[i],s=a.userData,phase=visualTime*.6+s.phase;
       const dist=a.userData.kind==="chicken"?0.62:0.19;
       const x=s.ax+Math.sin(phase*.8+i)*dist,z=s.az+Math.cos(phase*.9+i*.8)*dist;
       a.position.copy(at(x,z));
@@ -555,7 +561,7 @@ export function makeScene(canvas,onSelect=()=>{}){
       else if(f.kind==="animalWater")present=(w?.consumedL||0)>0;
       f.mesh.visible=present;
       if(present){
-        f.phase=((f.phase+dt*f.speed)%1+1)%1;
+        if(playing)f.phase=((f.phase+dt*f.speed)%1+1)%1;
         f.mesh.position.copy(f.curve.getPoint(f.phase));
       }
     }
@@ -563,7 +569,7 @@ export function makeScene(canvas,onSelect=()=>{}){
   }
   requestAnimationFrame(animate);
   return {
-    update,go,resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
+    update,go,setPlayback(on){playing=Boolean(on)},resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length}}
   };

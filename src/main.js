@@ -4,7 +4,7 @@ const fmt=(n,d=1)=>Number(n).toLocaleString("en-US",{minimumFractionDigits:d,max
 const coordinator=new window.HomesteadCoordinator.Coordinator();
 let selected="overview",playing=false,timer=null,scene;
 let selectedAsset=null;
-function fail(e){playing=false;clearInterval(timer);timer=null;$("playBtn").textContent="▶ Play";$("errors").textContent="Simulation stopped: "+(e?.message||e);$("errors").style.display="block";console.error(e);}
+function fail(e){playing=false;scene?.setPlayback(false);clearInterval(timer);timer=null;$("playBtn").textContent="▶ Play";$("errors").textContent="Simulation stopped: "+(e?.message||e);$("errors").style.display="block";console.error(e);}
 const descriptions={
  overview:["Whole homestead","Energy production, water treatment and animal demand connected through one chronological ledger."],
  energy:["Solar & battery","Four LONGi 435 W reference module representations. Battery dispatch is experimental, not manufacturer-calibrated."],
@@ -107,8 +107,8 @@ function redraw(s){
  $("alerts").textContent=s.last?.warnings.length?s.last.warnings.join(" "):"See Details for the model assumptions and limitations.";
 }
 function tick(){try{$("errors").style.display="none";redraw(coordinator.stepHour())}catch(e){fail(e)}}
-function stop(){playing=false;clearInterval(timer);timer=null;$("playBtn").textContent="▶ Play"}
-function toggle(){if(playing){stop();return;}playing=true;$("playBtn").textContent="Ⅱ Pause";timer=setInterval(tick,1200);tick()}
+function stop(){playing=false;scene?.setPlayback(false);clearInterval(timer);timer=null;$("playBtn").textContent="▶ Play"}
+function toggle(){if(playing){stop();return;}playing=true;scene?.setPlayback(true);$("playBtn").textContent="Ⅱ Pause";timer=setInterval(tick,1200);tick()}
 $("playBtn").addEventListener("click",toggle);$("stepBtn").addEventListener("click",()=>{stop();tick()});
 $("dayBtn").addEventListener("click",()=>{stop();try{for(let i=0;i<24;i++)coordinator.stepHour();redraw(coordinator.snapshot())}catch(e){fail(e)}});
 $("resetBtn").addEventListener("click",()=>{stop();try{redraw(coordinator.reset());$("errors").style.display="none"}catch(e){fail(e)}});
