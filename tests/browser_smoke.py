@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """3D WebGL + all-source-coupling browser smoke. Run from repository root."""
 import threading
+import base64
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from playwright.sync_api import sync_playwright
@@ -32,6 +33,8 @@ try:
             assert not errors,errors
             out=ROOT/"tests"/"artifacts";out.mkdir(exist_ok=True)
             page.screenshot(path=str(out/("mobile.png" if mobile else "desktop.png")))
+            if not mobile:
+                print("VISUAL_AUDIT_JPEG="+base64.b64encode(page.screenshot(type="jpeg",quality=33)).decode("ascii"),flush=True)
             page.close()
         browser.close()
     print("PASS: unified 3D site runs, both layouts step 25 model hours, no page exceptions")
