@@ -52,7 +52,9 @@
       return direct+fromBattery;
     };
     servedBaseWh=deliver(baseWh);
-    const pumpEnabled=servedBaseWh>=baseWh-EPS &&
+    // A powered pump with zero specified input is an unsupported configuration, not free water.
+    // Require strictly positive allocated pump demand before energizing the hydraulic solver.
+    const pumpEnabled=pumpWh>0 && servedBaseWh>=baseWh-EPS &&
         remainingPv+Math.max(0,batteryWh-reserve)*etaD>=pumpWh-EPS;
     if(pumpEnabled)servedPumpWh=deliver(pumpWh);
     const chargeInWh=Math.min(remainingPv,Math.max(0,cfg.batteryCapacityWh-batteryWh)/etaC);
