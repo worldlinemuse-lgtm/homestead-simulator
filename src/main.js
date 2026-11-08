@@ -114,6 +114,7 @@ $("dayBtn").addEventListener("click",()=>{stop();try{for(let i=0;i<24;i++)coordi
 $("resetBtn").addEventListener("click",()=>{stop();try{redraw(coordinator.reset());$("errors").style.display="none"}catch(e){fail(e)}});
 document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=null;selectArea(b.dataset.view);$("sceneHint").textContent="Drag to orbit · Pinch to zoom · Select equipment";renderAsset(coordinator.snapshot())}));
 $("inspectBtn").addEventListener("click",()=>$("inspector").classList.toggle("open"));
+$("hudToggle").addEventListener("click",()=>{const collapsed=$("summary").classList.toggle("collapsed");$("hudToggle").setAttribute("aria-expanded",String(!collapsed));$("hudToggle").setAttribute("aria-label",collapsed?"Expand resource summary":"Collapse resource summary");});
 $("closeInspector").addEventListener("click",()=>$("inspector").classList.remove("open"));
 for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*100,0)+"%"],["houseLoad","houseLoadOut","backgroundLoadW",x=>fmt(x,0)+" W"],["pumpLoad","pumpLoadOut","pumpElectricalW",x=>fmt(x,0)+" W"]]){
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
