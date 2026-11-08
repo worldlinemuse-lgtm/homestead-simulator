@@ -371,7 +371,7 @@ export function makeScene(canvas,onSelect=()=>{}){
   }
   const trough=group("farm","Livestock waterer",29,5);
   trough.add(cyl(.95,.95,.88,m.steel,0,.48,0,16));
-  trough.add(cyl(.84,.84,.05,m.water,0,.90,0,16));
+  const troughWater=cyl(.84,.84,.05,m.water,0,.90,0,16);trough.add(troughWater);
   trough.add(cyl(.13,.13,2.0,m.pipe,-.2,1.08,0,10));
   const garden=group("farm","Pasture forage patch",39,10);
   for(let row=0;row<5;row++){
@@ -530,6 +530,7 @@ export function makeScene(canvas,onSelect=()=>{}){
     const height=Math.max(.025,ratio*4.85);
     tankFill.scale.y=height;tankFill.position.y=.40+height*.5;
     tankRim.position.y=.40+height;
+    troughWater.visible=(last?.water?.consumedL||0)>1e-8; // Actual modeled livestock water allocation, not decorative.
     const br=Math.max(.02,snapshot.batteryWh/Math.max(1,c.batteryCapacityWh));
     chargeRail.scale.x=br;
     inverterLed.intensity=last?.energy?.servedBaseWh>0?.85:0;
@@ -576,6 +577,6 @@ export function makeScene(canvas,onSelect=()=>{}){
   return {
     update,go,setPlayback(on){playing=Boolean(on)},resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
-    stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length}}
+    stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing}}
   };
 }
