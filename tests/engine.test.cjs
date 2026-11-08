@@ -42,3 +42,16 @@ test("repeatability for sequential, seeded simulation runs",()=>{
  const run=()=>{const c=new ctx.HomesteadCoordinator.Coordinator();for(let i=0;i<25;i++)c.stepHour();return JSON.stringify(c.snapshot());};
  assert.equal(run(),run());
 });
+
+// Zero electrical input must never energize the modeled powered hydraulic pump.
+test("zero-watt pump assumption cannot create free treated water",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({pumpElectricalW:0,backgroundLoadW:0});
+ const before=c.water.produced;
+ const r=c.stepHour();
+ assert.equal(r.last.energy.pumpEnabled,false);
+ assert.equal(r.last.energy.servedPumpWh,0);
+ assert.equal(c.water.parts.find(p=>p.type==="pump_sky").params.psi,0);
+ assert.ok(Math.abs(c.water.produced-before)<1e-8);
+ assert.ok(Math.abs(r.last.energy.residualWh)<1e-5);
+ assert.ok(Math.abs(r.last.water.waterResidual)<1e-5);
+});
