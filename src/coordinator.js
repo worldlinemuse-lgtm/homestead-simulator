@@ -124,12 +124,13 @@
       while(elapsed<3600-1e-7){
         const dt=Math.min(300,3600-elapsed);
         const r=root.HomesteadWaterCore.step(this.water,dt,1);
-        must(r.dt>0&&r.dt<=dt+1e-6&&Number.isFinite(r.dt),"Water solver returned invalid timestep");
+        must(r && Number.isFinite(r.dt) && r.dt>0 && r.dt<=dt+1e-6,"Water solver returned invalid timestep");
+        must(Number.isFinite(this.water.produced) && this.water.produced>=waterProducedBefore-EPS,"Water solver returned non-finite or decreasing cumulative production");
         elapsed+=r.dt;
         if(++iterations>1000)throw new Error("Water solver exceeded substep limit");
       }
       const treatedL=this.water.produced-waterProducedBefore;
-      must(treatedL>=-EPS,"Negative water production");
+      must(Number.isFinite(treatedL) && treatedL>=-EPS,"Invalid water production");
       const wantL=farmDailyWaterL/24;
       const beforeUse=waterBefore+treatedL;
       const consumedL=Math.min(beforeUse,wantL);
