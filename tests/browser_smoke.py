@@ -16,7 +16,7 @@ try:
         for mobile in (False,True):
             page=browser.new_page(viewport={"width":393 if mobile else 1280,"height":851 if mobile else 800},device_scale_factor=1)
             errors=[]
-            page.on("pageerror",lambda e:errors.append(str(e)))
+            page.on("pageerror",lambda e:errors.append(str(e)+"\n"+(getattr(e,"stack","") or "")))
             page.goto("http://127.0.0.1:%d/"%server.server_port,wait_until="load")
             page.wait_for_function("window.HomesteadApp && window.HomesteadApp.snapshot().farm.counts.n > 0",timeout=40000)
             assert page.locator("#world").is_visible()
