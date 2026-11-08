@@ -2593,6 +2593,8 @@ function labor() {
 }
 
 
+/* Source dependency from farm-sim/source/src/planner/planner.js: called by core/access.js. */
+function coopFix(c,k){return c&&c[k]!=null?+c[k]:TYPES.coop.props[k];}
 function reset(seed=7){P.env_seed=seed>>>0;newState();return snapshot();}
 function advanceDay(){step();return snapshot();}
 function snapshot(){const r=S.hist.length?S.hist[S.hist.length-1]:null;return {day:S.day,date:dateOf(S.day).toISOString().slice(0,10),animals:S.animals.map(a=>({id:a.id,sp:a.sp,st:a.st,health:a.health})),components:S.comps.map(c=>({id:c.id,type:c.type,x:c.x,y:c.y,w:c.w,d:c.d})),daily:r?{...r}:null,counts:counts()};}
