@@ -12,11 +12,11 @@ export function makeScene(canvas,onSelect=()=>{}){
   renderer.setClearColor(0xb9d8e6);
   renderer.outputColorSpace=THREE.SRGBColorSpace;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure=1.15;
+  renderer.toneMappingExposure=1.22;
   renderer.shadowMap.enabled=true;
   renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   const scene=new THREE.Scene();
-  scene.fog=new THREE.FogExp2(0xaecbd2,.007);
+  scene.fog=new THREE.FogExp2(0xaecbd2,.004);
   scene.background=new THREE.Color(0xb9d8e6);
   const camera=new THREE.PerspectiveCamera(46,1,.15,350);
   const skyLight=new THREE.HemisphereLight(0xe4f5ff,0x667b58,1.85);
@@ -116,12 +116,12 @@ export function makeScene(canvas,onSelect=()=>{}){
     tex.wrapS=THREE.RepeatWrapping;tex.wrapT=THREE.RepeatWrapping;
     return tex;
   }
-  m.cedar.map=illustratedTexture("cedar");m.cedar.needsUpdate=true;
-  m.wood.map=illustratedTexture("wood");m.wood.needsUpdate=true;
-  m.roof.map=illustratedTexture("roof");m.roof.needsUpdate=true;
-  m.roofAlt.map=m.roof.map;m.roofAlt.needsUpdate=true;
-  m.solar.map=illustratedTexture("solar");m.solar.needsUpdate=true;
-  m.grass.map=illustratedTexture("grass");m.grass.needsUpdate=true;
+  m.cedar.map=illustratedTexture("cedar");m.cedar.color.set(0xffffff);m.cedar.needsUpdate=true;
+  m.wood.map=illustratedTexture("wood");m.wood.color.set(0xffffff);m.wood.needsUpdate=true;
+  m.roof.map=illustratedTexture("roof");m.roof.color.set(0xffffff);m.roof.needsUpdate=true;
+  m.roofAlt.map=m.roof.map;m.roofAlt.color.set(0xd4bcb0);m.roofAlt.needsUpdate=true;
+  m.solar.map=illustratedTexture("solar");m.solar.color.set(0xffffff);m.solar.needsUpdate=true;
+  m.grass.map=illustratedTexture("grass");m.grass.color.set(0xf0f8ec);m.grass.needsUpdate=true;
   m.path.map=illustratedTexture("gravel");m.path.needsUpdate=true;
   m.creek.map=illustratedTexture("river");m.creek.needsUpdate=true;
 
@@ -248,6 +248,11 @@ export function makeScene(canvas,onSelect=()=>{}){
   homestead.add(box(13,6.0,9.6,m.cedar,0,3,0));
   for(const px of [-4.15,4.15])homestead.add(box(3.2,3.2,.1,m.trim,px,3.3,4.87));
   for(const px of [-4.15,4.15])homestead.add(box(2.75,2.65,.12,m.glass,px,3.35,4.94));
+  // Traditional framed window divisions avoid untextured billboard rectangles.
+  for(const px of [-4.15,4.15]){
+    homestead.add(box(.075,2.8,.11,m.trim,px,3.35,5.04));
+    homestead.add(box(2.92,.075,.11,m.trim,px,3.35,5.04));
+  }
   homestead.add(box(2.2,4,.19,m.darkWood,0,2.1,4.94));
   for(const side of [-1,1]){
     const roof=box(7.6,.36,10.4,m.roof,side*3.2,7.1,0);roof.rotation.z=side*.37;homestead.add(roof);
