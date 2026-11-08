@@ -1,0 +1,24 @@
+name: 3D browser smoke
+on:
+  push:
+  pull_request:
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install browser harness
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Run integrated WebGL, UI and numerical control smoke
+        run: python tests/browser_smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 3d-smoke-screenshots
+          path: tests/artifacts/*.png

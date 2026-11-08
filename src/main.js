@@ -43,3 +43,5 @@ $("exportBtn").addEventListener("click",()=>{
 });
 try{scene=makeScene($("world"),kind=>{selectArea(kind);$("inspector").classList.add("open")});selectArea("overview");redraw(coordinator.snapshot())}catch(e){fail(e)}
 window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),step:tick,reset:()=>redraw(coordinator.reset())});
+
+if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(console.warn));
