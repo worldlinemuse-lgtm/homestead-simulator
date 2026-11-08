@@ -100,9 +100,14 @@
     }
     configure(next={}){
       const updated=configuration({...this.cfg,...next});
+      // Never erase physical inventory when editing capacity. A smaller tank or
+      // battery needs an explicit, accounted transfer/disposal operation instead.
+      // Validate both constraints before mutating either configuration or state.
+      must(this.batteryWh<=updated.batteryCapacityWh+EPS,
+        "Battery capacity below current stored energy; discharge or transfer inventory first");
+      must(this.waterStoredL<=updated.waterStorageCapacityL+EPS,
+        "Water capacity below current stored volume; consume or transfer inventory first");
       this.cfg=updated;
-      if(this.batteryWh>updated.batteryCapacityWh)this.batteryWh=updated.batteryCapacityWh;
-      if(this.waterStoredL>updated.waterStorageCapacityL)this.waterStoredL=updated.waterStorageCapacityL;
       return this.snapshot();
     }
     stepHour(){
