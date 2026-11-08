@@ -36,7 +36,10 @@ try:
             assert page.evaluate("document.getElementById('errors').style.display")!="block"
             assert not errors,errors
             out=ROOT/"tests"/"artifacts";out.mkdir(exist_ok=True)
-            page.screenshot(path=str(out/("mobile.png" if mobile else "desktop.png")))
+            page.screenshot(path=str(out/("mobile-water.png" if mobile else "desktop-water.png")))
+            page.locator("[data-view=overview]").click()
+            page.wait_for_timeout(900)  # smooth camera reaches the whole-property waypoint
+            page.screenshot(path=str(out/("mobile-overview.png" if mobile else "desktop-overview.png")))
             if not mobile:
                 print("VISUAL_AUDIT_JPEG="+base64.b64encode(page.screenshot(type="jpeg",quality=33)).decode("ascii"),flush=True)
             page.close()
