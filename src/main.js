@@ -72,7 +72,17 @@ function renderAsset(s){
     ["Scope","Rabbit and chicken model remains authoritative"]
   ]
  };
- const entries=selectedAsset?readouts[selectedAsset]:null;
+ let entries=selectedAsset?readouts[selectedAsset]:null;
+ const animalMatch=/^(Rabbit|Chicken) #(\d+)$/.exec(selectedAsset||"");
+ if(animalMatch){
+   const id=Number(animalMatch[2]);
+   const a=(s.farm.animals||[]).find(x=>Number(x.id)===id);
+   if(a)entries=[
+     ["Model animal ID",a.id],["Species",a.sp],
+     ["Life stage",a.st],["Modeled health",Number.isFinite(a.health)?fmt(a.health,1):"Unavailable"],
+     ["Authority","Original Farm daily biological engine; display movement is illustrative"]
+   ];
+ }
  target.replaceChildren();
  if(!entries){const p=document.createElement("p");p.textContent="Select a building, PV array, water component, or animal area to see its model-driven connections.";target.append(p);return}
  for(const [k,v] of entries){

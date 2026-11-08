@@ -489,11 +489,15 @@ export function makeScene(canvas,onSelect=()=>{}){
       (e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1
     );
     ray.setFromCamera(coords,camera);
-    const hits=ray.intersectObjects(selectable,false);
+    const hits=ray.intersectObjects([...selectable,agents],true);
     if(hits.length){
       let g=hits[0].object;
       while(g&&!g.userData.kind)g=g.parent;
-      if(g?.userData.kind)onSelect(g.userData.kind,g.userData.label);
+      if(g?.userData.kind){
+        const kind=g.userData.kind;
+        if(kind==="chicken"||kind==="rabbit")onSelect("farm",(kind==="chicken"?"Chicken":"Rabbit")+" #"+g.userData.id);
+        else onSelect(kind,g.userData.label);
+      }
     }
   });
   canvas.addEventListener("pointercancel",e=>{pointerMap.delete(e.pointerId);pinchDistance=null});
