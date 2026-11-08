@@ -78,3 +78,9 @@ Python 3 and Node.js are only required for tests and local development. The depl
 Model-source hashes: solar reference original blob ccf450a642ddc954689fea20556dfbbe7e308e99; water engine original blob e3e516aa462272d83442acc7904e5592eeb9f6e7. Farm core original file-level blob identifiers are documented in vendor/farm-core.js comments. All three originals remain independent.
 
 **Rule:** Animation follows calculated state; animation never invents the engineering result.
+
+## Unified visual site design — second landscape iteration (Nov 8, 2026)
+
+The three color-coded rectangular zones have been replaced by a single continuous terrain mesh with rolling ground, organic winding paths, a creek, trees, creek-bank stones, textured utility buildings and a household. The four-panel array, inverter/battery shed, pump and RO skid, treated-water tank, livestock waterer, henhouse, rabbit hutches and forage beds are placed on the same landscape. Electricity and water routes follow the actual depicted site instead of connecting separate screens. Flow pulse visibility is governed by model outputs (PV availability, pump energization, water production, animal drinking), not a decorative free-running timer. Livestock population and species reflect the Farm snapshot; idle walking remains visual-only. Materials use reproducible, locally generated wooden plank, roof shingle and PV-cell textures. Three.js is vendored for local rendering. The inspector is closed by default to keep the landscape central, with mobile pinch/orbit/zoom interaction.
+
+The 3D site is **not a dimensioned engineering drawing or physical installation instruction**, and user-editable equipment placement/topological re-solving remain future milestones. Source models retain their existing validation limitations. Don't infer physical certification from realistic appearance.

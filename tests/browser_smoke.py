@@ -21,6 +21,10 @@ try:
             page.goto("http://127.0.0.1:%d/"%server.server_port,wait_until="load")
             page.wait_for_function("window.HomesteadApp && window.HomesteadApp.snapshot().farm.counts.n > 0",timeout=40000)
             assert page.locator("#world").is_visible()
+            assert page.evaluate("window.HomesteadApp.world().animals") > 0
+            assert page.evaluate("window.HomesteadApp.world().paths") >= 8
+            assert page.evaluate("window.HomesteadApp.world().meshes") >= 30
+            assert page.evaluate("getComputedStyle(document.querySelector('#inspector')).display") == "none"
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==0
             page.locator("#stepBtn").click()
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==1
