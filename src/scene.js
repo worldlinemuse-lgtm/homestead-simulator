@@ -49,6 +49,60 @@ export function makeScene(canvas,onSelect=()=>{}){
     glow:mat(0xffcf74,{emissive:0xd59c42,emissiveIntensity:.7}),
     flow:mat(0x7ce7f7,{emissive:0x49a4d2,emissiveIntensity:.75})
   };
+  // Small, deterministic procedural PBR maps: locally generated, no external textures.
+  // Wood grain, standing-seam roof, and solar cells are visual detail, NOT equipment specs.
+  function illustratedTexture(kind){
+    const side=512,canvas=document.createElement("canvas");canvas.width=canvas.height=side;
+    const ctx=canvas.getContext("2d");let seed=kind.length*2391+97;
+    const rnd=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296};
+    if(kind==="cedar"||kind==="wood"){
+      ctx.fillStyle=kind==="cedar"?"#97785b":"#8d6b4a";ctx.fillRect(0,0,side,side);
+      for(let row=0;row<18;row++){
+        const y=row*30,light=Math.floor(110+rnd()*48);
+        ctx.fillStyle="rgba(240,209,160,.075)";ctx.fillRect(0,y+2,side,24);
+        ctx.fillStyle="rgba(30,22,15,.35)";ctx.fillRect(0,y+29,side,2);
+        const shift=(row%2)*120;
+        for(let x=-shift;x<side;x+=150){
+          ctx.fillStyle="rgba(43,32,21,.26)";ctx.fillRect(x,y+2,2,26);
+          for(let j=0;j<15;j++){
+            ctx.fillStyle=rnd()>.56?"rgba(255,232,180,.09)":"rgba(38,29,18,.09)";
+            ctx.fillRect(x+rnd()*150,y+2+rnd()*24,15+rnd()*85,.5+rnd()*1.3);
+          }
+        }
+      }
+    }else if(kind==="roof"){
+      ctx.fillStyle="#485560";ctx.fillRect(0,0,side,side);
+      for(let j=0;j<13;j++){
+        const y=j*40,shift=j%2?28:0;
+        ctx.fillStyle="rgba(8,19,22,.25)";ctx.fillRect(0,y+38,side,2);
+        for(let x=-shift;x<side;x+=60){
+          const g=Math.floor(77+rnd()*28);ctx.fillStyle="rgb("+g+","+(g+7)+","+(g+12)+")";
+          ctx.fillRect(x+1,y+2,57,35);
+          ctx.fillStyle="rgba(232,242,239,.045)";ctx.fillRect(x+4,y+4,51,2);
+        }
+      }
+    }else if(kind==="solar"){
+      ctx.fillStyle="#131c35";ctx.fillRect(0,0,side,side);
+      for(let row=0;row<6;row++)for(let col=0;col<10;col++){
+        const x=col*51.2,y=row*85.3;
+        const a=Math.floor(25+rnd()*12),b=Math.floor(42+rnd()*11);
+        ctx.fillStyle="rgb("+a+","+(b+4)+","+(b+23)+")";ctx.fillRect(x+2,y+2,47,80);
+        ctx.strokeStyle="rgba(138,175,205,.26)";ctx.lineWidth=.7;
+        for(let k=1;k<5;k++){ctx.beginPath();ctx.moveTo(x+2+k*9.4,y+4);ctx.lineTo(x+2+k*9.4,y+80);ctx.stroke()}
+        ctx.fillStyle="rgba(181,206,218,.22)";ctx.fillRect(x+1,y+41,49,.7);
+      }
+    }
+    const tex=new THREE.CanvasTexture(canvas);
+    tex.colorSpace=THREE.SRGBColorSpace;tex.anisotropy=4;
+    tex.wrapS=THREE.RepeatWrapping;tex.wrapT=THREE.RepeatWrapping;
+    return tex;
+  }
+  m.cedar.map=illustratedTexture("cedar");m.cedar.needsUpdate=true;
+  m.wood.map=illustratedTexture("wood");m.wood.needsUpdate=true;
+  m.roof.map=illustratedTexture("roof");m.roof.needsUpdate=true;
+  m.roofAlt.map=m.roof.map;m.roofAlt.needsUpdate=true;
+  m.solar.map=illustratedTexture("solar");m.solar.needsUpdate=true;
+
   const seeded=(n)=>{const x=Math.sin(n*128.213)*43758.5453;return x-Math.floor(x)};
   const terrainY=(x,z)=>{
     const edge=Math.max(0,(Math.abs(x)-39)/26,(Math.abs(z)-28)/22);
@@ -92,8 +146,8 @@ export function makeScene(canvas,onSelect=()=>{}){
       for(let side of [-1,1]){
         const w=width*(.93+.09*Math.sin(t*25+salt));
         const x=p.x+side*nx*w*.5,z=p.z+side*nz*w*.5;
-        verts.push(x,terrainY(x,z)+.045+(material===m.creek?.15:0),z);
-        const n=seeded(k*7+salt*29+side*3),h=material===m.bank?.30:.10;
+        verts.push(x,terrainY(x,z)+.045+(material===m.creek?0.15:0),z);
+        const n=seeded(k*7+salt*29+side*3),h=material===m.bank?0.30:0.10;
         cl.setRGB(.78+(n-.5)*h,.78+(n-.5)*h,.78+(n-.5)*h);
         colors.push(cl.r,cl.g,cl.b);
       }
@@ -121,18 +175,18 @@ export function makeScene(canvas,onSelect=()=>{}){
     const tangent=streamCurve.getTangent(t);
     const normal=V(-tangent.z,0,tangent.x).multiplyScalar((3+seeded(i*2.4)*2)* (i%2?1:-1));
     const x=p.x+normal.x,z=p.z+normal.z;
-    dummy.position.copy(at(x,z,.12));dummy.rotation.set(seeded(i)*1.4,seedeD(i+30)*Math.PI,seeded(i+70));
+    dummy.position.copy(at(x,z,.12));dummy.rotation.set(seeded(i)*1.4,seeded(i+30)*Math.PI,seeded(i+70));
     const s=.18+seeded(i*13)*.52;dummy.scale.set(s,s*.6,s*1.2);dummy.updateMatrix();stones.setMatrixAt(i,dummy.matrix);
   }
-  function seedeD(x){return seeded(x)}
   stones.castShadow=false;scene.add(stones);
+  let herbCount=0;
   for(let i=0;i<650;i++){
     const x=-59+seeded(i*47.5)*118,z=-42+seeded(i*72.2)*84;
     if((x>-43&&x<-17&&z>-23&&z<2)||(x>-14&&x<16&&z>-27&&z<0)||(x>18&&x<49&&z>-20&&z<20))continue;
     const s=.5+seeded(i*9)*1.8;dummy.position.copy(at(x,z,.18));
-    dummy.rotation.set(0,seeded(i*8)*Math.PI*2,0);dummy.scale.set(s,s,s);dummy.updateMatrix();herbs.setMatrixAt(i,dummy.matrix);
+    dummy.rotation.set(0,seeded(i*8)*Math.PI*2,0);dummy.scale.set(s,s,s);dummy.updateMatrix();herbs.setMatrixAt(herbCount++,dummy.matrix);
   }
-  herbs.instanceMatrix.needsUpdate=true;herbs.castShadow=false;scene.add(herbs);
+  herbs.count=herbCount;herbs.instanceMatrix.needsUpdate=true;herbs.castShadow=false;scene.add(herbs);
 
   // Tree geometry uses shared materials. Placement preserves sightlines across the working systems.
   const trunkGeometry=new THREE.CylinderGeometry(.22,.36,4,7);
@@ -337,7 +391,7 @@ export function makeScene(canvas,onSelect=()=>{}){
     while(agents.children.length)agents.remove(agents.children[0]);
     present.forEach((a,i)=>{
       const creature=animal(a.sp,Number(a.id)||i+1,i);
-      const young=a.st==="kit"||a.st==="chick";creature.scale.setScalar(young?.68:1);
+      const young=a.st==="kit"||a.st==="chick";creature.scale.setScalar(young?0.68:1);
       agents.add(creature);
     });
   }
@@ -374,13 +428,22 @@ export function makeScene(canvas,onSelect=()=>{}){
   camera.position.copy(eye);camera.lookAt(focus);
   function go(kind){view=views[kind]?kind:"overview";toEye.copy(views[view].eye);toLook.copy(views[view].look)}
   const ray=new THREE.Raycaster(),pointerMap=new Map();
-  let gestureMoved=false;
-  canvas.addEventListener("pointerdown",e=>{pointerMap.set(e.pointerId,{x:e.clientX,y:e.clientY});gestureMoved=false;canvas.setPointerCapture(e.pointerId)});
+  let gestureMoved=false,pinchDistance=null;
+  canvas.addEventListener("pointerdown",e=>{pointerMap.set(e.pointerId,{x:e.clientX,y:e.clientY});gestureMoved=false;canvas.setPointerCapture(e.pointerId);if(pointerMap.size===2){const p=[...pointerMap.values()];pinchDistance=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y)}});
   canvas.addEventListener("pointermove",e=>{
     const p=pointerMap.get(e.pointerId);if(!p)return;
     const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
     if(Math.abs(dx)+Math.abs(dy)>1)gestureMoved=true;
-    if(pointerMap.size===1){
+    if(pointerMap.size===2){
+      const pair=[...pointerMap.values()];
+      const d=Math.max(2,Math.hypot(pair[0].x-pair[1].x,pair[0].y-pair[1].y));
+      if(pinchDistance!==null){
+        const direction=THREE.MathUtils.clamp(pinchDistance/d,.82,1.22);
+        const offset=toEye.clone().sub(toLook).multiplyScalar(direction);
+        offset.clampLength(9,155);toEye.copy(toLook).add(offset);
+      }
+      pinchDistance=d;
+    }else if(pointerMap.size===1){
       const offset=toEye.clone().sub(toLook);
       const sph=new THREE.Spherical().setFromVector3(offset);
       sph.theta-=dx*.0048;sph.phi=THREE.MathUtils.clamp(sph.phi+dy*.0048,.24,1.43);
@@ -389,6 +452,7 @@ export function makeScene(canvas,onSelect=()=>{}){
   });
   canvas.addEventListener("pointerup",e=>{
     pointerMap.delete(e.pointerId);
+    if(pointerMap.size<2)pinchDistance=null;
     if(gestureMoved)return;
     const r=canvas.getBoundingClientRect(),coords=new THREE.Vector2(
       (e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1
@@ -401,7 +465,7 @@ export function makeScene(canvas,onSelect=()=>{}){
       if(g?.userData.kind)onSelect(g.userData.kind,g.userData.label);
     }
   });
-  canvas.addEventListener("pointercancel",e=>pointerMap.delete(e.pointerId));
+  canvas.addEventListener("pointercancel",e=>{pointerMap.delete(e.pointerId);pinchDistance=null});
   canvas.addEventListener("wheel",e=>{
     e.preventDefault();const delta=Math.exp(e.deltaY*.0011);
     const d=toEye.clone().sub(toLook);d.multiplyScalar(delta);d.clampLength(10,140);toEye.copy(toLook).add(d);
@@ -426,9 +490,9 @@ export function makeScene(canvas,onSelect=()=>{}){
     inverterLed.intensity=last?.energy?.servedBaseWh>0?.85:0;
     pumpLight.intensity=last?.energy?.pumpEnabled?1.0:0;
     const sunLevel=Math.max(0,Math.sin(Math.PI*(snapshot.clock.hourOfDay-6)/12));
-    skyLight.intensity=.7+1.25*sunLevel;
-    direct.intensity=.18+2.4*sunLevel;
-    scene.background.setHSL(.56,.28,.13+sunLevel*.62);
+    skyLight.intensity=1.05+1.0*sunLevel;
+    direct.intensity=.38+2.30*sunLevel;
+    scene.background.setHSL(.56,.28,.24+sunLevel*.53);
     scene.fog.color.copy(scene.background);
   }
   let previous=performance.now();
@@ -440,7 +504,7 @@ export function makeScene(canvas,onSelect=()=>{}){
     camera.position.copy(eye);camera.lookAt(focus);
     for(let i=0;i<agents.children.length;i++){
       const a=agents.children[i],s=a.userData,phase=now*.0004+s.phase;
-      const dist=a.userData.kind==="chicken"?.62:.19;
+      const dist=a.userData.kind==="chicken"?0.62:0.19;
       const x=s.ax+Math.sin(phase*.8+i)*dist,z=s.az+Math.cos(phase*.9+i*.8)*dist;
       a.position.copy(at(x,z));
       a.rotation.y=phase*.44+i*.35;
