@@ -192,7 +192,7 @@ export function makeScene(canvas,onSelect=()=>{}){
   // Natural riverbank stones and scattered ground cover.
   const stoneGeometry=new THREE.DodecahedronGeometry(1,0);
   const vegetationGeo=new THREE.ConeGeometry(.12,.72,3);
-  const stones=new THREE.InstancedMesh(stoneGeometry,m.stone,110),herbs=new THREE.InstancedMesh(vegetationGeo,m.foliage2,650);
+  const stones=new THREE.InstancedMesh(stoneGeometry,m.stone,110),herbs=new THREE.InstancedMesh(vegetationGeo,m.foliage2,2800);
   const dummy=new THREE.Object3D();
   for(let i=0;i<110;i++){
     const t=seeded(i*5.66),p=streamCurve.getPoint(t);
@@ -205,8 +205,8 @@ export function makeScene(canvas,onSelect=()=>{}){
   }
   stones.castShadow=false;scene.add(stones);
   let herbCount=0;
-  for(let i=0;i<650;i++){
-    const x=-59+seeded(i*47.5)*118,z=-42+seeded(i*72.2)*84;
+  for(let i=0;i<2800;i++){
+    const x=-74+seeded(i*47.5)*148,z=-54+seeded(i*72.2)*108;
     if((x>-43&&x<-17&&z>-23&&z<2)||(x>-14&&x<16&&z>-27&&z<0)||(x>18&&x<49&&z>-20&&z<20))continue;
     const s=.5+seeded(i*9)*1.8;dummy.position.copy(at(x,z,.18));
     dummy.rotation.set(0,seeded(i*8)*Math.PI*2,0);dummy.scale.set(s,s,s);dummy.updateMatrix();herbs.setMatrixAt(herbCount++,dummy.matrix);
@@ -379,6 +379,10 @@ export function makeScene(canvas,onSelect=()=>{}){
     for(let i=0;i<9;i++){
       const x=row*1.65-3.25,z=-4+i;
       garden.add(cyl(.1,.03,.4,m.foliage2,x,.43,z,5));
+      for(const side of [-1,1]){
+        const leaf=ell(.24,.085,.43,m.foliage2,x+side*.16,.62,z+side*.13);
+        leaf.rotation.z=side*.35;garden.add(leaf);
+      }
     }
   }
 
