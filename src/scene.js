@@ -210,7 +210,7 @@ export function makeScene(canvas,onSelect=()=>{}){
   let t0=performance.now();
   function animate(now){
     requestAnimationFrame(animate);
-    const t=now*.001,dt=Math.min(.05,(now-t0)/1000);t0=now;
+    const t=now*.001,dt=Math.max(0,Math.min(.05,(now-t0)/1000));t0=now;
     eye.lerp(targetEye,.08);look.lerp(targetLook,.08);
     camera.position.copy(eye);camera.lookAt(look);
     for(let i=0;i<agents.children.length;i++){
@@ -221,7 +221,7 @@ export function makeScene(canvas,onSelect=()=>{}){
     }
     for(const dot of travelDots){
       dot.mesh.visible=dot.kind==="energy"?!!data?.last?.energy.servedBaseWh:!!data?.last?.energy.pumpEnabled;
-      dot.offset=(dot.offset+dt*dot.velocity)%1;
+      dot.offset=((dot.offset+dt*dot.velocity)%1+1)%1;
       dot.mesh.position.copy(dot.curve.getPoint(dot.offset));
     }
     renderer.render(scene,camera);
