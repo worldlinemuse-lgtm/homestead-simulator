@@ -42,3 +42,18 @@ test("repeatability for sequential, seeded simulation runs",()=>{
  const run=()=>{const c=new ctx.HomesteadCoordinator.Coordinator();for(let i=0;i<25;i++)c.stepHour();return JSON.stringify(c.snapshot());};
  assert.equal(run(),run());
 });
+
+test("capacity edits never silently erase stored energy or water",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator();
+ const before=JSON.stringify(c.snapshot());
+ assert.throws(()=>c.configure({batteryCapacityWh:5000}),/Battery capacity below current stored energy/);
+ assert.equal(JSON.stringify(c.snapshot()),before,"failed battery edit must be atomic");
+ assert.throws(()=>c.configure({waterStorageCapacityL:40}),/Water capacity below current stored volume/);
+ assert.equal(JSON.stringify(c.snapshot()),before,"failed water edit must be atomic");
+ const changed=c.configure({batteryCapacityWh:6500,waterStorageCapacityL:70});
+ assert.equal(changed.batteryWh,6000);
+ assert.equal(changed.waterStoredL,60);
+ assert.equal(changed.config.batteryCapacityWh,6500);
+ assert.equal(changed.config.waterStorageCapacityL,70);
+ assert.equal(changed.batteryWh,JSON.parse(before).batteryWh);
+});
