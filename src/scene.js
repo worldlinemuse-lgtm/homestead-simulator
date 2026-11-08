@@ -81,6 +81,25 @@ export function makeScene(canvas,onSelect=()=>{}){
           ctx.fillStyle="rgba(232,242,239,.045)";ctx.fillRect(x+4,y+4,51,2);
         }
       }
+    }else if(kind==="grass"||kind==="gravel"||kind==="river"){
+      const base=kind==="grass"?"#79945d":kind==="gravel"?"#968b73":"#4c9dbe";
+      ctx.fillStyle=base;ctx.fillRect(0,0,side,side);
+      const count=kind==="grass"?23000:kind==="gravel"?15000:2300;
+      for(let i=0;i<count;i++){
+        const x=rnd()*side,y=rnd()*side,v=rnd();
+        if(kind==="grass"){
+          ctx.strokeStyle=v>.5?"rgba(43,82,40,.20)":"rgba(204,213,130,.17)";
+          ctx.lineWidth=.6+rnd()*.85;ctx.beginPath();
+          ctx.moveTo(x,y);ctx.lineTo(x+(rnd()-.5)*3,y-2-rnd()*5);ctx.stroke();
+        }else if(kind==="gravel"){
+          ctx.fillStyle=v>.5?"rgba(42,41,34,.25)":"rgba(239,234,216,.20)";
+          const sz=.3+rnd()*2.4;ctx.fillRect(x,y,sz,sz*.75);
+        }else{
+          ctx.strokeStyle=v>.5?"rgba(225,250,243,.21)":"rgba(17,88,122,.21)";
+          ctx.lineWidth=.6+rnd()*1.6;ctx.beginPath();
+          ctx.moveTo(x,y);ctx.quadraticCurveTo(x+4,y-1,x+13+rnd()*23,y);ctx.stroke();
+        }
+      }
     }else if(kind==="solar"){
       ctx.fillStyle="#131c35";ctx.fillRect(0,0,side,side);
       for(let row=0;row<6;row++)for(let col=0;col<10;col++){
@@ -102,6 +121,9 @@ export function makeScene(canvas,onSelect=()=>{}){
   m.roof.map=illustratedTexture("roof");m.roof.needsUpdate=true;
   m.roofAlt.map=m.roof.map;m.roofAlt.needsUpdate=true;
   m.solar.map=illustratedTexture("solar");m.solar.needsUpdate=true;
+  m.grass.map=illustratedTexture("grass");m.grass.needsUpdate=true;
+  m.path.map=illustratedTexture("gravel");m.path.needsUpdate=true;
+  m.creek.map=illustratedTexture("river");m.creek.needsUpdate=true;
 
   const seeded=(n)=>{const x=Math.sin(n*128.213)*43758.5453;return x-Math.floor(x)};
   const terrainY=(x,z)=>{
@@ -120,10 +142,10 @@ export function makeScene(canvas,onSelect=()=>{}){
   function select(g){g.traverse(o=>{if(o.isMesh)selectable.push(o)});return g}
   // Continuous, softly undulating and naturally mottled terrain.
   {
-    const nx=112,nz=86,v=[],colors=[],indices=[],cc=new THREE.Color();
+    const nx=156,nz=122,v=[],uv=[],colors=[],indices=[],cc=new THREE.Color();
     for(let j=0;j<=nz;j++)for(let i=0;i<=nx;i++){
-      const x=-69+i*138/nx,z=-52+j*104/nz;
-      v.push(x,terrainY(x,z)-.2,z);
+      const x=-150+i*300/nx,z=-125+j*250/nz;
+      v.push(x,terrainY(x,z)-.2,z);uv.push(i/nx*26,j/nz*23);
       const n=.5+seeded(i*91+j*307)*.5;
       cc.setHSL(.275+(n-.5)*.045,.24+n*.1,.31+n*.085);colors.push(cc.r,cc.g,cc.b);
     }
@@ -132,13 +154,14 @@ export function makeScene(canvas,onSelect=()=>{}){
     }
     const g=new THREE.BufferGeometry();
     g.setAttribute("position",new THREE.Float32BufferAttribute(v,3));
+    g.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));
     g.setAttribute("color",new THREE.Float32BufferAttribute(colors,3));g.setIndex(indices);g.computeVertexNormals();
     const ground=mesh(g,m.grass,0,0,0,false);ground.castShadow=false;scene.add(ground);
   }
   // Curving, terrain-following track and stepping paths; not rectangular zoning.
   function ribbon(nodes,width,material,salt=1){
     const curve=new THREE.CatmullRomCurve3(nodes.map(([x,z])=>V(x,0,z)),false,"centripetal",.24);
-    const N=110,verts=[],colors=[],indices=[];
+    const N=110,verts=[],uv=[],colors=[],indices=[];
     const cl=new THREE.Color();
     for(let k=0;k<=N;k++){
       const t=k/N,p=curve.getPoint(t),tan=curve.getTangent(t),len=Math.hypot(tan.x,tan.z)||1;
@@ -147,6 +170,7 @@ export function makeScene(canvas,onSelect=()=>{}){
         const w=width*(.93+.09*Math.sin(t*25+salt));
         const x=p.x+side*nx*w*.5,z=p.z+side*nz*w*.5;
         verts.push(x,terrainY(x,z)+.045+(material===m.creek?0.15:0),z);
+        uv.push(t*14,side===-1?0:1);
         const n=seeded(k*7+salt*29+side*3),h=material===m.bank?0.30:0.10;
         cl.setRGB(.78+(n-.5)*h,.78+(n-.5)*h,.78+(n-.5)*h);
         colors.push(cl.r,cl.g,cl.b);
@@ -154,6 +178,7 @@ export function makeScene(canvas,onSelect=()=>{}){
       if(k<N){const i=k*2;indices.push(i,i+2,i+1,i+1,i+2,i+3)}
     }
     const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.Float32BufferAttribute(verts,3));
+    g.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));
     g.setAttribute("color",new THREE.Float32BufferAttribute(colors,3));g.setIndex(indices);g.computeVertexNormals();
     const out=mesh(g,material,0,0,0,false);out.castShadow=false;scene.add(out);return curve;
   }
@@ -198,9 +223,15 @@ export function makeScene(canvas,onSelect=()=>{}){
       for(let k=0;k<3;k++)root.add(mesh(new THREE.ConeGeometry((2.1-k*.39)*scale,(4.7-k*.5)*scale,8),k%2?m.foliage:m.foliage2,0,(3.1+k*.85)*scale,0));
     }else{
       const trunk=mesh(trunkGeometry,m.bark,0,1.9*scale,0);trunk.scale.set(scale,scale,scale);root.add(trunk);
-      for(let k=0;k<4;k++){
-        const a=k*Math.PI*.64;const leaf=mesh(crownGeometry,k%2?m.foliage:m.foliage2,Math.sin(a)*1.5*scale,(4.0+seeded(k+x)*.7)*scale,Math.cos(a)*1.3*scale);
-        leaf.scale.set((1.8+seeded(k*5+x)) *scale,1.75*scale,1.6*scale);root.add(leaf);
+      // Clustered irregular canopy and woody branches: no perfect "lollipop" spheres.
+      for(let k=0;k<13;k++){
+        const a=k*2.39996,rad=(1.1+seeded(k*.73+x)*1.65)*scale;
+        const spread=V(Math.sin(a)*rad,0,Math.cos(a)*rad);
+        const branch=cyl(.07*scale,.13*scale,rad*1.5,m.bark,spread.x*.32,(3.8+seeded(k+z)*.6)*scale,spread.z*.32,6);
+        branch.rotation.z=-Math.sin(a)*.56;branch.rotation.x=Math.cos(a)*.56;root.add(branch);
+        const leaf=mesh(crownGeometry,k%3?m.foliage:m.foliage2,spread.x,(4.2+seeded(k+x)*1.1)*scale,spread.z);
+        const r=(.86+seeded(k*5+x)*.66)*scale;
+        leaf.scale.set(r*1.13,r*.87,r);leaf.rotation.set(seeded(k*18)*.8,k*.7,.17);root.add(leaf);
       }
     }
     scene.add(root);
@@ -419,7 +450,7 @@ export function makeScene(canvas,onSelect=()=>{}){
   const views={
     overview:{eye:V(16,59,91),look:V(0,1.5,-8)},
     energy:{eye:V(-29,21,17),look:V(-29,2,-9)},
-    water:{eye:V(5,19,15),look:V(1,2,-23)},
+    water:{eye:V(17,24,-1),look:V(0,2,-23)},
     farm:{eye:V(53,23,33),look:V(31,2,3)}
   };
   let view="overview",moving=false;
