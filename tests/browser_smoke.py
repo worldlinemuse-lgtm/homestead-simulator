@@ -31,6 +31,27 @@ try:
             assert page.locator("#assetReadout").is_visible()
             page.locator("#closeInspector").click()
             assert page.evaluate("window.HomesteadApp.world().animals") > 0
+            # Visual sun and shadows are driven by coordinator hour, never
+            # fed back into the Solar energy ledger. Check actual UI steps.
+            initial_sun=page.evaluate("window.HomesteadApp.world().visualSun")
+            initial_hour=page.evaluate("window.HomesteadApp.snapshot().clock.hourOfDay")
+            assert initial_sun and initial_sun["hour"]==initial_hour, initial_sun
+            assert initial_sun["syntheticClarity"]>=0 and initial_sun["syntheticClarity"]<=1
+            assert initial_sun["directIntensity"]>=0
+            for _ in range(12):
+                page.locator("#stepBtn").click()
+            advanced_sun=page.evaluate("window.HomesteadApp.world().visualSun")
+            advanced_hour=page.evaluate("window.HomesteadApp.snapshot().clock.hourOfDay")
+            assert advanced_sun["hour"]==advanced_hour
+            assert advanced_hour==(initial_hour+12)%24
+            assert advanced_sun["daylight"] != initial_sun["daylight"], (initial_sun,advanced_sun)
+            assert advanced_sun["directIntensity"]>=0
+            assert advanced_sun["directIntensity"] != initial_sun["directIntensity"]
+            page.locator("#resetBtn").click()
+            reset_sun=page.evaluate("window.HomesteadApp.world().visualSun")
+            assert reset_sun["hour"]==initial_hour
+            assert abs(reset_sun["directIntensity"]-initial_sun["directIntensity"])<1e-9
+
             # Feather detail exists only on real Farm-model chicken rigs, not
             # synthetic scenery animals; each has 13 added feather meshes.
             plumage=page.evaluate("window.HomesteadApp.world().plumage")
