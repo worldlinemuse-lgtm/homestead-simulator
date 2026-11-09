@@ -1412,7 +1412,10 @@ export function makeScene(canvas,onSelect=()=>{}){
         const distance=Math.hypot(dx,dz);
         // Travel is derived only from successive native physics snapshots.
         // It must not accumulate again on repeated render frames.
-        if(s.nativePoseChanged)s.travelM+=distance;
+        // The first native sample establishes the pose baseline; the distance
+        // from a legacy spawn point is a coordinate-frame jump, not walking.
+        if(s.nativePoseChanged&&s.nativePoseInitialized)s.travelM+=distance;
+        s.nativePoseInitialized=true;
         a.position.set(nativePose.position.x,nativePose.position.y,nativePose.position.z);
         if(distance>1e-5)a.rotation.y=Math.atan2(dx,dz);
         s.nativePoseChanged=false;
@@ -1431,7 +1434,7 @@ export function makeScene(canvas,onSelect=()=>{}){
         a.rotation.y+=deltaYaw*smoothAlpha(9,dt);
       }
       const phase=s.travelM*(chicken?19:11)+s.phase;
-      const gait=gaitPose(playing,awake,youngRest,chicken,phase,i);
+      const gait=gaitPose(playing,nativeAnimalPoses?active:awake,\n        nativeAnimalPoses?false:youngRest,chicken,phase,i);
       const stepWave=gait.wave;
       // Chicken roots stay exactly on the triangulated ground; the torso bobs
       // over independently animated alternating feet (no helicopter movement).
