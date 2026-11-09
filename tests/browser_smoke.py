@@ -39,6 +39,9 @@ try:
             assert initial_sun and initial_sun["hour"]==initial_hour, initial_sun
             assert initial_sun["syntheticClarity"]>=0 and initial_sun["syntheticClarity"]<=1
             assert initial_sun["directIntensity"]>=0
+            initial_lamps=initial_sun["decorativeLighting"]
+            assert initial_lamps["lampCount"]==2 and initial_lamps["modeledLampLoad"] is False
+            assert initial_lamps["intensity"]==0, initial_lamps
             page.wait_for_timeout(350)
             page.screenshot(path=str(light_out/("mobile-light-initial.png" if mobile else "desktop-light-initial.png")))
             for _ in range(12):
@@ -50,12 +53,20 @@ try:
             assert advanced_sun["daylight"] != initial_sun["daylight"], (initial_sun,advanced_sun)
             assert advanced_sun["directIntensity"]>=0
             assert advanced_sun["directIntensity"] != initial_sun["directIntensity"]
+            advanced_lamps=advanced_sun["decorativeLighting"]
+            assert advanced_lamps["lampCount"]==2
+            assert advanced_lamps["modeledLampLoad"] is False
+            assert advanced_lamps["baseSupplyWh"]>=0
+            assert advanced_lamps["intensity"]>0 if advanced_lamps["baseSupplyWh"]>0 else advanced_lamps["intensity"]==0, advanced_lamps
+            assert advanced_lamps["windowEmissive"]>0 if advanced_lamps["baseSupplyWh"]>0 else advanced_lamps["windowEmissive"]==0, advanced_lamps
             page.wait_for_timeout(350)
             page.screenshot(path=str(light_out/("mobile-light-advanced.png" if mobile else "desktop-light-advanced.png")))
             page.locator("#resetBtn").click()
             reset_sun=page.evaluate("window.HomesteadApp.world().visualSun")
             assert reset_sun["hour"]==initial_hour
             assert abs(reset_sun["directIntensity"]-initial_sun["directIntensity"])<1e-9
+            assert reset_sun["decorativeLighting"]["intensity"]==0
+            assert reset_sun["decorativeLighting"]["windowEmissive"]==0
             page.wait_for_timeout(350)
             page.screenshot(path=str(light_out/("mobile-light-reset.png" if mobile else "desktop-light-reset.png")))
 

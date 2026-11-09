@@ -472,10 +472,15 @@ export function makeScene(canvas,onSelect=()=>{}){
   homestead.add(box(12.65,.18,9.2,m.wood,0,3.01,0));
   // A two-storey house with windows scaled as architectural openings,
   // not the previous 3.2 m tall single-pane billboards.
+  // Shared material: warm glazing is an illustrative interior glow, not
+  // evidence of a wired lighting circuit or a separately accounted load.
+  const litWindowMaterial=m.glass.clone();
+  litWindowMaterial.emissive.setHex(0xffb75e);
+  litWindowMaterial.emissiveIntensity=0;
   const warmWindows=[];
   function houseWindow(px,y,pz=5.00){
     const trim=box(1.83,1.65,.13,m.trim,px,y,pz);homestead.add(trim);
-    const glass=box(1.56,1.38,.09,m.glass,px,y,pz-.17);homestead.add(glass);
+    const glass=box(1.56,1.38,.09,litWindowMaterial,px,y,pz-.17);homestead.add(glass);
     homestead.add(box(.065,1.47,.12,m.trim,px,y,pz+.04));
     homestead.add(box(1.62,.07,.12,m.trim,px,y,pz+.04));
     homestead.add(box(2.06,.14,.35,m.stone,px,y-.88,pz+.06));
@@ -485,6 +490,19 @@ export function makeScene(canvas,onSelect=()=>{}){
     houseWindow(x,1.63);houseWindow(x,4.43);
   }
   houseWindow(0,4.43);
+  // Two low-cost unshadowed warm fixtures; keep light pools local, not a
+  // second global sun. Visual only; supplied site energy gates their glow.
+  const fixtureGlass=mat(0xffd39a,{emissive:0xff9d3d,emissiveIntensity:0});
+  const porchFixtures=[];
+  function addPorchFixture(parent,x,y,z){
+    parent.add(box(.34,.28,.24,m.darkWood,x,y+.20,z-.09));
+    parent.add(box(.25,.33,.23,fixtureGlass,x,y,z));
+    const light=new THREE.PointLight(0xffb768,0,9,2);
+    light.position.set(x,y-.18,z+.48);
+    light.castShadow=false;
+    parent.add(light);porchFixtures.push(light);
+  }
+  addPorchFixture(homestead,1.38,2.43,5.08);
   const frontDoor=box(1.20,2.18,.15,m.darkWood,0,1.23,4.91);
   frontDoor.name="Home entry door";homestead.add(frontDoor);
   for(const x of [-.66,.66])homestead.add(box(.105,2.37,.19,m.trim,x,1.25,5.03));
@@ -724,6 +742,7 @@ export function makeScene(canvas,onSelect=()=>{}){
   }
   // Full-size service door is separate from the chicken-scale pop hole;
   // the ramp reaches the latter, not an implausibly oversized service doorway.
+  addPorchFixture(barn,-.95,2.68,4.55);
   const coopDoor=box(1.56,2.38,.15,m.darkWood,-2.42,1.30,4.30);
   barn.add(coopDoor);
   for(const x of [-3.27,-1.57])barn.add(box(.11,2.46,.18,m.trim,x,1.32,4.39));
@@ -1283,6 +1302,15 @@ export function makeScene(canvas,onSelect=()=>{}){
     // Synthetic cloud factor is a scenario assumption, not observed weather.
     const syntheticClarity=THREE.MathUtils.clamp(c.cloudTransmittance,0,1);
     const twilight=isDay?Math.pow(1-sunLevel,5):0;
+    // The site-level servedBaseWh is an aggregate, not a lamp circuit meter.
+    // These lights are strictly illustrative: no consumption is subtracted.
+    // Without supplied base energy the fixtures cannot imply powered lighting.
+    const baseSupplyWh=Number(last?.energy?.servedBaseWh)||0;
+    const darkness=THREE.MathUtils.clamp((.45-sunLevel)/.45,0,1);
+    const lampLevel=baseSupplyWh>0?darkness:0;
+    for(const lamp of porchFixtures)lamp.intensity=lampLevel*1.55;
+    fixtureGlass.emissiveIntensity=lampLevel*1.8;
+    litWindowMaterial.emissiveIntensity=lampLevel*.75;
     skyLight.intensity=.42+sunLevel*(.9+.45*syntheticClarity);
     direct.intensity=isDay?(.08+2.62*sunLevel*syntheticClarity):0;
     direct.color.setHSL(.105-.045*sunLevel,.40+.08*twilight,.70+.19*sunLevel);
@@ -1290,6 +1318,9 @@ export function makeScene(canvas,onSelect=()=>{}){
     scene.background.setHSL(.57+.025*twilight,.29+.16*sunLevel,.105+.59*sunLevel);
     scene.fog.color.copy(scene.background);
     visualSunState={hour,daylight:isDay,syntheticClarity,
+      decorativeLighting:{lampCount:porchFixtures.length,intensity:porchFixtures[0].intensity,
+        windowEmissive:litWindowMaterial.emissiveIntensity,baseSupplyWh,
+        modeledLampLoad:false},
       elevationDeg:elevation*180/Math.PI,azimuthDeg:azimuth*180/Math.PI,
       directIntensity:direct.intensity};
   }
