@@ -34,7 +34,7 @@ export function makeScene(canvas,onSelect=()=>{}){
     grass:mat(0x72965f,{vertexColors:true,side:THREE.DoubleSide}),
     earth:mat(0x9a8a72), path:mat(0xa69b83,{vertexColors:true,side:THREE.DoubleSide}),
     bank:mat(0x6b8971,{vertexColors:true,side:THREE.DoubleSide}),
-    creek:mat(0x347f98,{metalness:.12,roughness:.22,transparent:true,opacity:.9,side:THREE.DoubleSide}),
+    creek:mat(0x4d838a,{metalness:.08,roughness:.32,transparent:true,opacity:.92,side:THREE.DoubleSide}),
     wood:mat(0x8b6548),cedar:mat(0x9c7856),darkWood:mat(0x5f4939),trim:mat(0xe8d6bc),
     roof:mat(0x46525a,{metalness:.18,roughness:.67}),roofAlt:mat(0x72504b),glass:mat(0xb6ced1,{metalness:.05,roughness:.18}),
     metal:mat(0x91a4a9,{metalness:.71,roughness:.34}),steel:mat(0x353f46,{metalness:.75,roughness:.31}),
@@ -82,7 +82,7 @@ export function makeScene(canvas,onSelect=()=>{}){
         }
       }
     }else if(kind==="grass"||kind==="gravel"||kind==="river"){
-      const base=kind==="grass"?"#79945d":kind==="gravel"?"#968b73":"#4c9dbe";
+      const base=kind==="grass"?"#79945d":kind==="gravel"?"#968b73":"#5a98a3";
       ctx.fillStyle=base;ctx.fillRect(0,0,side,side);
       const count=kind==="grass"?23000:kind==="gravel"?15000:2300;
       for(let i=0;i<count;i++){
@@ -126,9 +126,24 @@ export function makeScene(canvas,onSelect=()=>{}){
   m.creek.map=illustratedTexture("river");m.creek.needsUpdate=true;
 
   const seeded=(n)=>{const x=Math.sin(n*128.213)*43758.5453;return x-Math.floor(x)};
+  // Depress the actual terrain under the existing creek; the stream no longer floats
+  // above grass. Stream location is artwork, not a hydrological catchment model.
+  const creekNodes=[[-53,-23],[-46,-29],[-36,-34],[-25,-33],[-17,-30],[-8,-34],[0,-41],[14,-45]];
+  function creekDistance(x,z){
+    let distance=Infinity;
+    for(let i=1;i<creekNodes.length;i++){
+      const [ax,az]=creekNodes[i-1],[bx,bz]=creekNodes[i];
+      const vx=bx-ax,vz=bz-az;
+      const t=THREE.MathUtils.clamp(((x-ax)*vx+(z-az)*vz)/(vx*vx+vz*vz),0,1);
+      distance=Math.min(distance,Math.hypot(x-(ax+t*vx),z-(az+t*vz)));
+    }
+    return distance;
+  }
   const terrainY=(x,z)=>{
     const edge=Math.max(0,(Math.abs(x)-39)/26,(Math.abs(z)-28)/22);
-    return .18*Math.sin(x*.12)+.22*Math.cos(z*.11)+.15*Math.sin((x+z)*.16)+edge*edge*2.4;
+    const base=.18*Math.sin(x*.12)+.22*Math.cos(z*.11)+.15*Math.sin((x+z)*.16)+edge*edge*2.4;
+    const channel=THREE.MathUtils.clamp(1-creekDistance(x,z)/8,0,1);
+    return base-.80*channel*channel;
   };
   const at=(x,z,offset=0)=>V(x,terrainY(x,z)+offset,z);
   function mesh(geo,material,x=0,y=0,z=0,cast=true){
@@ -186,13 +201,31 @@ export function makeScene(canvas,onSelect=()=>{}){
   ribbon([[2,14],[2,4],[-4,-6],[-8,-15]],2.1,m.path,8);
   ribbon([[2,14],[16,6],[23,-4],[30,-14]],2.1,m.path,5);
   ribbon([[-8,-15],[-17,-20],[-27,-18]],1.5,m.path,2);
-  const creekNodes=[[-53,-23],[-46,-29],[-36,-34],[-25,-33],[-17,-30],[-8,-34],[0,-41],[14,-45]];
   ribbon(creekNodes,7.1,m.bank,11);
   const streamCurve=ribbon(creekNodes,4.65,m.creek,11);
   // Natural riverbank stones and scattered ground cover.
   const stoneGeometry=new THREE.DodecahedronGeometry(1,0);
-  const vegetationGeo=new THREE.ConeGeometry(.12,.72,3);
-  const stones=new THREE.InstancedMesh(stoneGeometry,m.stone,110),herbs=new THREE.InstancedMesh(vegetationGeo,m.foliage2,2800);
+  // Multi-blade foliage clumps: a small instanced mesh replaces the black-looking
+  // single cones seen in CI screenshots. Natural variation is geometry/color only.
+  function grassClumpGeometry(){
+    const points=[],colors=[];
+    const palette=[0x6a945c,0x7ba05c,0x5e8554,0x8ba96a,0x648c4c];
+    for(let b=0;b<5;b++){
+      const a=b*Math.PI*2/5,dx=Math.cos(a),dz=Math.sin(a);
+      const sideX=-dz*.067,sideZ=dx*.067;
+      const px=dx*.085,pz=dz*.085,tip=.13+(b%2)*.11;
+      points.push(px-sideX,0,pz-sideZ,px+sideX,0,pz+sideZ,px+dx*tip,.40+(b%3)*.13,pz+dz*tip);
+      const tint=new THREE.Color(palette[b]);
+      for(let i=0;i<3;i++)colors.push(tint.r,tint.g,tint.b);
+    }
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute("position",new THREE.Float32BufferAttribute(points,3));
+    geo.setAttribute("color",new THREE.Float32BufferAttribute(colors,3));
+    geo.computeVertexNormals();return geo;
+  }
+  const vegetationGeo=grassClumpGeometry();
+  const vegetationMaterial=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.97,side:THREE.DoubleSide,vertexColors:true});
+  const stones=new THREE.InstancedMesh(stoneGeometry,m.stone,110),herbs=new THREE.InstancedMesh(vegetationGeo,vegetationMaterial,2800);
   const dummy=new THREE.Object3D();
   for(let i=0;i<110;i++){
     const t=seeded(i*5.66),p=streamCurve.getPoint(t);
@@ -207,8 +240,8 @@ export function makeScene(canvas,onSelect=()=>{}){
   let herbCount=0;
   for(let i=0;i<2800;i++){
     const x=-74+seeded(i*47.5)*148,z=-54+seeded(i*72.2)*108;
-    if((x>-43&&x<-17&&z>-23&&z<2)||(x>-14&&x<16&&z>-27&&z<0)||(x>18&&x<49&&z>-20&&z<20))continue;
-    const s=.5+seeded(i*9)*1.8;dummy.position.copy(at(x,z,.18));
+    if(creekDistance(x,z)<3.7||(x>-43&&x<-17&&z>-23&&z<2)||(x>-14&&x<16&&z>-27&&z<0)||(x>18&&x<49&&z>-20&&z<20))continue;
+    const s=.5+seeded(i*9)*1.8;dummy.position.copy(at(x,z,.025));
     dummy.rotation.set(0,seeded(i*8)*Math.PI*2,0);dummy.scale.set(s,s,s);dummy.updateMatrix();herbs.setMatrixAt(herbCount++,dummy.matrix);
   }
   herbs.count=herbCount;herbs.instanceMatrix.needsUpdate=true;herbs.castShadow=false;scene.add(herbs);
