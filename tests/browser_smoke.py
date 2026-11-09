@@ -111,6 +111,18 @@ try:
             page.locator("[data-view=farm]").click()
             page.wait_for_timeout(950)
             page.screenshot(path=str(out/("mobile-farm.png" if mobile else "desktop-farm.png")))
+            if not mobile:
+                # Reproduce the independent audit's 70-day GPU leak scenario.
+                # Browser actions are genuine model steps, not fake snapshots.
+                before70=page.evaluate("window.HomesteadApp.world().animalLifecycle")
+                for _ in range(70):
+                    page.locator("#dayBtn").click()
+                after70=page.evaluate("window.HomesteadApp.world().animalLifecycle")
+                assert after70["active"] <= 50
+                assert after70["ownedGeometries"] <= 60*max(1,after70["active"])
+                assert after70["added"]-after70["removed"] == after70["active"]
+                assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==25+70*24
+                assert not errors,errors
             page.close()
         browser.close()
     print("PASS: unified 3D site runs, both layouts step 25 model hours, no page exceptions")
