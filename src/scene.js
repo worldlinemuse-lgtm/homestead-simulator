@@ -331,6 +331,17 @@ export function makeScene(canvas,onSelect=()=>{}){
   for(let i=0;i<4;i++)tank.add(cyl(.095,.095,5.1,m.steel,2.67*Math.cos(i*Math.PI/2),2.95,2.67*Math.sin(i*Math.PI/2),8));
   const tankFill=cyl(2.55,2.55,1,m.water,0,1.0,0,30);tank.add(tankFill);
   const tankRim=cyl(2.6,2.6,.03,m.flow,0,1.0,0,30);tank.add(tankRim);
+  // Water Simulator source/ui.js: water surfaces respond to measured inventory and solver output.
+  // These subdued concentric rings are purely visual; they do not calculate hydraulic flow.
+  const tankRipples=[];
+  for(let i=0;i<3;i++){
+    const ring=new THREE.Mesh(
+      new THREE.RingGeometry(1.0,1.045,48),
+      new THREE.MeshBasicMaterial({color:0xd1f4ff,transparent:true,opacity:.22,side:THREE.DoubleSide,depthWrite:false})
+    );
+    ring.rotation.x=-Math.PI/2;ring.visible=false;tank.add(ring);tankRipples.push(ring);
+  }
+
   // Physical visually connected hose route (just above ground).
   const intakeLine=route([[-18,-31,.1],[-14,-30,.24],[-11,-27,.24],[-8,-25,1.1]],m.pipe,.16);
   const filterLine=route([[-8,-25,1.12],[-5,-24,.95],[-2,-24,1.45],[-1,-23,2.1]],m.pipe,.14);
@@ -389,62 +400,116 @@ export function makeScene(canvas,onSelect=()=>{}){
   // Visual animals use the real farm population: species/stage are model fields.
   // Their tiny idle motions are deliberately visual-only (never RNG for biology).
   const agents=new THREE.Group();scene.add(agents);
-  const eyeGeo=new THREE.SphereGeometry(.05,6,5);
-  function animal(species,id,index){
-    const chicken=species==="chicken",o=new THREE.Group();
-    const feather=index%3===0?m.featherWhite:m.feather;
+  // Visual vocabulary adapted from the user's Farm Simulator:
+  // source/src/world/agents.js (RAB / HEN palettes and species movement) and
+  // world/looks.js (life-stage distinctions) and world/physics.js (rabbit hopping).
+  // This is a distinct Three.js illustration layer. It does NOT run or alter farm biology.
+  const rabbitColors=[0xefeae2,0x8b6a4e,0x3b3734,0xc9a27c,0x9c9c9c];
+  const chickenColors=[0x8a3f17,0xf3efe4,0x2a2a2a,0xc9a062];
+  const animalMaterialCache=new Map(),eyeGeo=new THREE.SphereGeometry(.055,9,7);
+  function coat(species,id,shade=false){
+    const palette=species==="chicken"?chickenColors:rabbitColors;
+    const slot=Math.floor(seeded(id*3.71)*palette.length);
+    const key=species+":"+slot+":"+shade;
+    if(!animalMaterialCache.has(key)){
+      const color=new THREE.Color(palette[slot]);
+      if(shade)color.multiplyScalar(.77);
+      animalMaterialCache.set(key,mat(color,{roughness:.96}));
+    }
+    return animalMaterialCache.get(key);
+  }
+  function animal(a,index){
+    const species=a.sp,id=Number(a.id)||index+1,chicken=species==="chicken";
+    const o=new THREE.Group(),base=coat(species,id),darker=coat(species,id,true);
+    const head=new THREE.Group(),limbs=[],wings=[],ears=[];
+    o.add(head);
     if(chicken){
-      o.add(ell(.41,.47,.64,feather,0,.66,0));
-      o.add(ell(.28,.29,.29,feather,0,1.02,.39));
-      o.add(mesh(new THREE.ConeGeometry(.16,.38,6),m.beak,0,.99,.76).rotateX(Math.PI/2));
-      o.add(ell(.10,.22,.09,m.comb,0,1.36,.38));
-      for(const side of [-1,1]){
-        o.add(ell(.27,.17,.37,feather,side*.30,.69,-.06));
-        o.add(cyl(.045,.045,.27,m.beak,side*.17,.2,.07,6));
-        o.add(mesh(eyeGeo,m.eyes,side*.245,1.07,.54,false));
+      o.add(ell(.46,.43,.65,base,0,.65,0));
+      const tail=new THREE.Group();tail.position.set(0,.75,-.54);
+      for(const side of [-1,0,1]){
+        const feather=ell(.105,.26,.20,darker,side*.13,.12,-.10);
+        feather.rotation.x=-.35;tail.add(feather);
       }
-      for(let j=0;j<3;j++)o.add(ell(.1,.24,.14,feather,(j-1)*.16,.9,-.59));
+      o.add(tail);
+      head.position.set(0,.83,.37);
+      head.add(ell(.29,.31,.30,base,0,.19,.11));
+      const beak=mesh(new THREE.ConeGeometry(.145,.34,7),m.beak,0,.11,.44);
+      beak.rotation.x=Math.PI/2;head.add(beak);
+      head.add(ell(.105,.20,.09,m.comb,0,.52,.08));
+      for(const side of [-1,1]){
+        const wing=ell(.21,.18,.43,darker,side*.34,.75,-.08);
+        o.add(wing);wings.push(wing);
+        head.add(mesh(eyeGeo,m.eyes,side*.252,.24,.29,false));
+        const leg=new THREE.Group();leg.position.set(side*.19,.35,.10);
+        leg.add(cyl(.045,.053,.30,m.beak,0,-.16,0,7));
+        for(const toe of [-1,0,1])leg.add(box(.055,.045,.22,m.beak,toe*.075,-.30,.12));
+        o.add(leg);limbs.push(leg);
+      }
     }else{
-      o.add(ell(.56,.45,.82,m.rabbit,0,.5,0));
-      o.add(ell(.37,.33,.35,m.rabbit,0,.74,.58));
+      o.add(ell(.56,.42,.80,base,0,.52,0));
+      o.add(ell(.23,.23,.22,base,0,.56,-.77)); // tail
+      head.position.set(0,.67,.56);
+      head.add(ell(.36,.33,.34,base,0,.08,.07));
       for(const side of [-1,1]){
-        const ear=ell(.13,.45,.16,m.rabbit,side*.2,1.25,.60);ear.rotation.z=side*.15;o.add(ear);
-        o.add(ell(.075,.35,.06,m.pink,side*.2,1.28,.74));
-        o.add(mesh(eyeGeo,m.eyes,side*.30,.82,.83,false));
-        o.add(ell(.27,.2,.32,m.rabbit,side*.34,.25,-.40));
+        const ear=new THREE.Group();ear.position.set(side*.20,.37,.00);
+        const fur=ell(.14,.46,.17,base,0,.36,0);fur.rotation.z=-side*.09;ear.add(fur);
+        const inside=ell(.076,.34,.055,m.pink,0,.36,.145);inside.rotation.z=-side*.09;ear.add(inside);
+        head.add(ear);ears.push(ear);
+        head.add(mesh(eyeGeo,m.eyes,side*.295,.14,.31,false));
+        head.add(ell(.19,.12,.16,base,side*.15,-.09,.29));
+        const paw=new THREE.Group();paw.position.set(side*.36,.28,.27);
+        paw.add(ell(.17,.11,.25,darker,0,0,.08));o.add(paw);limbs.push(paw);
       }
-      o.add(ell(.24,.26,.25,m.rabbit,0,.56,-.83));
+      head.add(ell(.09,.075,.09,m.pink,0,.005,.41));
     }
     const h=seeded(id*31+index*7);
     const ax=chicken?30+(h-.5)*14:21+(h-.5)*5;
     const az=chicken?4+(seeded(id*8+43)-.5)*9:11+(seeded(id*9+50)-.5)*7;
-    o.userData={kind:species,id,ax,az,phase:seeded(id*13+50)*Math.PI*2};
+    o.userData={kind:species,id,ax,az,phase:seeded(id*13+50)*Math.PI*2,
+      head,limbs,wings,ears,health:100,stage:a.st,age:Number(a.age)||0};
     o.position.copy(at(ax,az));
     return o;
   }
   let populationSignature="";
   function syncAnimals(farm){
+    // Match ONLY actual model records, including entry/exit. Never instantiate invented livestock.
     const present=(farm?.animals||[]).filter(a=>a.sp==="rabbit"||a.sp==="chicken").slice(0,50);
     const signature=present.map(a=>a.id+":"+a.sp+":"+a.st).join(",");
-    if(signature===populationSignature)return;
-    populationSignature=signature;
-    while(agents.children.length)agents.remove(agents.children[0]);
-    present.forEach((a,i)=>{
-      const creature=animal(a.sp,Number(a.id)||i+1,i);
-      const young=a.st==="kit"||a.st==="chick";creature.scale.setScalar(young?0.68:1);
-      agents.add(creature);
-    });
+    if(signature!==populationSignature){
+      populationSignature=signature;
+      while(agents.children.length)agents.remove(agents.children[0]);
+      present.forEach((a,i)=>agents.add(animal(a,i)));
+    }
+    const lookup=new Map(present.map(a=>[String(a.id),a]));
+    for(const creature of agents.children){
+      const a=lookup.get(String(creature.userData.id));if(!a)continue;
+      const u=creature.userData;u.stage=a.st;u.age=Number(a.age)||0;
+      u.health=Number.isFinite(a.health)?THREE.MathUtils.clamp(a.health,0,100):100;
+      // Stage size is a visual class, not a fabricated breed-specific weight curve.
+      const scale=a.st==="kit"?.46:a.st==="chick"?.51:
+        a.st==="grower"?.76:a.st==="pullet"||a.st==="cockerel"?.84:1;
+      creature.scale.setScalar(scale);
+    }
   }
 
   // Resource flows follow actual coordinator data and are laid along visible connections.
-  const flows=[];
+  // Water Simulator source/ui.js buildPipe()/frame(): instanced particles, flow-aware speed,
+  // wet-line highlighting. The coordinator exposes *hourly aggregate* transfers, not
+  // per-pipe L/min, so speed/brightness here is a bounded VISUAL encoding, not a
+  // claim of physically measured velocity inside a particular diameter.
+  const flows=[],flowDummy=new THREE.Object3D();
   function addFlow(curve,kind,n,size=.13){
-    const geo=new THREE.SphereGeometry(size,7,6);
-    const material=kind==="pv"||kind==="pumpPower"||kind==="buildingPower"?m.glow:m.flow;
-    for(let i=0;i<n;i++){
-      const dot=mesh(geo,material,0,0,0,false);dot.castShadow=false;
-      scene.add(dot);flows.push({mesh:dot,curve,kind,phase:i/n,speed:.085+seeded(i+kind.length)*.025});
-    }
+    const electrical=["pv","pumpPower","buildingPower"].includes(kind);
+    const particles=new THREE.InstancedMesh(
+      new THREE.SphereGeometry(size,8,6),
+      new THREE.MeshBasicMaterial({color:electrical?0xffd48b:0x8adafa,transparent:true,opacity:.88,depthWrite:false}),n);
+    particles.visible=false;particles.frustumCulled=false;scene.add(particles);
+    // The status sheath is deliberately subtle, unlike a permanently glowing pipe.
+    const sheath=new THREE.Mesh(
+      new THREE.TubeGeometry(curve,56,electrical?.119:.177,8,false),
+      new THREE.MeshBasicMaterial({color:electrical?0xe6ba72:0x72bfe0,transparent:true,opacity:.20,depthWrite:false}));
+    sheath.visible=false;sheath.castShadow=false;scene.add(sheath);
+    flows.push({mesh:particles,sheath,curve,kind,n,phase:0,size});
   }
   addFlow(pvCable,"pv",8);
   addFlow(pumpCable,"pumpPower",7);
@@ -454,6 +519,15 @@ export function makeScene(canvas,onSelect=()=>{}){
   addFlow(filterLine,"rawWater",5,.11);
   addFlow(fillLine,"treatedWater",8,.10);
   addFlow(supplyLine,"animalWater",10,.10);
+  function flowAmount(kind,e,w){
+    let amount=0;
+    if(kind==="pv")amount=e?.pvWh;
+    else if(kind==="pumpPower")amount=e?.servedPumpWh;
+    else if(kind==="buildingPower")amount=e?.servedBaseWh;
+    else if(kind==="rawWater"||kind==="treatedWater")amount=w?.treatedL;
+    else if(kind==="animalWater")amount=w?.consumedL;
+    return Number.isFinite(amount)&&amount>0?amount:0;
+  }
 
   // Waypoints frame locations inside one walkable-looking landscape, not tiles.
   const views={
@@ -521,24 +595,29 @@ export function makeScene(canvas,onSelect=()=>{}){
     const width=Math.max(1,rect.width),height=Math.max(1,rect.height);
     renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix();
   });observer.observe(canvas);
-  let data=null,disposed=false,playing=false,visualTime=0,lastModelHour=-1;
+  let data=null,disposed=false,playing=false,visualTime=0,lastModelHour=-1,visualTankFraction=0;
   function update(snapshot){
-    // A numerical step changes the illustration; wall-clock rendering cannot drive the physics.
+    // Physics/biology are read-only inputs. No animation can write into a model ledger.
     if(snapshot.clock.hours!==lastModelHour){
       if(lastModelHour>=0){visualTime+=.8;for(const f of flows)f.phase=(f.phase+.045)%1}
       lastModelHour=snapshot.clock.hours;
     }
     data=snapshot;syncAnimals(snapshot.farm);
     const last=snapshot.last,c=snapshot.config;
-    const ratio=Math.max(0,Math.min(1,snapshot.waterStoredL/Math.max(1,c.waterStorageCapacityL)));
-    const height=Math.max(.025,ratio*4.85);
-    tankFill.scale.y=height;tankFill.position.y=.40+height*.5;
+    const ratio=THREE.MathUtils.clamp(snapshot.waterStoredL/Math.max(1,c.waterStorageCapacityL),0,1);
+    visualTankFraction=ratio;
+    const height=ratio*4.85;
+    tankFill.visible=ratio>1e-8;tankRim.visible=tankFill.visible;
+    tankFill.scale.y=Math.max(.001,height);
+    tankFill.position.y=.40+height*.5;
     tankRim.position.y=.40+height;
-    troughWater.visible=(last?.water?.consumedL||0)>1e-8; // Actual modeled livestock water allocation, not decorative.
-    const br=Math.max(.02,snapshot.batteryWh/Math.max(1,c.batteryCapacityWh));
-    chargeRail.scale.x=br;
+    const tankMoving=(last?.water?.treatedL||0)>0 && ratio>1e-8;
+    tankRipples.forEach(r=>{r.visible=tankMoving;r.position.y=.407+height});
+    troughWater.visible=(last?.water?.consumedL||0)>1e-8; // Hourly modeled allocation, not a livestock behavior claim.
+    const br=THREE.MathUtils.clamp(snapshot.batteryWh/Math.max(1,c.batteryCapacityWh),0,1);
+    chargeRail.scale.x=Math.max(.015,br);chargeRail.visible=br>1e-8;
     inverterLed.intensity=last?.energy?.servedBaseWh>0?.85:0;
-    pumpLight.intensity=last?.energy?.pumpEnabled?1.0:0;
+    pumpLight.intensity=last?.energy?.servedPumpWh>0?1.0:0;
     const sunLevel=Math.max(0,Math.sin(Math.PI*(snapshot.clock.hourOfDay-6)/12));
     skyLight.intensity=1.05+1.0*sunLevel;
     direct.intensity=.38+2.30*sunLevel;
@@ -553,34 +632,74 @@ export function makeScene(canvas,onSelect=()=>{}){
     if(playing)visualTime+=dt;
     eye.lerp(toEye,.095);focus.lerp(toLook,.095);
     camera.position.copy(eye);camera.lookAt(focus);
+    // Farm Simulator world/agents.js and world/physics.js inspired species-specific
+    // movement: chickens step and peck, rabbits hop; at night they settle.
+    // No visual dice are shared with the Farm biological RNG.
+    const modelHour=data?.clock?.hourOfDay??9;
+    const awake=modelHour>=6&&modelHour<20;
     for(let i=0;i<agents.children.length;i++){
-      const a=agents.children[i],s=a.userData,phase=visualTime*.6+s.phase;
-      const dist=a.userData.kind==="chicken"?0.62:0.19;
-      const x=s.ax+Math.sin(phase*.8+i)*dist,z=s.az+Math.cos(phase*.9+i*.8)*dist;
-      a.position.copy(at(x,z));
-      a.rotation.y=phase*.44+i*.35;
-      a.position.y+=Math.max(0,Math.sin(phase*4+i))*.028;
+      const a=agents.children[i],s=a.userData,chicken=s.kind==="chicken";
+      const healthSpeed=.35+.65*THREE.MathUtils.clamp(s.health/100,0,1);
+      const youngKit=!chicken&&s.stage==="kit"&&s.age<10;
+      const active=awake&&!youngKit;
+      const phase=visualTime*(chicken?1.65:1.2)*healthSpeed+s.phase;
+      const dist=active?(chicken?.96:.40):0;
+      const targetX=s.ax+Math.sin(phase*.56+i*.7)*dist;
+      const targetZ=s.az+Math.cos(phase*.68+i*.9)*dist;
+      const blend=Math.min(1,dt*4.5);
+      const wasX=a.position.x,wasZ=a.position.z;
+      a.position.x+=(targetX-a.position.x)*blend;
+      a.position.z+=(targetZ-a.position.z)*blend;
+      a.position.y=terrainY(a.position.x,a.position.z);
+      const stepWave=Math.sin(phase*(chicken?5.5:3.4)+i);
+      if(active){
+        const dx=a.position.x-wasX,dz=a.position.z-wasZ;
+        if(Math.hypot(dx,dz)>1e-5)a.rotation.y=Math.atan2(dx,dz);
+        a.position.y+=chicken?Math.abs(stepWave)*.018:Math.max(0,stepWave)*.19;
+      }
+      s.head.rotation.x=active?(chicken?.16+Math.max(0,Math.sin(phase*3.2+i))*.57:
+        .035+Math.sin(phase*1.8)*.075):-.09;
+      s.head.rotation.y=active?Math.sin(phase*.8+i)*.06:0;
+      for(let k=0;k<s.limbs.length;k++)
+        s.limbs[k].rotation.x=active?(chicken?stepWave*(k?-.31:.31):Math.max(0,stepWave)*-.18):0;
+      for(let k=0;k<s.wings.length;k++)
+        s.wings[k].rotation.z=active?Math.sin(phase*1.8+k)*.035*(k?1:-1):0;
+      for(let k=0;k<s.ears.length;k++)
+        s.ears[k].rotation.z=active?Math.sin(phase*2.1+k)*.07:0;
     }
     const e=data?.last?.energy,w=data?.last?.water;
     for(const f of flows){
-      let present=false;
-      if(f.kind==="pv")present=(e?.pvWh||0)>0;
-      else if(f.kind==="pumpPower")present=!!e?.pumpEnabled;
-      else if(f.kind==="buildingPower")present=(e?.servedBaseWh||0)>0;
-      else if(f.kind==="rawWater"||f.kind==="treatedWater")present=(w?.treatedL||0)>0;
-      else if(f.kind==="animalWater")present=(w?.consumedL||0)>0;
-      f.mesh.visible=present;
-      if(present){
-        if(playing)f.phase=((f.phase+dt*f.speed)%1+1)%1;
-        f.mesh.position.copy(f.curve.getPoint(f.phase));
+      const amount=flowAmount(f.kind,e,w);
+      const active=amount>1e-8;
+      f.mesh.visible=active;f.sheath.visible=active;
+      if(!active)continue;
+      // Magnitudes are hourly Wh or L; never mislabel these as instantaneous W or L/min.
+      const activity=THREE.MathUtils.clamp(Math.log1p(amount)/Math.log1p(
+        f.kind==="pv"||f.kind==="buildingPower"||f.kind==="pumpPower"?2000:200),0,1);
+      if(playing)f.phase=(f.phase+dt*(.055+.22*activity))%1;
+      for(let i=0;i<f.n;i++){
+        f.curve.getPointAt((f.phase+i/f.n)%1,flowDummy.position);
+        const size=.65+.55*activity;
+        flowDummy.scale.setScalar(size);
+        flowDummy.updateMatrix();f.mesh.setMatrixAt(i,flowDummy.matrix);
       }
+      f.mesh.instanceMatrix.needsUpdate=true;
     }
+    for(let i=0;i<tankRipples.length;i++){
+      const ring=tankRipples[i];if(!ring.visible)continue;
+      const u=(visualTime*.26+i/tankRipples.length)%1;
+      ring.scale.setScalar(.43+u*1.75);
+      ring.material.opacity=.23*(1-u);
+    }
+    if(playing&&m.creek.map)m.creek.map.offset.y=(m.creek.map.offset.y+dt*.012)%1;
     renderer.render(scene,camera);
   }
   requestAnimationFrame(animate);
   return {
     update,go,setPlayback(on){playing=Boolean(on)},resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
-    stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing}}
+    stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
+      activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
+      tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null}}
   };
 }
