@@ -1068,7 +1068,9 @@ export function makeScene(canvas,onSelect=()=>{}){
     if(playing&&m.creek.map)m.creek.map.offset.y=(m.creek.map.offset.y+dt*.012)%1;
     renderer.render(scene,camera);
   }
+  let groundingCache=null;
   function groundingReport(){
+    if(groundingCache)return groundingCache;
     // Raycast the actual triangle mesh, not the analytic terrain source.
     const raycaster=new THREE.Raycaster(),down=V(0,-1,0);
     let maxRayResidualM=0,misses=0;
@@ -1078,11 +1080,12 @@ export function makeScene(canvas,onSelect=()=>{}){
       if(!hit){misses++;continue}
       maxRayResidualM=Math.max(maxRayResidualM,Math.abs(hit.point.y-terrainY(x,z)));
     }
-    return {unit:terrainSpec.unit,raycastMisses:misses,maxRayResidualM,
+    groundingCache={unit:terrainSpec.unit,raycastMisses:misses,maxRayResidualM,
       foundationCount:foundations.length,
       minimumEmbedM:Math.min(...foundations.map(f=>f.minimumEmbedM)),
       coverViolations:foundations.filter(f=>f.top+1e-9<f.maxTerrain).length,
       foundationAssets:foundations.map(f=>f.asset)};
+    return groundingCache;
   }
   requestAnimationFrame(animate);
   return {
