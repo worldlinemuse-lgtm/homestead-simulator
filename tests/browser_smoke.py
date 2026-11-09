@@ -27,10 +27,24 @@ try:
             assert page.evaluate("window.HomesteadApp.world().animals") > 0
             assert page.evaluate("window.HomesteadApp.world().paths") >= 8
             assert page.evaluate("window.HomesteadApp.world().meshes") >= 30
+            # Renderer metadata must agree with the model snapshot.
+            assert page.evaluate("""() => {
+                const s = window.HomesteadApp.snapshot(), v = window.HomesteadApp.world();
+                const expected = s.config.waterStorageCapacityL > 0
+                  ? Math.min(1, Math.max(0, s.waterStoredL / s.config.waterStorageCapacityL)) : 0;
+                return Math.abs(v.tankFillFraction - expected) < 1e-8
+                  && v.visualFarmHour === s.clock.hourOfDay
+                  && v.activeFlowPaths >= 0 && v.activeFlowPaths <= v.paths;
+            }""")
             assert page.evaluate("getComputedStyle(document.querySelector('#inspector')).display") == "none"
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==0
             page.locator("#stepBtn").click()
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==1
+            assert page.evaluate("""() => {
+                const s = window.HomesteadApp.snapshot(), v = window.HomesteadApp.world();
+                return Math.abs(v.tankFillFraction - s.waterStoredL / Math.max(1, s.config.waterStorageCapacityL)) < 1e-8
+                  && v.visualFarmHour === s.clock.hourOfDay;
+            }""")
             page.locator("[data-view=water]").click()
             page.locator("#dayBtn").click()
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==25
