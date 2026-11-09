@@ -81,3 +81,36 @@ test("visual rabbits and chicks land on pause without modifying biology",async()
  assert.equal(steppingChick.moving,true);
  assert.ok(steppingChick.heightM>0);
 });
+
+test("chicken feet use alternating distance-based stance and positive terrain swing",async()=>{
+ const {chickenFootPhase,chickenSwingLift,CHICKEN_STANCE_FRACTION}=await import("../src/visual-motion.mjs");
+ const stride=.26;
+ assert.equal(CHICKEN_STANCE_FRACTION,.62);
+ // Each leg is half a stride out of phase, so at least one foot is planted.
+ for(let n=0;n<=100;n++){
+   const d=n*.005;
+   const left=chickenFootPhase(d,0,stride,.017);
+   const right=chickenFootPhase(d,1,stride,.017);
+   assert.ok(left.stance||right.stance,"no stance foot at "+d);
+   for(const p of [left,right]){
+     assert.ok(p.phase>=0&&p.phase<1);
+     assert.ok(chickenSwingLift(p.phase)>=0);
+     if(p.stance)assert.equal(chickenSwingLift(p.phase),0);
+   }
+ }
+ const airborne=chickenSwingLift(.81,.07);
+ assert.ok(airborne>.069&&airborne<=.07,"swing should lift toe ~7 cm");
+ assert.equal(chickenSwingLift(.62,.07),0);
+ assert.ok(chickenSwingLift(1,.07)<1e-16);
+ const a=chickenFootPhase(.38,0,stride,.007);
+ // Frame-rate invariance: phase depends on path metres, not display frames.
+ for(const fps of [10,15,30,60,120]){
+   let metres=0;
+   for(let k=0;k<fps;k++)metres+=.38/fps;
+   const b=chickenFootPhase(metres,0,stride,.007);
+   assert.ok(Math.abs(a.phase-b.phase)<1e-12);
+ }
+ for(const args of [[-1,0,.26,0],[0,0,0,0],[0,1,NaN,0],[0,0,.26,-1]])
+   assert.throws(()=>chickenFootPhase(...args),RangeError);
+ assert.throws(()=>chickenSwingLift(.5,-.02),RangeError);
+});

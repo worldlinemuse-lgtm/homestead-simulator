@@ -124,6 +124,18 @@ try:
             assert afterMotion["chickenTravelM"] > beforeMotion["chickenTravelM"] + .05, (
                 "Chickens must traverse the yard, not just hover in place",beforeMotion,afterMotion)
             assert afterMotion["maxRootGroundErrorM"] < 1e-9, afterMotion
+            feet=page.evaluate("window.HomesteadApp.world().chickenFootContact")
+            assert feet["unit"]=="m" and feet["chickens"]>0, feet
+            # Two legs half a gait apart, 62% planted: a moving chicken
+            # always has at least one planted and zero underground feet.
+            assert feet["planted"] >= feet["chickens"], feet
+            assert feet["maxPlantedSlipM"] < 1e-6, feet
+            assert feet["maxPenetrationM"] < 1e-6, feet
+            page.locator("[data-view=farm]").click()
+            page.wait_for_timeout(650)
+            (ROOT/"tests"/"artifacts").mkdir(exist_ok=True)
+            page.screenshot(path=str((ROOT/"tests"/"artifacts"/
+                ("mobile-farm-stride.png" if mobile else "desktop-farm-stride.png"))))
             page.locator("#playBtn").click()
             assert page.evaluate("window.HomesteadApp.world().playing") is False
             # Pause must land all animals immediately, even if the frozen gait
@@ -135,6 +147,11 @@ try:
             }""")
             page.wait_for_timeout(130)
             assert page.evaluate("window.HomesteadApp.world().pausedGroundErrorM") < 1e-9
+            resting=page.evaluate("window.HomesteadApp.world().chickenFootContact")
+            assert resting["planted"] == 2*resting["chickens"], resting
+            assert resting["swinging"] == 0, resting
+            assert resting["maxPlantedSlipM"] < 1e-6, resting
+            assert resting["maxPenetrationM"] < 1e-6, resting
             assert page.locator("#energyValue").inner_text().endswith("kWh")
             assert page.locator("#waterValue").inner_text().endswith("L")
             assert page.evaluate("document.getElementById('errors').style.display")!="block"

@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import {frameDeltaSeconds,smoothAlpha,gaitPose} from "./visual-motion.mjs";
+import {frameDeltaSeconds,smoothAlpha,gaitPose,chickenFootPhase,chickenSwingLift,
+  CHICKEN_STANCE_FRACTION} from "./visual-motion.mjs";
 
 /**
  * Homestead 3D landscape v2: a single physical site, NOT isolated simulation stages.
@@ -931,10 +932,17 @@ export function makeScene(canvas,onSelect=()=>{}){
         const wing=ell(.21,.18,.43,darker,side*.34,.75,-.08);
         torso.add(wing);wings.push(wing);
         head.add(mesh(eyeGeo,m.eyes,side*.252,.24,.29,false));
-        const leg=new THREE.Group();leg.position.set(side*.19,.35,.10);
-        leg.add(cyl(.045,.053,.30,m.beak,0,-.16,0,7));
-        for(const toe of [-1,0,1])leg.add(box(.055,.045,.22,m.beak,toe*.075,-.30,.12));
-        o.add(leg);limbs.push(leg);
+        // Separate foot and shin rigs permit true world-planted stance.
+        const leg=new THREE.Group(),foot=new THREE.Group();
+        const shin=cyl(.035,.044,1,m.beak,0,0,0,9);
+        for(const toe of [-1,0,1])
+          foot.add(box(.054,.044,.19,m.beak,toe*.081,.022,.085));
+        foot.add(box(.06,.043,.11,m.beak,0,.021,-.068));
+        foot.add(ell(.082,.056,.094,m.beak,0,.051,0));
+        leg.add(shin,foot);o.add(leg);
+        leg.userData={side,shin,foot,state:"unset",cycle:-1,
+          anchor:null,lastWorld:null,swingStart:null,plantedYaw:0,grounded:true};
+        limbs.push(leg);
       }
     }else{
       torso.add(ell(.56,.42,.80,base,0,.52,0));
@@ -961,10 +969,62 @@ export function makeScene(canvas,onSelect=()=>{}){
       path:path.curve,pathLength:path.length,pathProgress,travelM:0,
       // Distinct rates & route phases prevent identical synchronized motion.
       walkSpeed:chicken?.44+seeded(id*9.31)*.14:.36+seeded(id*4.8)*.12,
-      walking:false};
+      footPhaseOffset:seeded(id*47.21),walking:false};
     o.position.copy(at(p.x,p.z));
     return o;
   }
+  // In stance foot contact remains fixed in world X/Z and yaw. During
+  // swing it advances toward a future step and samples the shared heightfield.
+  // These visual poses do not create impulses or change farm biological state.
+  const footUp=V(0,1,0);
+  function stepChickenFeet(rig,s,active){
+    rig.updateMatrixWorld(true);
+    const scale=Math.max(.12,rig.scale.x/.44);
+    const strideM=.25*scale,stepHeightM=.07*scale;
+    for(let i=0;i<s.limbs.length;i++){
+      const u=s.limbs[i].userData;
+      const step=chickenFootPhase(s.travelM,i,strideM,s.footPhaseOffset*strideM);
+      const under=rig.localToWorld(V(u.side*.19,0,.13));
+      const next=rig.localToWorld(V(u.side*.19,0,.39));
+      let x,z,lift=0;
+      if(!active){
+        x=under.x;z=under.z;u.anchor={x,z};
+        u.plantedYaw=rig.rotation.y;
+        u.state="stance";u.cycle=step.cycle;u.grounded=true;
+      }else if(step.stance){
+        if(u.state!=="stance"||u.cycle!==step.cycle||!u.anchor){
+          const p=u.lastWorld||under;
+          u.anchor={x:p.x,z:p.z};
+          u.plantedYaw=rig.rotation.y;
+        }
+        x=u.anchor.x;z=u.anchor.z;
+        u.state="stance";u.cycle=step.cycle;u.grounded=true;
+      }else{
+        if(u.state!=="swing"||u.cycle!==step.cycle||!u.swingStart)
+          u.swingStart=u.lastWorld?{...u.lastWorld}:{x:under.x,z:under.z};
+        const progress=(step.phase-CHICKEN_STANCE_FRACTION)/
+          (1-CHICKEN_STANCE_FRACTION);
+        const ease=progress*progress*(3-2*progress);
+        x=u.swingStart.x+(next.x-u.swingStart.x)*ease;
+        z=u.swingStart.z+(next.z-u.swingStart.z)*ease;
+        lift=chickenSwingLift(step.phase,stepHeightM);
+        u.state="swing";u.cycle=step.cycle;u.grounded=false;
+      }
+      const y=terrainY(x,z)+lift;
+      const local=rig.worldToLocal(V(x,y,z));
+      u.foot.position.copy(local);
+      u.foot.rotation.y=u.grounded?u.plantedYaw-rig.rotation.y:0;
+      const ankle=local.clone().add(V(0,.047,0));
+      const hip=V(u.side*.19,.35,.10);
+      const length=Math.max(.015,hip.distanceTo(ankle));
+      u.shin.position.copy(hip).add(ankle).multiplyScalar(.5);
+      u.shin.scale.set(1,length,1);
+      u.shin.quaternion.setFromUnitVectors(footUp,
+        hip.clone().sub(ankle).normalize());
+      u.lastWorld={x,z};
+    }
+  }
+
   // Farm Simulator source/src/world/sync.js reconciles by immutable model ID.
   // Preserve each surviving Three.js rig, pose, and future physics body.
   const animalById=new Map(),ownedAnimalGeometry=new Set();
@@ -1208,15 +1268,26 @@ export function makeScene(canvas,onSelect=()=>{}){
       // Chicken roots stay exactly on the triangulated ground; the torso bobs
       // over independently animated alternating feet (no helicopter movement).
       a.position.y=terrainY(a.position.x,a.position.z)+(chicken?0:gait.heightM);
-      s.torso.position.y=chicken&&active?Math.abs(stepWave)*.023:0;
+      // Weight shift follows the same distance-based stance cycle as the feet,
+      // not the old high-frequency sinusoidal gait (which made hens vibrate).
+      if(chicken){
+        const stride=.25*Math.max(.12,a.scale.x/.44);
+        const footCycle=chickenFootPhase(s.travelM,0,stride,
+          s.footPhaseOffset*stride).phase;
+        const loadShift=Math.sin(footCycle*Math.PI*2);
+        s.torso.position.y=active?Math.abs(loadShift)*.014:0;
+        s.torso.rotation.z=active?loadShift*.025:0;
+      }else{
+        s.torso.position.y=0;s.torso.rotation.z=0;
+      }
       s.walking=active;
       s.head.rotation.x=active?(chicken?.08+Math.max(0,Math.sin(phase*.4+i))*.19:
         .035+Math.sin(phase*.45)*.065):-.04;
       s.head.rotation.y=active?Math.sin(phase*.18+i)*.07:0;
-      for(let k=0;k<s.limbs.length;k++){
+      if(chicken)stepChickenFeet(a,s,active);
+      else for(let k=0;k<s.limbs.length;k++){
         const legPhase=k%2?-stepWave:stepWave;
-        s.limbs[k].rotation.x=active?(chicken?legPhase*.43:Math.max(0,legPhase)*-.18):0;
-        if(chicken)s.limbs[k].position.y=.35+(active?Math.max(0,legPhase)*.09:0);
+        s.limbs[k].rotation.x=active?Math.max(0,legPhase)*-.18:0;
       }
       for(let k=0;k<s.wings.length;k++)
         s.wings[k].rotation.z=active?Math.sin(phase*.42+k)*.02*(k?1:-1):0;
@@ -1264,6 +1335,27 @@ export function makeScene(canvas,onSelect=()=>{}){
       solidWallHits:count(solidX,solidY)};
   }
   let groundingCache=null;
+  function chickenFootReport(){
+    let chickens=0,planted=0,swinging=0,maxSlipM=0,maxPenetrationM=0;
+    for(const rig of agents.children){
+      if(rig.userData.kind!=="chicken")continue;
+      chickens++;rig.updateMatrixWorld(true);
+      for(const leg of rig.userData.limbs){
+        const u=leg.userData;
+        if(!u.lastWorld)continue;
+        const p=u.foot.getWorldPosition(V(0,0,0));
+        const floor=terrainY(p.x,p.z);
+        maxPenetrationM=Math.max(maxPenetrationM,Math.max(0,floor-p.y));
+        if(u.grounded){
+          planted++;
+          maxSlipM=Math.max(maxSlipM,
+            Math.hypot(p.x-u.anchor.x,p.z-u.anchor.z),Math.abs(p.y-floor));
+        }else swinging++;
+      }
+    }
+    return {chickens,planted,swinging,maxPlantedSlipM:maxSlipM,
+      maxPenetrationM,unit:"m"};
+  }
   function animalLifecycleReport(){
     return {active:animalById.size,added:animalAdded,removed:animalRemoved,
       ownedGeometries:ownedAnimalGeometry.size,
@@ -1292,8 +1384,14 @@ export function makeScene(canvas,onSelect=()=>{}){
   return {
     update,go,setPlayback(on){
       playing=Boolean(on);
-      if(!playing)for(const rig of agents.children)
+      if(!playing)for(const rig of agents.children){
         rig.position.y=terrainY(rig.position.x,rig.position.z);
+        rig.userData.walking=false;
+        if(rig.userData.kind==="chicken"){
+          rig.userData.torso.position.y=0;
+          stepChickenFeet(rig,rig.userData,false);
+        }
+      }
     },resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
@@ -1313,6 +1411,7 @@ export function makeScene(canvas,onSelect=()=>{}){
         westFenceMaxX:19,
         hasRampClearance:(31.65-28.35)>ramp.geometry.parameters.width,
         hutchFenceClearanceM:hutches.position.x-7.85/2-19},
+      chickenFootContact:chickenFootReport(),
       animalMotion:{walkingChickens:agents.children.filter(a=>a.userData.kind==="chicken"&&a.userData.walking).length,
         chickenTravelM:agents.children.filter(a=>a.userData.kind==="chicken").reduce((n,a)=>n+a.userData.travelM,0),
         maxRootGroundErrorM:agents.children.filter(a=>a.userData.kind==="chicken").reduce(

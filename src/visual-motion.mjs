@@ -26,3 +26,30 @@ export function gaitPose(playing,awake,youngKit,chicken,phase,index=0){
     heightM:moving?(chicken?Math.abs(wave)*.018:Math.max(0,wave)*.19):0
   };
 }
+
+/**
+ * Distance-driven chicken stride, adapted from the original Farm Simulator's
+ * world/draw.js alternating walking legs and its world/physics.js movement.
+ * Purely visual: no simulated force, biological activity or resource demand.
+ * Stance spans 62% of each leg's stride; leg 1 is half a cycle behind leg 0.
+ * A planted foot is held in world coordinates by the scene until toe-off.
+ */
+export const CHICKEN_STANCE_FRACTION=.62;
+export function chickenFootPhase(distanceM,legIndex,strideLengthM=.26,offsetM=0){
+  if(!Number.isFinite(distanceM)||distanceM<0||
+     !Number.isFinite(strideLengthM)||strideLengthM<=0||
+     !Number.isFinite(offsetM)||offsetM<0)
+    throw new RangeError("Chicken visual stride requires nonnegative metres");
+  const cycles=(distanceM+offsetM)/strideLengthM+(legIndex===0?0:.5);
+  const cycle=Math.floor(cycles);
+  const phase=cycles-cycle;
+  return {cycle,phase,stance:phase<CHICKEN_STANCE_FRACTION};
+}
+export function chickenSwingLift(phase,heightM=.06){
+  if(!Number.isFinite(phase)||phase<0||phase>1||
+     !Number.isFinite(heightM)||heightM<0)
+    throw new RangeError("Invalid chicken foot swing");
+  if(phase<=CHICKEN_STANCE_FRACTION)return 0;
+  const u=(phase-CHICKEN_STANCE_FRACTION)/(1-CHICKEN_STANCE_FRACTION);
+  return heightM*Math.sin(Math.PI*u);
+}
