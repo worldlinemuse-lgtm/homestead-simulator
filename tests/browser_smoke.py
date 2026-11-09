@@ -164,7 +164,24 @@ try:
             # Close-up capture of new hutch mesh, coop roof, nesting details and ramp.
             page.locator("[data-view=farm]").click()
             page.wait_for_timeout(950)
+            camera=page.evaluate("window.HomesteadApp.world().camera")
+            assert page.evaluate("window.HomesteadApp.world().view")=="farm"
+            assert 3.0<camera["requestedDistanceM"]<12, camera
+            assert camera["requestedHeightAboveGroundM"]>=.74, camera
+            assert camera["heightAboveGroundM"]>=.74, camera
             page.screenshot(path=str(out/("mobile-farm.png" if mobile else "desktop-farm.png")))
+            # User can inspect animals at a plausible close distance; the old
+            # 10 m zoom minimum made the planted-foot animation impossible to see.
+            rect=page.locator("#world").bounding_box()
+            assert rect and rect["width"]>200
+            page.mouse.move(rect["x"]+rect["width"]/2,rect["y"]+rect["height"]/2)
+            page.mouse.wheel(0,-1100)
+            page.wait_for_timeout(650)
+            zoom=page.evaluate("window.HomesteadApp.world().camera")
+            assert 2.7<=zoom["requestedDistanceM"]<camera["requestedDistanceM"]-.7, (camera,zoom)
+            assert zoom["requestedHeightAboveGroundM"]>=.74, zoom
+            assert zoom["heightAboveGroundM"]>=.74, zoom
+            page.screenshot(path=str(out/("mobile-farm-close.png" if mobile else "desktop-farm-close.png")))
             if not mobile:
                 # Reproduce the independent audit's 70-day GPU leak scenario.
                 # Browser actions are genuine model steps, not fake snapshots.
