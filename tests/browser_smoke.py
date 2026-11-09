@@ -121,6 +121,10 @@ try:
                 assert after70["active"] <= 50
                 assert after70["ownedGeometries"] <= 60*max(1,after70["active"])
                 assert after70["added"]-after70["removed"] == after70["active"]
+                # The original audit observed +6,814 leaked GPU geometries.
+                # Even with new births, retained GPU allocations must stay bounded.
+                assert after70["gpuGeometries"] <= before70["gpuGeometries"]+1000, (
+                    before70["gpuGeometries"],after70["gpuGeometries"])
                 assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==25+70*24
                 assert not errors,errors
             page.close()
