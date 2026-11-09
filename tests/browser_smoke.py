@@ -62,17 +62,7 @@ try:
                 assert facade["blockedOpenings"] == [], facade
                 assert facade["solidWallHits"] > 0, facade
             # The raised henhouse hatch cannot cover the pop-hole opening.
-            assert architecture["coopHatchClearanceM"] >= .02, architecture
-            # Real wall apertures: cast rays against physical segmented front
-            # wall meshes, not style metadata or a transparent decal.
-            architecture=page.evaluate("window.HomesteadApp.world().structureAudit")
-            assert architecture["houseFacade"]["openingCount"] == 6, architecture
-            assert architecture["coopFacade"]["openingCount"] == 4, architecture
-            for building in ("houseFacade","coopFacade"):
-                facade=architecture[building]
-                assert facade["wallSegments"] >= 12, facade
-                assert facade["blockedOpenings"] == [], facade
-                assert facade["solidWallHits"] > 0, facade
+            assert audit["coopHatchClearanceM"] >= .02, audit
             # Geometry-derived measurements, not decorative property flags.
             assert page.evaluate("""() => {
                 const a=window.HomesteadApp.world().structureAudit;
