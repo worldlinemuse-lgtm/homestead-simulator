@@ -464,17 +464,87 @@ export function makeScene(canvas,onSelect=()=>{}){
   const filterLine=route([[-8,-25,1.12],[-5,-24,.95],[-2,-24,1.45],[-1,-23,2.1]],m.pipe,.14);
   const fillLine=route([[-1,-23,2.1],[3,-22,.65],[8,-19,.72],[12,-17,5.65]],m.pipe,.13);
   const supplyLine=route([[12,-17,.35],[19,-15,.26],[23,-7,.27],[25,3,.26],[29,5,.8]],m.pipe,.13);
-  // Farm coops, animal runs, feeders and hutches share the landscape and treated water.
-  const barn=group("farm","Henhouse",30,-10);
-  barn.add(box(9,5.5,8.4,m.cedar,0,2.8,0));
-  barn.add(box(3.0,3.8,.15,m.darkWood,0,1.9,4.28));
-  for(const side of [-1,1]){
-    const roof=box(5.3,.38,9.2,m.roofAlt,side*2.4,6.3,0);roof.rotation.z=side*.35;barn.add(roof);
+  // Farm-sim world/draw.js: represent actual enclosure features (battens,
+  // ventilators, pop-door, ramp, nest access and fixtures) without inventing
+  // extra biological model entities. All fixture levels are intentionally
+  // UNSPECIFIED because they are not supplied per fixture by this snapshot.
+  const screenWire=new THREE.LineBasicMaterial({color:0xb7c5c3,transparent:true,opacity:.64,depthWrite:false});
+  const bottleGlass=mat(0xb6e2eb,{metalness:.05,roughness:.12,transparent:true,opacity:.42,depthWrite:false});
+  let housingScreenCount=0,illustrativeCageDoors=0;
+  function enclosureScreen(target,x0,y0,z,w,h,dx=.27,dy=.26){
+    const v=[];
+    const nx=Math.ceil(w/dx),ny=Math.ceil(h/dy);
+    for(let n=0;n<=nx;n++){
+      const x=x0+w*n/nx;v.push(x,y0,z,x,y0+h,z);
+    }
+    for(let n=0;n<=ny;n++){
+      const y=y0+h*n/ny;v.push(x0,y,z,x0+w,y,z);
+    }
+    const geometry=new THREE.BufferGeometry();
+    geometry.setAttribute("position",new THREE.Float32BufferAttribute(v,3));
+    const screen=new THREE.LineSegments(geometry,screenWire);
+    screen.castShadow=false;screen.receiveShadow=false;
+    target.add(screen);housingScreenCount++;
+    return screen;
   }
-  barn.add(box(2.0,1.7,.12,m.trim,-2.6,3.9,4.3));
-  barn.add(box(1.7,1.45,.13,m.glass,-2.6,3.9,4.4));
-  barn.add(box(2,1.2,.12,m.trim,2.7,3.9,4.3));
-  barn.add(box(1.7,1.0,.13,m.glass,2.7,3.9,4.4));
+  const barn=group("farm","Henhouse",30,-10);
+  // Continuous siding is textured wood; trim gives the coop construction-scale detail.
+  barn.add(box(9.35,.32,8.8,m.stone,0,.16,0));
+  barn.add(box(9,5.5,8.4,m.cedar,0,2.8,0));
+  for(const x of [-4.4,-3.55,-2.7,-1.85,1.85,2.7,3.55,4.4]){
+    barn.add(box(.07,5.05,.095,m.trim,x,2.87,4.27));
+  }
+  for(const z of [-3.99,4.28]){
+    barn.add(box(9.25,.19,.14,m.darkWood,0,.49,z));
+    barn.add(box(9.25,.14,.14,m.trim,0,5.43,z));
+  }
+  const coopDoor=box(2.48,3.5,.15,m.darkWood,0,1.89,4.30);barn.add(coopDoor);
+  for(const x of [-1.28,1.28])barn.add(box(.14,3.55,.19,m.trim,x,1.91,4.39));
+  barn.add(box(2.70,.17,.19,m.trim,0,3.72,4.39));
+  barn.add(cyl(.09,.09,.09,m.metal,.91,1.98,4.48,10));
+  // Correct the original inverted (valley) roof: ridge higher than eaves.
+  for(const side of [-1,1]){
+    const roof=box(5.35,.32,9.35,m.roofAlt,side*2.43,6.35,0);
+    roof.rotation.z=-side*.35;barn.add(roof);
+    const fascia=box(.22,.24,9.5,m.trim,side*4.93,5.48,0);
+    fascia.rotation.z=-side*.35;barn.add(fascia);
+  }
+  barn.add(box(.37,.26,9.7,m.roof,0,7.12,0));
+  // Gable ventilation louvers, roof eaves and illuminated-looking windows.
+  for(const y of [5.47,5.66,5.85]){
+    barn.add(box(1.24,.08,.14,m.darkWood,0,y,4.31));
+  }
+  for(const x of [-2.65,2.65]){
+    barn.add(box(1.83,1.53,.12,m.trim,x,3.93,4.33));
+    barn.add(box(1.58,1.27,.11,m.glass,x,3.93,4.41));
+    barn.add(box(.08,1.36,.12,m.trim,x,3.93,4.49));
+    barn.add(box(1.66,.07,.12,m.trim,x,3.93,4.49));
+    barn.add(box(2.03,.14,.30,m.wood,x,3.12,4.46));
+  }
+  // Illustration of the exterior nest-access hatch; boxes do not alter egg count.
+  for(const z of [-2.1,0,2.1]){
+    barn.add(box(1.12,1.23,1.57,m.wood,4.96,2.60,z));
+    const lid=box(1.50,.16,1.92,m.roofAlt,5.01,3.27,z);
+    lid.rotation.z=-.18;barn.add(lid);
+    barn.add(box(.62,.11,.11,m.metal,5.60,2.48,z));
+  }
+  // Cleated entry ramp into the fenced run. Static facade: no automatic-door claim.
+  const ramp=box(2.15,.17,4.25,m.wood,0,.82,6.38);
+  ramp.rotation.x=.235;barn.add(ramp);
+  for(const zz of [4.95,5.58,6.21,6.84,7.47]){
+    const yy=.82-(zz-6.38)*Math.sin(.235)+.12;
+    const rung=box(2.08,.10,.19,m.trim,0,yy,zz);
+    rung.rotation.x=.235;barn.add(rung);
+  }
+  for(const x of [-1.08,1.08]){
+    const sideRail=box(.12,.25,4.36,m.darkWood,x,.99,6.36);
+    sideRail.rotation.x=.235;barn.add(sideRail);
+  }
+  // A small illustrative feed trough; its contents are deliberately not drawn
+  // because this coordinator exposes aggregate feed demand, not fixture inventory.
+  barn.add(box(2.5,.25,.67,m.steel,2.9,.64,6.0));
+  barn.add(box(2.24,.055,.48,m.darkWood,2.9,.79,6.0));
+  for(const x of [1.87,3.93])barn.add(box(.16,.65,.20,m.wood,x,.33,6.0));
   const animalArea=group("farm","Pasture, hutches and livestock",30,5);
   const fenceLines=[[[19,-2],[44,-2]],[[44,-2],[47,20]],[[47,20],[18,20]],[[18,20],[19,-2]]];
   function woodFence(a,b){
@@ -491,11 +561,57 @@ export function makeScene(canvas,onSelect=()=>{}){
   }
   fenceLines.forEach(([a,b])=>woodFence(a,b));
   const hutches=group("farm","Rabbit hutches",21,11);
+  // Reuse Farm's raised wire-floor hutches, outside feeders/water bottles,
+  // nest boxes and cage-door hinge/latch vocabulary. The geometries represent
+  // illustrative fixtures, NOT individually inventoried or calibrated cages.
   for(const z of [-2.5,2.5]){
-    hutches.add(box(7.2,2.15,2.8,m.wood,0,2.2,z));
-    hutches.add(box(7.75,.26,3.3,m.roof,0,3.42,z));
-    hutches.add(box(6.7,1.35,.09,m.steel,0,2.3,z+1.46));
-    for(const x of [-3.2,-1.1,1.1,3.2])hutches.add(cyl(.09,.09,1.2,m.wood,x,.62,z,8));
+    hutches.add(box(7.45,.19,3.05,m.wood,0,1.35,z)); // raised wire floor support
+    hutches.add(box(7.35,.22,3.05,m.steel,0,1.02,z)); // removable dropping tray
+    hutches.add(box(7.24,1.78,.15,m.cedar,0,2.38,z-1.45)); // windward back wall
+    for(const x of [-3.55,3.55]){
+      hutches.add(box(.15,1.73,2.85,m.wood,x,2.38,z));
+    }
+    const roof=box(7.85,.24,3.58,m.roof,0,3.48,z);
+    roof.rotation.x=-.09;hutches.add(roof);
+    hutches.add(box(7.85,.14,.13,m.trim,0,3.33,z+1.77));
+    for(const x of [-3.40,-1.15,1.15,3.40]){
+      hutches.add(box(.14,2.12,.17,m.wood,x,2.36,z+1.44));
+      hutches.add(cyl(.105,.12,2.92,m.wood,x,1.51,z-1.1,9));
+      hutches.add(cyl(.105,.12,2.92,m.wood,x,1.51,z+1.10,9));
+    }
+    for(const xx of [-1.14,1.14]){
+      hutches.add(box(.13,1.66,2.8,m.cedar,xx,2.39,z));
+    }
+    // One continuous screen, then three framed service doors and hinged latches.
+    enclosureScreen(hutches,-3.42,1.52,z+1.48,6.84,1.68,.24,.27);
+    for(const cx of [-2.27,0,2.27]){
+      for(const x of [cx-1.01,cx+1.01]){
+        hutches.add(box(.055,1.56,.078,m.steel,x,2.38,z+1.53));
+      }
+      for(const y of [1.61,3.15]){
+        hutches.add(box(2.08,.063,.075,m.steel,cx,y,z+1.53));
+      }
+      for(const y of [1.94,2.91]){
+        hutches.add(cyl(.071,.071,.105,m.metal,cx-.99,y,z+1.62,9));
+      }
+      hutches.add(box(.22,.075,.16,m.metal,cx+.88,2.31,z+1.62));
+      illustrativeCageDoors++;
+      // Feed hopper is shown empty: aggregate farm feed allocation is not a
+      // per-hopper fill measurement.
+      hutches.add(box(.54,.66,.38,m.steel,cx-.64,2.52,z+1.77));
+      hutches.add(box(.60,.07,.44,m.metal,cx-.64,2.88,z+1.77));
+      hutches.add(box(.48,.11,.20,m.darkWood,cx-.64,2.19,z+1.59));
+      // Wall-mounted translucent bottle + exterior clip + drinking nipple.
+      hutches.add(cyl(.18,.18,.67,bottleGlass,cx+.57,2.64,z+1.72,16));
+      hutches.add(cyl(.21,.21,.09,m.steel,cx+.57,3.01,z+1.72,16));
+      hutches.add(box(.10,.12,.19,m.metal,cx+.57,2.30,z+1.55));
+      const nipple=cyl(.048,.048,.32,m.metal,cx+.57,2.26,z+1.42,8);
+      nipple.rotation.x=Math.PI/2;hutches.add(nipple);
+      // A modest closed nest compartment visible behind the wired door.
+      hutches.add(box(.73,.73,.81,m.wood,cx+.68,1.92,z-.72));
+      hutches.add(box(.34,.35,.025,m.darkWood,cx+.68,1.93,z-.29));
+      hutches.add(box(.87,.09,.96,m.roof,cx+.68,2.34,z-.72));
+    }
   }
   const trough=group("farm","Livestock waterer",29,5);
   trough.add(cyl(.95,.95,.88,m.steel,0,.48,0,16));
@@ -825,6 +941,6 @@ export function makeScene(canvas,onSelect=()=>{}){
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
-      tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null}}
+      tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors}}
   };
 }
