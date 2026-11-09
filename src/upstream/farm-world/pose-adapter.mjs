@@ -12,7 +12,11 @@ export function nativeFarmAgentPose(agent, origin={x:0,y:0,z:0}) {
   }
   const path=Array.isArray(agent.path)?agent.path:[];
   const target=path.length?path[0]:null;
-  // A queued destination is intent, not proof of locomotion. Native physics\n  // velocity is the movement authority; jumping can move without a path.\n  const vx=Number.isFinite(agent.vx)?agent.vx:0;\n  const vy=Number.isFinite(agent.vy)?agent.vy:0;\n  const moving=Math.hypot(vx,vy)>1e-4 || Boolean(agent.jump);
+  // A queued destination is intent, not proof of locomotion. Native physics
+  // velocity is the movement authority; jumping can move without a path.
+  const vx=Number.isFinite(agent.vx)?agent.vx:0;
+  const vy=Number.isFinite(agent.vy)?agent.vy:0;
+  const moving=Math.hypot(vx,vy)>1e-4 || Boolean(agent.jump);
   return Object.freeze({
     id:String(agent.id),
     species:agent.ref?.sp ?? null,
