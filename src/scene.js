@@ -186,13 +186,65 @@ export function makeScene(canvas,onSelect=()=>{}){
     }
     return distance;
   }
-  const terrainY=(x,z)=>{
+  // One metre per scene unit (illustrative geometry, NOT certified hardware dimensions).
+  // Terrain heights are sampled once; render vertices, resting contacts and future
+  // terrain colliders all read this same triangulated heightfield, not a second
+  // smooth function that disagrees with the triangles being drawn.
+  const terrainSpec=Object.freeze({x0:-150,z0:-125,dx:300/156,dz:250/122,nx:156,nz:122,unit:"m"});
+  function terrainSourceY(x,z){
     const edge=Math.max(0,(Math.abs(x)-39)/26,(Math.abs(z)-28)/22);
     const base=.18*Math.sin(x*.12)+.22*Math.cos(z*.11)+.15*Math.sin((x+z)*.16)+edge*edge*2.4;
     const channel=THREE.MathUtils.clamp(1-creekDistance(x,z)/8,0,1);
     return base-.80*channel*channel;
-  };
+  }
+  const groundHeights=new Float32Array((terrainSpec.nx+1)*(terrainSpec.nz+1));
+  for(let j=0;j<=terrainSpec.nz;j++)for(let i=0;i<=terrainSpec.nx;i++){
+    const x=terrainSpec.x0+i*terrainSpec.dx,z=terrainSpec.z0+j*terrainSpec.dz;
+    groundHeights[j*(terrainSpec.nx+1)+i]=terrainSourceY(x,z);
+  }
+  function terrainY(x,z){
+    const {x0,z0,dx,dz,nx,nz}=terrainSpec;
+    const gx=THREE.MathUtils.clamp((x-x0)/dx,0,nx);
+    const gz=THREE.MathUtils.clamp((z-z0)/dz,0,nz);
+    const i=Math.min(nx-1,Math.floor(gx)),j=Math.min(nz-1,Math.floor(gz));
+    const u=gx-i,v=gz-j,row=nx+1;
+    const a=groundHeights[j*row+i],b=groundHeights[j*row+i+1];
+    const cc=groundHeights[(j+1)*row+i],d=groundHeights[(j+1)*row+i+1];
+    // The mesh uses triangles (a,c,b) and (b,c,d), separated by u+v=1.
+    return u+v<=1?a*(1-u-v)+b*u+cc*v:
+      d*(u+v-1)+b*(1-v)+cc*(1-u);
+  }
   const at=(x,z,offset=0)=>V(x,terrainY(x,z)+offset,z);
+  // Conservative support bounds over all terrain vertices in cells touched by
+  // the footprint. By linear interpolation no triangle can exceed its corners.
+  function footprintBounds(cx,cz,w,d){
+    const {x0,z0,dx,dz,nx,nz}=terrainSpec;
+    const xa=Math.max(0,Math.floor((cx-w/2-x0)/dx));
+    const xb=Math.min(nx,Math.ceil((cx+w/2-x0)/dx));
+    const za=Math.max(0,Math.floor((cz-d/2-z0)/dz));
+    const zb=Math.min(nz,Math.ceil((cz+d/2-z0)/dz));
+    let min=Infinity,max=-Infinity;
+    for(let j=za;j<=zb;j++)for(let i=xa;i<=xb;i++){
+      const h=groundHeights[j*(nx+1)+i];
+      min=Math.min(min,h);max=Math.max(max,h);
+    }
+    return {min,max};
+  }
+  const foundations=[];
+  function foundationFor(g,cx,cz,w,d,material=m.stone,{clearance=.04,embed=.32,round=false}={}){
+    const bounds=footprintBounds(cx,cz,w,d);
+    const top=bounds.max+clearance,bottom=bounds.min-embed,height=top-bottom;
+    g.position.y=top;
+    const pad=round?
+      cyl(w/2,w/2,height,material,0,-height/2,0,32):
+      box(w+.08,height,d+.08,material,0,-height/2,0);
+    pad.name=g.userData.label+" foundation";
+    pad.userData={assetId:g.userData.label,physicsRole:"fixed",collider:"static-support",unit:"m"};
+    g.add(pad);
+    foundations.push({asset:g.userData.label,top,bottom,minTerrain:bounds.min,
+      maxTerrain:bounds.max,footprint:[w,d],minimumEmbedM:bounds.min-bottom});
+    return g;
+  }
   function mesh(geo,material,x=0,y=0,z=0,cast=true){
     const v=new THREE.Mesh(geo,material);v.position.set(x,y,z);v.castShadow=cast;v.receiveShadow=true;return v;
   }
@@ -203,11 +255,12 @@ export function makeScene(canvas,onSelect=()=>{}){
   const selectable=[];
   function select(g){g.traverse(o=>{if(o.isMesh)selectable.push(o)});return g}
   // Continuous, softly undulating and naturally mottled terrain.
+  let terrainMesh=null;
   {
     const nx=156,nz=122,v=[],uv=[],colors=[],indices=[],cc=new THREE.Color();
     for(let j=0;j<=nz;j++)for(let i=0;i<=nx;i++){
       const x=-150+i*300/nx,z=-125+j*250/nz;
-      v.push(x,terrainY(x,z)-.2,z);uv.push(i/nx*26,j/nz*23);
+      v.push(x,groundHeights[j*(nx+1)+i],z);uv.push(i/nx*26,j/nz*23);
       const n=.5+seeded(i*91+j*307)*.5;
       cc.setHSL(.275+(n-.5)*.045,.24+n*.1,.31+n*.085);colors.push(cc.r,cc.g,cc.b);
     }
@@ -218,7 +271,10 @@ export function makeScene(canvas,onSelect=()=>{}){
     g.setAttribute("position",new THREE.Float32BufferAttribute(v,3));
     g.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));
     g.setAttribute("color",new THREE.Float32BufferAttribute(colors,3));g.setIndex(indices);g.computeVertexNormals();
-    const ground=mesh(g,m.grass,0,0,0,false);ground.castShadow=false;scene.add(ground);
+    const ground=mesh(g,m.grass,0,0,0,false);
+    ground.name="Unified homestead terrain (1 unit = 1 m)";
+    ground.userData={physicsRole:"fixed",collider:"heightfield",unit:"m"};
+    ground.castShadow=false;scene.add(ground);terrainMesh=ground;
   }
   // Curving, terrain-following track and stepping paths; not rectangular zoning.
   function ribbon(nodes,width,material,salt=1){
@@ -335,6 +391,7 @@ export function makeScene(canvas,onSelect=()=>{}){
 
   // House and utility outbuilding belong to the same farmyard; no visual boxes as zones.
   const homestead=group("overview","Home and utility loads",6,12);
+  foundationFor(homestead,6,12,13.1,9.7);
   homestead.add(box(13,6.0,9.6,m.cedar,0,3,0));
   for(const px of [-4.15,4.15])homestead.add(box(3.2,3.2,.1,m.trim,px,3.3,4.87));
   for(const px of [-4.15,4.15])homestead.add(box(2.75,2.65,.12,m.glass,px,3.35,4.94));
@@ -345,11 +402,20 @@ export function makeScene(canvas,onSelect=()=>{}){
   }
   homestead.add(box(2.2,4,.19,m.darkWood,0,2.1,4.94));
   for(const side of [-1,1]){
-    const roof=box(7.6,.36,10.4,m.roof,side*3.2,7.1,0);roof.rotation.z=side*.37;homestead.add(roof);
+    const roof=box(7.6,.36,10.4,m.roof,side*3.2,7.1,0);roof.rotation.z=-side*.37;homestead.add(roof);
   }
   homestead.add(box(1.1,3.8,1.1,m.stone,-4,9,0));
   homestead.add(box(14,.3,3.8,m.wood,0,.18,6.5));
   for(const x of [-6,6])for(const z of [5.4,7.65])homestead.add(cyl(.12,.12,1.8,m.wood,x,1.0,z,8));
+  // Exterior porch pier feet continue below the terrain's lowest point:
+  // the house pad only covers the walled footprint, not the projecting porch.
+  for(const x of [-6,0,6])for(const z of [5.4,7.65]){
+    const land=terrainY(6+x,12+z);
+    const top=homestead.position.y+.16,bottom=land-.24;
+    const height=Math.max(.01,top-bottom);
+    const pier=box(.31,height,.31,m.stone,x,.16-height/2,z);
+    pier.name="Porch pier";pier.userData.physicsRole="fixed";homestead.add(pier);
+  }
   const warmWindows=[];
   for(const x of [-4.15,4.15]){
     const w=homestead.children.find(o=>o.isMesh&&Math.abs(o.position.x-x)<.1&&Math.abs(o.position.y-3.35)<.2);
@@ -358,6 +424,7 @@ export function makeScene(canvas,onSelect=()=>{}){
 
   // Utility shed with a roof, door, vents; energy equipment is attached to its wall.
   const power=group("energy","Solar inverter and battery", -18,-7);
+  foundationFor(power,-18,-7,8.2,6.7);
   power.add(box(8,4.1,6.5,m.wood,0,2.05,0));
   const powerRoof=box(9.2,.35,7.6,m.roof,0,4.5,0);powerRoof.rotation.z=.10;power.add(powerRoof);
   power.add(box(2.3,3.2,.12,m.darkWood,0,1.6,3.31));
@@ -395,6 +462,7 @@ export function makeScene(canvas,onSelect=()=>{}){
 
   // Stream intake, pump, vertically arranged filter skids, elevated treated water tank.
   const water=group("water","Water treatment and storage",-7,-23);
+  foundationFor(water,-7.5,-23,9.2,5.9,m.concrete);
   const intake=at(-18,-31,.16),pumpPos=at(-8,-25,.5);
   water.add(box(9,.3,5.8,m.concrete,-.5,.18,0));
   water.add(box(2.8,1.0,2.0,m.steel,-.4,.88,-1.7));
@@ -489,6 +557,7 @@ export function makeScene(canvas,onSelect=()=>{}){
   // Tank positioned uphill from the farm, stainless jacket and actual model water level.
   const tankX=12,tankZ=-17;
   const tank=group("water","Treated-water storage tank",tankX,tankZ);
+  foundationFor(tank,tankX,tankZ,6.2,6.2,m.concrete,{round:true});
   tank.add(cyl(3.1,3.1,.28,m.concrete,0,.18,0));
   tank.add(cyl(2.8,2.8,5.2,m.tank,0,2.95,0,30));
   tank.add(cyl(2.95,2.95,.32,m.steel,0,5.64,0,30));
@@ -535,6 +604,7 @@ export function makeScene(canvas,onSelect=()=>{}){
     return screen;
   }
   const barn=group("farm","Henhouse",30,-10);
+  foundationFor(barn,30,-10,9.25,8.5);
   // Continuous siding is textured wood; trim gives the coop construction-scale detail.
   barn.add(box(9.35,.32,8.8,m.stone,0,.16,0));
   barn.add(box(9,5.5,8.4,m.cedar,0,2.8,0));
@@ -766,9 +836,12 @@ export function makeScene(canvas,onSelect=()=>{}){
       const u=creature.userData;u.stage=a.st;u.age=Number(a.age)||0;
       u.health=Number.isFinite(a.health)?THREE.MathUtils.clamp(a.health,0,100):100;
       // Stage size is a visual class, not a fabricated breed-specific weight curve.
-      const scale=a.st==="kit"?.46:a.st==="chick"?.51:
+      const stageScale=a.st==="kit"?.29:a.st==="chick"?.30:
         a.st==="grower"?.76:a.st==="pullet"||a.st==="cockerel"?.84:1;
-      creature.scale.setScalar(scale);
+      // 1 scene unit = 1 m. Original arbitrary-scale chickens were ~1.56 m
+      // high, which exceeded the farm fence. These are plausible illustrative
+      // silhouettes, not manufacturer-grade or breed-measured morphometrics.
+      creature.scale.setScalar((a.sp==="chicken"?.44:.40)*stageScale);
     }
   }
 
@@ -984,12 +1057,28 @@ export function makeScene(canvas,onSelect=()=>{}){
     if(playing&&m.creek.map)m.creek.map.offset.y=(m.creek.map.offset.y+dt*.012)%1;
     renderer.render(scene,camera);
   }
+  function groundingReport(){
+    // Raycast the actual triangle mesh, not the analytic terrain source.
+    const raycaster=new THREE.Raycaster(),down=V(0,-1,0);
+    let maxRayResidualM=0,misses=0;
+    for(const x of [-56,-28,0,28,56])for(const z of [-40,-20,0,20,40]){
+      raycaster.set(V(x,100,z),down);
+      const hit=raycaster.intersectObject(terrainMesh,false)[0];
+      if(!hit){misses++;continue}
+      maxRayResidualM=Math.max(maxRayResidualM,Math.abs(hit.point.y-terrainY(x,z)));
+    }
+    return {unit:terrainSpec.unit,raycastMisses:misses,maxRayResidualM,
+      foundationCount:foundations.length,
+      minimumEmbedM:Math.min(...foundations.map(f=>f.minimumEmbedM)),
+      coverViolations:foundations.filter(f=>f.top+1e-9<f.maxTerrain).length,
+      foundationAssets:foundations.map(f=>f.asset)};
+  }
   requestAnimationFrame(animate);
   return {
     update,go,setPlayback(on){playing=Boolean(on)},resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
-      tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes}}
+      tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport()}}
   };
 }
