@@ -354,17 +354,91 @@ export function makeScene(canvas,onSelect=()=>{}){
   const motor=cyl(.75,.75,2.3,m.metal,-.4,1.65,-1.7);motor.rotation.z=Math.PI/2;water.add(motor);
   water.add(cyl(.29,.29,.6,m.steel,.7,1.45,-1.7));
   const pumpLight=new THREE.PointLight(0x8bcbd5,0,6);pumpLight.position.set(-.4,1.9,-1.6);water.add(pumpLight);
+  // Water Simulator source/ui.js buildPart('pump'/'ro'): upgrade its simple
+  // cylinder + rotor vocabulary into an illustrative motor/pump and RO assembly.
+  // These are NOT manufacturer-specific dimensions or additional modeled stages.
+  const motorShell=mat(0x718b91,{metalness:.78,roughness:.36});
+  const motorEnd=mat(0x394b55,{metalness:.72,roughness:.44});
+  const roShell=mat(0xe6ebeb,{metalness:.12,roughness:.36});
+  const roCollar=mat(0x2c5365,{metalness:.38,roughness:.40});
+  const brass=mat(0xb99c62,{metalness:.68,roughness:.31});
+  const motorFins=new THREE.Group();
+  motorFins.position.set(-.4,1.65,-1.7);
+  // Fins follow the existing horizontal motor silhouette without changing the pump curve.
+  for(let i=0;i<11;i++){
+    const x=-.95+i*.19;
+    for(let k=0;k<12;k++){
+      const a=k*Math.PI/6;
+      const fin=box(.065,.17,.24,motorShell,x,.74*Math.cos(a),.74*Math.sin(a));
+      fin.rotation.x=a;motorFins.add(fin);
+    }
+  }
+  water.add(motorFins);
+  const pumpFan=new THREE.Group();pumpFan.position.set(-1.60,1.65,-1.7);
+  pumpFan.add(cyl(.18,.18,.10,motorEnd,0,0,0,16));
+  for(let k=0;k<7;k++){
+    const blade=box(.08,.39,.07,motorShell,.25*Math.cos(k*Math.PI*2/7),.25*Math.sin(k*Math.PI*2/7),0);
+    blade.rotation.z=k*Math.PI*2/7;pumpFan.add(blade);
+  }
+  water.add(pumpFan);
+  const motorGuard=cyl(.80,.80,.16,motorEnd,-1.69,1.65,-1.7,24);
+  motorGuard.rotation.z=Math.PI/2;water.add(motorGuard);
+  for(let i=0;i<4;i++){
+    const foot=box(.44,.12,.46,motorEnd,-1.20+i*.46,.38,-1.7);
+    water.add(foot);
+  }
+  // Visible flange and bolts are presentation details, not hydraulic junctions.
+  const pumpFlange=cyl(.53,.53,.14,brass,.90,1.45,-1.7,18);
+  pumpFlange.rotation.z=Math.PI/2;water.add(pumpFlange);
+  for(let i=0;i<8;i++){
+    const a=i*Math.PI/4;
+    const bolt=cyl(.07,.07,.14,m.steel,1.0,1.45+.40*Math.sin(a),-1.7+.40*Math.cos(a),8);
+    bolt.rotation.z=Math.PI/2;water.add(bolt);
+  }
+  // Gauge face is intentionally uncalibrated; a fixed pointer must not imply psi.
+  const gauge= new THREE.Group();gauge.position.set(.65,2.48,-1.7);
+  gauge.add(cyl(.25,.25,.12,m.steel,0,0,0,24));
+  gauge.add(cyl(.20,.20,.13,roShell,0,0,.06,24));
+  gauge.add(box(.025,.17,.015,m.darkWood,0,.02,.142));
+  water.add(gauge);
+
   // The source model is pump -> reverse osmosis. Visible cartridges represent stages,
   // not three additional treatment units in the numerical solver.
+
   const skids=[];
-  for(let i=0;i<3;i++){
-    const cartridge=cyl(.53,.53,3.0,m.tank,2.1+i*1.75,1.78,-1.0);
-    water.add(cartridge);
-    water.add(cyl(.59,.59,.3,m.steel,2.1+i*1.75,3.4,-1.0));
-    skids.push(cartridge);
-  }
+  // Three parallel visual housings stand for one modeled RO unit. They are
+  // not separate solver nodes and do not promise a three-stage treatment train.
   water.add(box(7.4,.32,2.8,m.steel,4.0,.4,-1));
+  for(let i=0;i<3;i++){
+    const x=2.1+i*1.75;
+    const cartridge=cyl(.52,.52,2.85,roShell,x,1.90,-1.0,28);
+    water.add(cartridge);skids.push(cartridge);
+    water.add(cyl(.60,.60,.27,roCollar,x,3.47,-1.0,28));
+    water.add(cyl(.60,.60,.25,roCollar,x,.39,-1.0,28));
+    water.add(cyl(.17,.17,.19,brass,x,3.66,-1.0,12));
+    water.add(cyl(.17,.17,.17,brass,x,.26,-1.0,12));
+    for(const z of [-1.63,-.37]){
+      water.add(box(.13,3.0,.11,m.steel,x,1.95,z));
+    }
+    // Opaque service stripes improve legibility from an oblique camera.
+    for(const y of [1.05,2.9])water.add(cyl(.535,.535,.08,roCollar,x,y,-1.0,28));
+  }
+  // Service manifolds and return line visually connect the housings, rather
+  // than suggesting three unrelated independent filter devices.
+  function localTube(points,radius,material){
+    const curve=new THREE.CatmullRomCurve3(points.map(p=>V(...p)),false,"centripetal");
+    const pipe=mesh(new THREE.TubeGeometry(curve,32,radius,10),material,0,0,0,false);
+    pipe.castShadow=false;water.add(pipe);
+  }
+  localTube([[2.1,3.78,-1],[3.85,3.78,-1],[5.6,3.78,-1]],.095,m.pipe);
+  localTube([[2.1,.17,-1],[3.85,.17,-1],[5.6,.17,-1]],.085,m.pipe);
+  localTube([[.9,1.5,-1.7],[1.1,1.5,-1.7],[1.1,3.78,-1],[2.1,3.78,-1]],.085,m.pipe);
+  localTube([[5.6,.17,-1],[6.6,.17,-1],[6.6,.6,.1]],.08,m.pipe);
+  for(const x of [2.1,3.85,5.6]){
+    water.add(cyl(.17,.17,.16,brass,x,3.8,-1,12));
+  }
   water.add(box(2.0,.8,.28,m.darkWood,4.0,1.95,1.15));
+
   // Tank positioned uphill from the farm, stainless jacket and actual model water level.
   const tankX=12,tankZ=-17;
   const tank=group("water","Treated-water storage tank",tankX,tankZ);
@@ -680,6 +754,12 @@ export function makeScene(canvas,onSelect=()=>{}){
     // Farm Simulator world/agents.js and world/physics.js inspired species-specific
     // movement: chickens step and peck, rabbits hop; at night they settle.
     // No visual dice are shared with the Farm biological RNG.
+    // The original water simulator animates its pump rotor only when modeled
+    // throughput is positive; here we require delivered pump electricity AND
+    // modeled water throughput to avoid a false pumping claim.
+    const pumpActive=playing&&(data?.last?.energy?.servedPumpWh??0)>0&&
+      (data?.last?.water?.treatedL??0)>0;
+    if(pumpActive)pumpFan.rotation.z+=dt*10;
     const modelHour=data?.clock?.hourOfDay??9;
     const awake=modelHour>=6&&modelHour<20;
     for(let i=0;i<agents.children.length;i++){
