@@ -10,11 +10,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Syntax check
+      - name: Syntax check all local simulation JavaScript
+        shell: bash
         run: |
-          node --check vendor/solar-next-core.js
-          node --check vendor/water-engine.js
-          node --check vendor/farm-core.js
-          node --check src/coordinator.js
-      - name: Deterministic cross-model contract tests
-        run: node --test tests/engine.test.cjs
+          set -euo pipefail
+          shopt -s nullglob
+          files=(src/*.js vendor/*.js)
+          if (( ${#files[@]} == 0 )); then
+            echo 'No JavaScript sources found' >&2
+            exit 1
+          fi
+          for file in "${files[@]}"; do
+            node --check "$file"
+          done
+      - name: Discover and run all model and contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          tests=(tests/*.test.cjs)
+          if (( ${#tests[@]} == 0 )); then
+            echo 'No model test files found' >&2
+            exit 1
+          fi
+          printf 'Running %s test file(s):\n' "${#tests[@]}"
+          printf '%s\n' "${tests[@]}"
+          node --test "${tests[@]}"
