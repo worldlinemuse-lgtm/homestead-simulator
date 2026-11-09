@@ -115,6 +115,7 @@ try:
                 # Reproduce the independent audit's 70-day GPU leak scenario.
                 # Browser actions are genuine model steps, not fake snapshots.
                 before70=page.evaluate("window.HomesteadApp.world().animalLifecycle")
+                starting_hour=page.evaluate("window.HomesteadApp.snapshot().clock.hours")
                 for _ in range(70):
                     page.locator("#dayBtn").click()
                 after70=page.evaluate("window.HomesteadApp.world().animalLifecycle")
@@ -125,7 +126,10 @@ try:
                 # Even with new births, retained GPU allocations must stay bounded.
                 assert after70["gpuGeometries"] <= before70["gpuGeometries"]+1000, (
                     before70["gpuGeometries"],after70["gpuGeometries"])
-                assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==25+70*24
+                actual_hour=page.evaluate("window.HomesteadApp.snapshot().clock.hours")
+                assert actual_hour==starting_hour+70*24, (
+                    "70 day button presses should advance 1680 hours",
+                    starting_hour, actual_hour)
                 assert not errors,errors
             page.close()
         browser.close()
