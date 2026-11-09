@@ -917,10 +917,31 @@ export function makeScene(canvas,onSelect=()=>{}){
     o.add(torso);torso.add(head);
     if(chicken){
       torso.add(ell(.46,.43,.65,base,0,.65,0));
+      // Layered scapulars, flight-feather tips and a swept tail replace the
+      // smooth capsule silhouette. The palette and visual-only distinction
+      // follow Farm Simulator world/looks.js; no breed identity is inferred
+      // from the Farm snapshot's absent breed field.
+      const featherCount=8;
+      for(const side of [-1,1]){
+        for(let row=0;row<3;row++){
+          const plume=ell(.095,.105,.285,row===2?darker:base,
+            side*(.395-row*.025),.78-row*.105,-.13-row*.125);
+          plume.rotation.y=side*(.22+row*.06);
+          plume.rotation.x=-.22-row*.12;
+          torso.add(plume);
+        }
+        // Downward-pointing wing tips extend beyond the oval wing body.
+        const flight=ell(.085,.09,.33,darker,side*.42,.63,-.32);
+        flight.rotation.x=-.35;flight.rotation.y=side*.22;
+        torso.add(flight);
+      }
       const tail=new THREE.Group();tail.position.set(0,.75,-.54);
-      for(const side of [-1,0,1]){
-        const feather=ell(.105,.26,.20,darker,side*.13,.12,-.10);
-        feather.rotation.x=-.35;tail.add(feather);
+      for(const side of [-2,-1,0,1,2]){
+        const feather=ell(.072,.29,.13,side===0?base:darker,
+          side*.095,.15+(.10-Math.abs(side)*.045),-.13);
+        feather.rotation.x=-.54;
+        feather.rotation.z=-side*.12;
+        tail.add(feather);
       }
       torso.add(tail);
       head.position.set(0,.83,.37);
@@ -964,7 +985,8 @@ export function makeScene(canvas,onSelect=()=>{}){
     const path=yardPath(species,id);
     const pathProgress=seeded(id*15.7+17);
     const p=path.curve.getPointAt(pathProgress);
-    o.userData={kind:species,id,phase:seeded(id*13+50)*Math.PI*2,
+    o.userData={kind:species,id,plumageFeathers:chicken?13:0,
+      phase:seeded(id*13+50)*Math.PI*2,
       head,torso,limbs,wings,ears,health:100,stage:a.st,age:Number(a.age)||0,
       path:path.curve,pathLength:path.length,pathProgress,travelM:0,
       // Distinct rates & route phases prevent identical synchronized motion.
@@ -1429,6 +1451,8 @@ export function makeScene(canvas,onSelect=()=>{}){
     },resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
+      plumage:{chickens:agents.children.filter(a=>a.userData.kind==="chicken").length,
+        decorativeFeathers:agents.children.reduce((n,a)=>n+(a.userData.plumageFeathers||0),0)},
       camera:{requestedDistanceM:toEye.distanceTo(toLook),actualDistanceM:eye.distanceTo(focus),
         heightAboveGroundM:eye.y-terrainY(eye.x,eye.z),
         requestedHeightAboveGroundM:toEye.y-terrainY(toEye.x,toEye.z),
