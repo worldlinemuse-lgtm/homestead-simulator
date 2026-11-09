@@ -52,6 +52,17 @@ try:
             # door frames rather than opaque solid fronts. Geometry is illustrative.
             assert page.evaluate("window.HomesteadApp.world().housingScreenCount") >= 2
             assert page.evaluate("window.HomesteadApp.world().illustrativeCageDoors") == 6
+            # Raycast the segmented facade geometry rather than relying on flags.
+            audit=page.evaluate("window.HomesteadApp.world().structureAudit")
+            assert audit["houseFacade"]["openingCount"] == 6, audit
+            assert audit["coopFacade"]["openingCount"] == 4, audit
+            for name in ("houseFacade","coopFacade"):
+                facade=audit[name]
+                assert facade["wallSegments"] >= 12, facade
+                assert facade["blockedOpenings"] == [], facade
+                assert facade["solidWallHits"] > 0, facade
+            # The raised henhouse hatch cannot cover the pop-hole opening.
+            assert audit["coopHatchClearanceM"] >= .02, audit
             # Geometry-derived measurements, not decorative property flags.
             assert page.evaluate("""() => {
                 const a=window.HomesteadApp.world().structureAudit;
