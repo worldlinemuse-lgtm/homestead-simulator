@@ -1264,14 +1264,36 @@ export function makeScene(canvas,onSelect=()=>{}){
     chargeRail.scale.x=Math.max(.015,br);chargeRail.visible=br>1e-8;
     inverterLed.intensity=last?.energy?.servedBaseWh>0?.85:0;
     pumpLight.intensity=last?.energy?.servedPumpWh>0?1.0:0;
-    const sunLevel=Math.max(0,Math.sin(Math.PI*(snapshot.clock.hourOfDay-6)/12));
-    // Cloud transmittance is an EXPLICIT synthetic-scenario assumption, not observed weather.
+    // Illustrative day/night key-light and directional shadow animation.
+    // Scenario clock, not ephemeris: never feed these visuals into Solar physics.
+    const hour=Number(snapshot.clock.hourOfDay);
+    const dayPhase=THREE.MathUtils.clamp((hour-6)/12,0,1);
+    const sunLevel=Math.max(0,Math.sin(Math.PI*dayPhase));
+    const isDay=hour>=6&&hour<=18;
+    const azimuth=(dayPhase-.5)*Math.PI*.86;
+    const elevation=(.075+.83*sunLevel)*Math.PI/2;
+    const sunDistance=85;
+    direct.position.set(
+      Math.sin(azimuth)*sunDistance*Math.cos(elevation),
+      sunDistance*Math.sin(elevation),
+      20+Math.cos(azimuth)*sunDistance*.30*Math.cos(elevation)
+    );
+    direct.target.position.set(0,0,0);
+    direct.target.updateMatrixWorld();
+    // Synthetic cloud factor is a scenario assumption, not observed weather.
     const syntheticClarity=THREE.MathUtils.clamp(c.cloudTransmittance,0,1);
-    skyLight.intensity=1.05+sunLevel*(.65+.35*syntheticClarity);
-    direct.intensity=.38+2.30*sunLevel*syntheticClarity;
-    scene.background.setHSL(.56,.28,.24+sunLevel*.53);
+    const twilight=isDay?Math.pow(1-sunLevel,5):0;
+    skyLight.intensity=.42+sunLevel*(.9+.45*syntheticClarity);
+    direct.intensity=isDay?(.08+2.62*sunLevel*syntheticClarity):0;
+    direct.color.setHSL(.105-.045*sunLevel,.40+.08*twilight,.70+.19*sunLevel);
+    skyLight.color.setHSL(.58,.24,.64+.24*sunLevel);
+    scene.background.setHSL(.57+.025*twilight,.29+.16*sunLevel,.105+.59*sunLevel);
     scene.fog.color.copy(scene.background);
+    visualSunState={hour,daylight:isDay,syntheticClarity,
+      elevationDeg:elevation*180/Math.PI,azimuthDeg:azimuth*180/Math.PI,
+      directIntensity:direct.intensity};
   }
+  let visualSunState=null;
   let previous=performance.now();
   function animate(now){
     if(disposed)return;
@@ -1469,6 +1491,7 @@ export function makeScene(canvas,onSelect=()=>{}){
         heightAboveGroundM:eye.y-terrainY(eye.x,eye.z),
         requestedHeightAboveGroundM:toEye.y-terrainY(toEye.x,toEye.z),
         followAnimalId:trackedAnimalId},
+      visualSun:visualSunState?{...visualSunState}:null,
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
       tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport(),
       structureAudit:{houseFacade:facadeProbe(homestead,houseFront,6,3),
