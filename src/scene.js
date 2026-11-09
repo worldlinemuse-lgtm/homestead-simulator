@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import {frameDeltaSeconds,smoothAlpha,gaitPose} from "./visual-motion.mjs";
 
 /**
  * Homestead 3D landscape v2: a single physical site, NOT isolated simulation stages.
@@ -1029,10 +1030,12 @@ export function makeScene(canvas,onSelect=()=>{}){
     if(disposed)return;
     requestAnimationFrame(animate);
     const gap=now-previous;
-    const dt=THREE.MathUtils.clamp(gap/1000,0,.055);previous=now;
+    const dt=frameDeltaSeconds(gap,document.hidden);previous=now;
     observeFrameGap(now,gap);
     if(playing)visualTime+=dt;
-    eye.lerp(toEye,.095);focus.lerp(toLook,.095);
+    // At any refresh rate, camera convergence depends only on elapsed seconds.
+    const cameraBlend=smoothAlpha(6,dt);
+    eye.lerp(toEye,cameraBlend);focus.lerp(toLook,cameraBlend);
     camera.position.copy(eye);camera.lookAt(focus);
     // Farm Simulator world/agents.js and world/physics.js inspired species-specific
     // movement: chickens step and peck, rabbits hop; at night they settle.
@@ -1049,21 +1052,22 @@ export function makeScene(canvas,onSelect=()=>{}){
       const a=agents.children[i],s=a.userData,chicken=s.kind==="chicken";
       const healthSpeed=.35+.65*THREE.MathUtils.clamp(s.health/100,0,1);
       const youngKit=!chicken&&s.stage==="kit"&&s.age<10;
-      const active=awake&&!youngKit;
       const phase=visualTime*(chicken?1.65:1.2)*healthSpeed+s.phase;
-      const dist=active?(chicken?.96:.40):0;
-      const targetX=s.ax+Math.sin(phase*.56+i*.7)*dist;
-      const targetZ=s.az+Math.cos(phase*.68+i*.9)*dist;
-      const blend=Math.min(1,dt*4.5);
+      const gait=gaitPose(playing,awake,youngKit,chicken,phase,i);
+      const active=gait.moving,dist=chicken?.96:.40;
+      // Pause must preserve each animal's current horizontal position, not
+      // silently walk it back to its spawn point or freeze it mid-hop.
+      const targetX=active?s.ax+Math.sin(phase*.56+i*.7)*dist:a.position.x;
+      const targetZ=active?s.az+Math.cos(phase*.68+i*.9)*dist:a.position.z;
+      const blend=smoothAlpha(4.5,dt);
       const wasX=a.position.x,wasZ=a.position.z;
       a.position.x+=(targetX-a.position.x)*blend;
       a.position.z+=(targetZ-a.position.z)*blend;
-      a.position.y=terrainY(a.position.x,a.position.z);
-      const stepWave=Math.sin(phase*(chicken?5.5:3.4)+i);
+      a.position.y=terrainY(a.position.x,a.position.z)+gait.heightM;
+      const stepWave=gait.wave;
       if(active){
         const dx=a.position.x-wasX,dz=a.position.z-wasZ;
         if(Math.hypot(dx,dz)>1e-5)a.rotation.y=Math.atan2(dx,dz);
-        a.position.y+=chicken?Math.abs(stepWave)*.018:Math.max(0,stepWave)*.19;
       }
       s.head.rotation.x=active?(chicken?.16+Math.max(0,Math.sin(phase*3.2+i))*.57:
         .035+Math.sin(phase*1.8)*.075):-.09;
@@ -1129,10 +1133,15 @@ export function makeScene(canvas,onSelect=()=>{}){
   }
   requestAnimationFrame(animate);
   return {
-    update,go,setPlayback(on){playing=Boolean(on)},resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
+    update,go,setPlayback(on){
+      playing=Boolean(on);
+      if(!playing)for(const rig of agents.children)
+        rig.position.y=terrainY(rig.position.x,rig.position.z);
+    },resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
-      tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport()}}
+      tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport(),
+      pausedGroundErrorM:playing?null:agents.children.reduce((e,a)=>Math.max(e,Math.abs(a.position.y-terrainY(a.position.x,a.position.z))),0)}}
   };
 }
