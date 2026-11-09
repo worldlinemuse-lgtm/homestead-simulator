@@ -61,6 +61,8 @@ try:
                 assert facade["wallSegments"] >= 12, facade
                 assert facade["blockedOpenings"] == [], facade
                 assert facade["solidWallHits"] > 0, facade
+            # The raised henhouse hatch cannot cover the pop-hole opening.
+            assert architecture["coopHatchClearanceM"] >= .02, architecture
             # Real wall apertures: cast rays against physical segmented front
             # wall meshes, not style metadata or a transparent decal.
             architecture=page.evaluate("window.HomesteadApp.world().structureAudit")
