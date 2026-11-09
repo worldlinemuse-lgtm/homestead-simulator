@@ -1366,7 +1366,15 @@ export function makeScene(canvas,onSelect=()=>{}){
       const healthSpeed=.35+.65*THREE.MathUtils.clamp(s.health/100,0,1);
       const youngKit=!chicken&&s.stage==="kit"&&s.age<10;
       const youngRest=!chicken&&youngKit;
-      const active=Boolean(playing&&awake&&!youngRest);
+      const awakeAndPlaying=Boolean(playing&&awake&&!youngRest);
+      // Visual-only foraging rhythm: different chickens stop to inspect the
+      // ground instead of marching continuously in lockstep. The phase is
+      // derived from stable animal ID and visualTime, never Farm's RNG.
+      // This does NOT assert feed consumption, nutrition or a biological task.
+      const forageCycle=chicken?(visualTime*.28+seeded(s.id*11.37)*6.28318530718)%
+        6.28318530718:0;
+      const foraging=chicken&&awakeAndPlaying&&forageCycle>4.15;
+      const active=awakeAndPlaying&&!foraging;
       // The visual agent traverses genuine horizontal distance around the pen,
       // rather than moving a few centimeters around a fixed sine-wave anchor.
       const speed=active?s.walkSpeed*healthSpeed:0;
@@ -1401,7 +1409,11 @@ export function makeScene(canvas,onSelect=()=>{}){
         s.torso.position.y=0;s.torso.rotation.z=0;
       }
       s.walking=active;
-      s.head.rotation.x=active?(chicken?.08+Math.max(0,Math.sin(phase*.4+i))*.19:
+      // During a visual pause, alternate short downward head dips. Keep feet
+      // planted and root motion stopped; no model resource is consumed.
+      const peck=foraging?Math.pow(Math.max(0,Math.sin(visualTime*9+s.phase)),2):0;
+      s.head.rotation.x=foraging?.12+.55*peck:
+        active?(chicken?.08+Math.max(0,Math.sin(phase*.4+i))*.19:
         .035+Math.sin(phase*.45)*.065):-.04;
       s.head.rotation.y=active?Math.sin(phase*.18+i)*.07:0;
       if(chicken)stepChickenFeet(a,s,active);
