@@ -34,3 +34,9 @@ Independent review identified a systematic 0.2 scene-unit mismatch: terrain vert
 2. Give each asset unique stable IDs and semantic fixed/moving/collider tags, with explicit compound colliders. Do not infer collisions from visual material/selection.
 3. Resolve remaining intersections, give fence a ramp gate and straighten the pipe/cable endpoints; benchmark instancing.
 4. Replace fixed-factor camera lerp with exponential dt smoothing and separate real-time wall-clock animation from numerical simulation steps.
+
+## P1 animal lifecycle implementation (2026-11-09, follow-up)
+
+Farm-sim `source/src/world/sync.js` reconciles visual agents against model animals by stable ID. This renderer now mirrors that lifecycle: `animalById` retains the Three.js group and its phase/pose when a model ID survives; only new IDs allocate rigs, and only missing IDs retire rigs. A changed species on the same ID retires and replaces the incompatible rig. Stage/health/age changes update existing rigs. Each generated animal-only geometry is tracked in `ownedAnimalGeometry` and disposed exactly once on retirement; shared eye geometry, coats and global scene materials are intentionally preserved. This does **not** modify the authoritative farm RNG, populations or animal behavior model.
+
+The browser smoke test now checks ID uniqueness, stable survivor reconciliation, owned geometry bounds and, on desktop, reproduces 70 consecutive +1-day button clicks with a lifecycle accounting invariant (`added-removed===active`). It still needs actual `renderer.info.memory.geometries` telemetry to compare directly to the original independent GPU audit, plus mobile hardware benchmarking. Future work: expose geometry counters safely and test allocation/deallocation over synthetic birth/death events without mutating farm engine truth.
