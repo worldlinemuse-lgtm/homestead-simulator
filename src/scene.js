@@ -392,6 +392,7 @@ export function makeScene(canvas,onSelect=()=>{}){
 
   // Closed gable ends built as shallow triangular prisms; the roof remains
   // genuinely pitched rather than two rectangular slabs over an open attic.
+  let closedGableCount=0;
   function gableEnd(parent,width,wallTop,ridgeHeight,z,material){
     const shape=new THREE.Shape();
     shape.moveTo(-width/2,wallTop);shape.lineTo(0,ridgeHeight);
@@ -400,7 +401,7 @@ export function makeScene(canvas,onSelect=()=>{}){
     const end=mesh(g,material,0,0,z,false);
     end.name="Enclosed gable wall";
     end.userData={physicsRole:"fixed",collider:"visual-only",unit:"m"};
-    parent.add(end);return end;
+    parent.add(end);closedGableCount++;return end;
   }
   // House and utility outbuilding belong to the same farmyard; no visual boxes as zones.
   const homestead=group("overview","Home and utility loads",6,12);
@@ -1222,6 +1223,16 @@ export function makeScene(canvas,onSelect=()=>{}){
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
       tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport(),
+      structureAudit:{houseDoorHeightM:frontDoor.geometry.parameters.height,
+        coopServiceDoorHeightM:coopDoor.geometry.parameters.height,
+        coopPopDoorHeightM:popDoor.geometry.parameters.height,
+        closedGables:closedGableCount,
+        gateOpeningM:31.65-28.35,
+        rampWidthM:ramp.geometry.parameters.width,
+        hutchWestWorldX:hutches.position.x-7.85/2,
+        westFenceMaxX:19,
+        hasRampClearance:(31.65-28.35)>ramp.geometry.parameters.width,
+        hutchFenceClearanceM:hutches.position.x-7.85/2-19},
       animalMotion:{walkingChickens:agents.children.filter(a=>a.userData.kind==="chicken"&&a.userData.walking).length,
         chickenTravelM:agents.children.filter(a=>a.userData.kind==="chicken").reduce((n,a)=>n+a.userData.travelM,0),
         maxRootGroundErrorM:agents.children.filter(a=>a.userData.kind==="chicken").reduce(
