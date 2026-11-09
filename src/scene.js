@@ -1378,7 +1378,8 @@ export function makeScene(canvas,onSelect=()=>{}){
       const healthSpeed=.35+.65*THREE.MathUtils.clamp(s.health/100,0,1);
       const youngKit=!chicken&&s.stage==="kit"&&s.age<10;
       const youngRest=!chicken&&youngKit;
-      const active=Boolean(playing&&awake&&!youngRest);
+      const nativeActive=nativeAnimalPoses?.get(String(s.modelId))?.moving;
+      const active=nativeAnimalPoses?Boolean(playing&&nativeActive):Boolean(playing&&awake&&!youngRest);
       // The visual agent traverses genuine horizontal distance around the pen,
       // rather than moving a few centimeters around a fixed sine-wave anchor.
       const nativePose=nativeAnimalPoses?.get(String(s.modelId));
@@ -1412,7 +1413,7 @@ export function makeScene(canvas,onSelect=()=>{}){
       const stepWave=gait.wave;
       // Chicken roots stay exactly on the triangulated ground; the torso bobs
       // over independently animated alternating feet (no helicopter movement).
-      a.position.y=terrainY(a.position.x,a.position.z)+(chicken?0:gait.heightM);
+      a.position.y=nativePose?nativePose.position.y:terrainY(a.position.x,a.position.z)+(chicken?0:gait.heightM);
       // Weight shift follows the same distance-based stance cycle as the feet,
       // not the old high-frequency sinusoidal gait (which made hens vibrate).
       if(chicken){
