@@ -33,6 +33,21 @@ try:
             assert page.evaluate("window.HomesteadApp.world().animals") > 0
             assert page.evaluate("window.HomesteadApp.world().paths") >= 8
             assert page.evaluate("window.HomesteadApp.world().meshes") >= 30
+            # P0: GPU-rendered terrain triangles and all ground-height queries agree.
+            # Foundations must extend beneath the lowest sampled terrain vertex;
+            # scene scale is explicitly one metre per world unit.
+            assert page.evaluate("""() => {
+                const g=window.HomesteadApp.world().grounding;
+                return g.unit==="m" && g.raycastMisses===0
+                  && Number.isFinite(g.maxRayResidualM)
+                  && g.maxRayResidualM < 0.0005
+                  && g.foundationCount>=5
+                  && g.minimumEmbedM>=0.30
+                  && g.coverViolations===0
+                  && ["Home and utility loads","Henhouse","Solar inverter and battery",
+                      "Water treatment and storage","Treated-water storage tank"]
+                     .every(s=>g.foundationAssets.includes(s));
+            }""")
             # The raised hutches must contain visible mesh screens and usable-looking
             # door frames rather than opaque solid fronts. Geometry is illustrative.
             assert page.evaluate("window.HomesteadApp.world().housingScreenCount") >= 2
