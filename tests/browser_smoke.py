@@ -33,6 +33,10 @@ try:
             assert page.evaluate("window.HomesteadApp.world().animals") > 0
             assert page.evaluate("window.HomesteadApp.world().paths") >= 8
             assert page.evaluate("window.HomesteadApp.world().meshes") >= 30
+            # The raised hutches must contain visible mesh screens and usable-looking
+            # door frames rather than opaque solid fronts. Geometry is illustrative.
+            assert page.evaluate("window.HomesteadApp.world().housingScreenCount") >= 2
+            assert page.evaluate("window.HomesteadApp.world().illustrativeCageDoors") == 6
             # Renderer metadata must agree with the model snapshot.
             assert page.evaluate("""() => {
                 const s = window.HomesteadApp.snapshot(), v = window.HomesteadApp.world();
