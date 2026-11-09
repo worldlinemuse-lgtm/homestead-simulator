@@ -1268,7 +1268,18 @@ export function makeScene(canvas,onSelect=()=>{}){
       // Chicken roots stay exactly on the triangulated ground; the torso bobs
       // over independently animated alternating feet (no helicopter movement).
       a.position.y=terrainY(a.position.x,a.position.z)+(chicken?0:gait.heightM);
-      s.torso.position.y=chicken&&active?Math.abs(stepWave)*.023:0;
+      // Weight shift follows the same distance-based stance cycle as the feet,
+      // not the old high-frequency sinusoidal gait (which made hens vibrate).
+      if(chicken){
+        const stride=.25*Math.max(.12,a.scale.x/.44);
+        const footCycle=chickenFootPhase(s.travelM,0,stride,
+          s.footPhaseOffset*stride).phase;
+        const loadShift=Math.sin(footCycle*Math.PI*2);
+        s.torso.position.y=active?Math.abs(loadShift)*.014:0;
+        s.torso.rotation.z=active?loadShift*.025:0;
+      }else{
+        s.torso.position.y=0;s.torso.rotation.z=0;
+      }
       s.walking=active;
       s.head.rotation.x=active?(chicken?.08+Math.max(0,Math.sin(phase*.4+i))*.19:
         .035+Math.sin(phase*.45)*.065):-.04;
