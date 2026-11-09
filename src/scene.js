@@ -390,26 +390,57 @@ export function makeScene(canvas,onSelect=()=>{}){
     [56,8,1.3,0],[47,40,1.2,0],[-5,-48,.9,0]];
   treeSites.forEach(([x,z,s,ever])=>tree(x,z,s,!!ever));
 
+  // Closed gable ends built as shallow triangular prisms; the roof remains
+  // genuinely pitched rather than two rectangular slabs over an open attic.
+  function gableEnd(parent,width,wallTop,ridgeHeight,z,material){
+    const shape=new THREE.Shape();
+    shape.moveTo(-width/2,wallTop);shape.lineTo(0,ridgeHeight);
+    shape.lineTo(width/2,wallTop);shape.closePath();
+    const g=new THREE.ExtrudeGeometry(shape,{depth:.13,bevelEnabled:false,curveSegments:1});
+    const end=mesh(g,material,0,0,z,false);
+    end.name="Enclosed gable wall";
+    end.userData={physicsRole:"fixed",collider:"visual-only",unit:"m"};
+    parent.add(end);return end;
+  }
   // House and utility outbuilding belong to the same farmyard; no visual boxes as zones.
   const homestead=group("overview","Home and utility loads",6,12);
   foundationFor(homestead,6,12,13.1,9.7);
   homestead.add(box(13,6.0,9.6,m.cedar,0,3,0));
-  for(const px of [-4.15,4.15])homestead.add(box(3.2,3.2,.1,m.trim,px,3.3,4.87));
-  for(const px of [-4.15,4.15])homestead.add(box(2.75,2.65,.12,m.glass,px,3.35,4.94));
-  // Traditional framed window divisions avoid untextured billboard rectangles.
-  for(const px of [-4.15,4.15]){
-    homestead.add(box(.075,2.8,.11,m.trim,px,3.35,5.04));
-    homestead.add(box(2.92,.075,.11,m.trim,px,3.35,5.04));
+  // A two-storey house with windows scaled as architectural openings,
+  // not the previous 3.2 m tall single-pane billboards.
+  const warmWindows=[];
+  function houseWindow(px,y,pz=4.87){
+    const trim=box(1.83,1.65,.13,m.trim,px,y,pz);homestead.add(trim);
+    const glass=box(1.56,1.38,.16,m.glass,px,y,pz+.10);homestead.add(glass);
+    homestead.add(box(.065,1.47,.14,m.trim,px,y,pz+.20));
+    homestead.add(box(1.62,.07,.14,m.trim,px,y,pz+.20));
+    homestead.add(box(2.06,.14,.35,m.stone,px,y-.88,pz+.19));
+    warmWindows.push(glass);
   }
-  homestead.add(box(2.2,4,.19,m.darkWood,0,2.1,4.94));
+  for(const x of [-4.16,4.16]){
+    houseWindow(x,1.63);houseWindow(x,4.43);
+  }
+  houseWindow(0,4.43);
+  const frontDoor=box(1.20,2.18,.15,m.darkWood,0,1.23,4.91);
+  frontDoor.name="Home entry door";homestead.add(frontDoor);
+  for(const x of [-.66,.66])homestead.add(box(.105,2.37,.19,m.trim,x,1.25,5.03));
+  homestead.add(box(1.45,.16,.19,m.trim,0,2.47,5.03));
+  homestead.add(cyl(.075,.075,.07,m.metal,.42,1.25,5.05,12));
+  homestead.add(box(1.70,.11,.70,m.stone,0,.20,5.33));
   for(const side of [-1,1]){
-    const roof=box(7.6,.36,10.4,m.roof,side*3.2,7.1,0);roof.rotation.z=-side*.37;homestead.add(roof);
+    const roof=box(7.6,.36,10.4,m.roof,side*3.2,7.1,0);
+    roof.rotation.z=-side*.37;homestead.add(roof);
+    homestead.add(box(.21,.13,10.57,m.trim,side*6.71,5.89,0));
   }
-  homestead.add(box(1.1,3.8,1.1,m.stone,-4,9,0));
+  gableEnd(homestead,12.8,5.94,8.36,4.77,m.cedar);
+  gableEnd(homestead,12.8,5.94,8.36,-4.91,m.cedar);
+  homestead.add(box(.36,.22,10.57,m.roof,0,8.35,0));
+  // Plausible chimney proportion and cap; visual only, no stove or flue model.
+  homestead.add(box(.92,2.15,.92,m.stone,-4.25,7.70,-1.0));
+  homestead.add(box(1.16,.14,1.16,m.concrete,-4.25,8.83,-1.0));
   homestead.add(box(14,.3,3.8,m.wood,0,.18,6.5));
-  for(const x of [-6,6])for(const z of [5.4,7.65])homestead.add(cyl(.12,.12,1.8,m.wood,x,1.0,z,8));
-  // Exterior porch pier feet continue below the terrain's lowest point:
-  // the house pad only covers the walled footprint, not the projecting porch.
+  for(const x of [-6,6])for(const z of [5.4,7.65])
+    homestead.add(cyl(.12,.12,1.8,m.wood,x,1.0,z,8));
   for(const x of [-6,0,6])for(const z of [5.4,7.65]){
     const land=terrainY(6+x,12+z);
     const top=homestead.position.y+.16,bottom=land-.24;
@@ -417,19 +448,19 @@ export function makeScene(canvas,onSelect=()=>{}){
     const pier=box(.31,height,.31,m.stone,x,.16-height/2,z);
     pier.name="Porch pier";pier.userData.physicsRole="fixed";homestead.add(pier);
   }
-  const warmWindows=[];
-  for(const x of [-4.15,4.15]){
-    const w=homestead.children.find(o=>o.isMesh&&Math.abs(o.position.x-x)<.1&&Math.abs(o.position.y-3.35)<.2);
-    if(w)warmWindows.push(w);
-  }
 
   // Utility shed with a roof, door, vents; energy equipment is attached to its wall.
   const power=group("energy","Solar inverter and battery", -18,-7);
   foundationFor(power,-18,-7,8.2,6.7);
   power.add(box(8,4.1,6.5,m.wood,0,2.05,0));
   const powerRoof=box(9.2,.35,7.6,m.roof,0,4.5,0);powerRoof.rotation.z=.10;power.add(powerRoof);
-  power.add(box(2.3,3.2,.12,m.darkWood,0,1.6,3.31));
-  power.add(box(2.5,.09,.12,m.steel,0,3.23,3.39));
+  power.add(box(1.48,2.31,.12,m.darkWood,0,1.24,3.31));
+  for(const x of [-.80,.80])power.add(box(.10,2.46,.13,m.trim,x,1.25,3.39));
+  power.add(box(1.76,.12,.13,m.trim,0,2.48,3.39));
+  for(const x of [-2.35,2.35]){
+    power.add(box(1.03,.58,.09,m.darkWood,x,3.38,3.31));
+    for(let n=0;n<3;n++)power.add(box(.94,.045,.10,m.metal,x,3.22+n*.14,3.39));
+  }
   const batteryBox=box(1.65,2.25,1.1,m.steel,-2.5,1.4,3.65);power.add(batteryBox);
   const chargeRail=box(1.13,.13,.075,m.glow,-2.5,2.07,4.27);power.add(chargeRail);
   const inverter=box(1.75,1.5,.65,m.metal,2.4,2.2,3.62);power.add(inverter);
@@ -621,10 +652,17 @@ export function makeScene(canvas,onSelect=()=>{}){
     barn.add(box(9.25,.19,.14,m.darkWood,0,.49,z));
     barn.add(box(9.25,.14,.14,m.trim,0,5.43,z));
   }
-  const coopDoor=box(2.48,3.5,.15,m.darkWood,0,1.89,4.30);barn.add(coopDoor);
-  for(const x of [-1.28,1.28])barn.add(box(.14,3.55,.19,m.trim,x,1.91,4.39));
-  barn.add(box(2.70,.17,.19,m.trim,0,3.72,4.39));
-  barn.add(cyl(.09,.09,.09,m.metal,.91,1.98,4.48,10));
+  // Full-size service door is separate from the chicken-scale pop hole;
+  // the ramp reaches the latter, not an implausibly oversized service doorway.
+  const coopDoor=box(1.56,2.38,.15,m.darkWood,-2.42,1.30,4.30);
+  barn.add(coopDoor);
+  for(const x of [-3.27,-1.57])barn.add(box(.11,2.46,.18,m.trim,x,1.32,4.39));
+  barn.add(box(1.79,.14,.18,m.trim,-2.42,2.55,4.39));
+  barn.add(cyl(.075,.075,.09,m.metal,-1.91,1.31,4.45,10));
+  const popDoor=box(.92,.79,.15,m.darkWood,0,1.24,4.30);barn.add(popDoor);
+  for(const x of [-.52,.52])barn.add(box(.095,.97,.17,m.trim,x,1.23,4.39));
+  barn.add(box(1.15,.12,.18,m.trim,0,1.76,4.39));
+  barn.add(box(1.18,.11,.31,m.wood,0,.78,4.50));
   // Correct the original inverted (valley) roof: ridge higher than eaves.
   for(const side of [-1,1]){
     const roof=box(5.35,.32,9.35,m.roofAlt,side*2.43,6.35,0);
@@ -633,8 +671,11 @@ export function makeScene(canvas,onSelect=()=>{}){
     fascia.rotation.z=-side*.35;barn.add(fascia);
   }
   barn.add(box(.37,.26,9.7,m.roof,0,7.12,0));
+  // Close both triangular openings behind the roof, including the rear face.
+  gableEnd(barn,8.9,5.45,7.12,4.18,m.cedar);
+  gableEnd(barn,8.9,5.45,7.12,-4.32,m.cedar);
   // Gable ventilation louvers, roof eaves and illuminated-looking windows.
-  for(const y of [5.47,5.66,5.85]){
+  for(const y of [5.65,5.83,6.01]){
     barn.add(box(1.24,.08,.14,m.darkWood,0,y,4.31));
   }
   for(const x of [-2.65,2.65]){
@@ -669,7 +710,10 @@ export function makeScene(canvas,onSelect=()=>{}){
   barn.add(box(2.24,.055,.48,m.darkWood,2.9,.79,6.0));
   for(const x of [1.87,3.93])barn.add(box(.16,.65,.20,m.wood,x,.33,6.0));
   const animalArea=group("farm","Pasture, hutches and livestock",30,5);
-  const fenceLines=[[[19,-2],[44,-2]],[[44,-2],[47,20]],[[47,20],[18,20]],[[18,20],[19,-2]]];
+  // South entrance remains open precisely where the coop ramp crosses the fence.
+  // The surrounding rails do not intersect the ramp or form an invisible gate.
+  const fenceLines=[[[19,-2],[28.35,-2]],[[31.65,-2],[44,-2]],
+    [[44,-2],[47,20]],[[47,20],[18,20]],[[18,20],[19,-2]]];
   function woodFence(a,b){
     const dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz),num=Math.ceil(len/2.2);
     const dir=V(dx/len,0,dz/len);
@@ -683,7 +727,13 @@ export function makeScene(canvas,onSelect=()=>{}){
     }
   }
   fenceLines.forEach(([a,b])=>woodFence(a,b));
-  const hutches=group("farm","Rabbit hutches",21,11);
+  for(const gx of [28.35,31.65]){
+    const y=terrainY(gx,-2);
+    const post=cyl(.14,.16,1.83,m.darkWood,gx,y+.9,-2,9);
+    post.name="Coop gate opening marker";scene.add(post);
+  }
+  // Move the hutches wholly within the fence (west edge is near x=18–19).
+  const hutches=group("farm","Rabbit hutches",24.5,11);
   // Reuse Farm's raised wire-floor hutches, outside feeders/water bottles,
   // nest boxes and cage-door hinge/latch vocabulary. The geometries represent
   // illustrative fixtures, NOT individually inventoried or calibrated cages.
