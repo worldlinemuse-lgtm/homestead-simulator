@@ -71,6 +71,10 @@ try:
             page.locator("[data-view=overview]").click()
             page.wait_for_timeout(900)  # smooth camera reaches the whole-property waypoint
             page.screenshot(path=str(out/("mobile-overview.png" if mobile else "desktop-overview.png")))
+            # Close-up capture of new hutch mesh, coop roof, nesting details and ramp.
+            page.locator("[data-view=farm]").click()
+            page.wait_for_timeout(950)
+            page.screenshot(path=str(out/("mobile-farm.png" if mobile else "desktop-farm.png")))
             page.close()
         browser.close()
     print("PASS: unified 3D site runs, both layouts step 25 model hours, no page exceptions")
