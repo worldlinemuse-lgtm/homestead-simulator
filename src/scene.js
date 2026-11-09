@@ -1106,6 +1106,7 @@ export function makeScene(canvas,onSelect=()=>{}){
   function animalLifecycleReport(){
     return {active:animalById.size,added:animalAdded,removed:animalRemoved,
       ownedGeometries:ownedAnimalGeometry.size,
+      gpuGeometries:renderer.info.memory.geometries,
       stableIds:[...animalById.keys()]};
   }
   function groundingReport(){
