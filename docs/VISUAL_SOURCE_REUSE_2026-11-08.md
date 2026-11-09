@@ -55,3 +55,9 @@ The model-driven animal and water animation changes remain unchanged. Final new-
 ## Integration caution
 
 Outstanding engineering PRs #1–#8 modify other parts of the system and are not present in main as of this iteration. This visual branch starts from main; verify against newer coordinator contracts before integration.
+
+## Iteration 10 — pump and RO skid visual refinement (November 8, 2026)
+
+Reused the owned Water Simulator's `source/ui.js` `buildPart()` pump-rotor and RO-cartridge vocabulary in the existing unified Three.js scene. Added a motor fin array, guarded fan, pump feet/flange/bolts, uncalibrated service gauge, more recognizable RO vessel shells, end caps, rails, manifold and return piping. This replaces the disconnected-looking bare cylinders with a coherent illustrative equipment assembly. The visible three housings remain **one** original RO solver unit: no additional hydraulic or treatment stages were created. The gauge has no numeric label or calibrated pressure value; dimensions and material finishes are illustrative, not manufacturer specifications.
+
+The fan rotates only while playback is running **and** the last coupled hour reports positive served pump electricity and treated water. This is a conservative visual condition, not a claim of RPM or actual pump duty-cycle measurement. No coordinator, engineering model, unit conversion or farm RNG changed. Syntax was parsed in V8 before commit; the integrated model and browser CI for this commit require independent review.
