@@ -31,6 +31,11 @@ try:
             assert page.locator("#assetReadout").is_visible()
             page.locator("#closeInspector").click()
             assert page.evaluate("window.HomesteadApp.world().animals") > 0
+            # Feather detail exists only on real Farm-model chicken rigs, not
+            # synthetic scenery animals; each has 13 added feather meshes.
+            plumage=page.evaluate("window.HomesteadApp.world().plumage")
+            assert plumage["chickens"] > 0, plumage
+            assert plumage["decorativeFeathers"] == 13*plumage["chickens"], plumage
             assert page.evaluate("window.HomesteadApp.world().paths") >= 8
             assert page.evaluate("window.HomesteadApp.world().meshes") >= 30
             # P0: GPU-rendered terrain triangles and all ground-height queries agree.
