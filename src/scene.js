@@ -1451,6 +1451,8 @@ export function makeScene(canvas,onSelect=()=>{}){
     },resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
+      plumage:{chickens:agents.children.filter(a=>a.userData.kind==="chicken").length,
+        decorativeFeathers:agents.children.reduce((n,a)=>n+(a.userData.plumageFeathers||0),0)},
       camera:{requestedDistanceM:toEye.distanceTo(toLook),actualDistanceM:eye.distanceTo(focus),
         heightAboveGroundM:eye.y-terrainY(eye.x,eye.z),
         requestedHeightAboveGroundM:toEye.y-terrainY(toEye.x,toEye.z),
