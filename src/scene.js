@@ -1126,34 +1126,50 @@ export function makeScene(canvas,onSelect=()=>{}){
     overview:{eye:V(16,59,91),look:V(0,1.5,-8)},
     energy:{eye:V(-29,21,17),look:V(-29,2,-9)},
     water:{eye:V(17,24,-1),look:V(0,2,-23)},
-    farm:{eye:V(48,17,23),look:V(33,2,3)}
+    farm:{eye:V(41.8,3.4,10.2),look:V(36.3,.52,2.3)}
   };
-  let view="overview",moving=false;
+  let view="overview",moving=false,trackedAnimalId=null;
   const eye=views.overview.eye.clone(),focus=views.overview.look.clone();
   const toEye=eye.clone(),toLook=focus.clone();
   camera.position.copy(eye);camera.lookAt(focus);
-  function go(kind){view=views[kind]?kind:"overview";toEye.copy(views[view].eye);toLook.copy(views[view].look)}
+  function cameraFloor(pos){pos.y=Math.max(pos.y,terrainY(pos.x,pos.z)+.75);return pos}
+  function go(kind){
+    view=views[kind]?kind:"overview";trackedAnimalId=null;
+    toEye.copy(views[view].eye);toLook.copy(views[view].look);cameraFloor(toEye);
+  }
+  function focusAnimal(rig){
+    const id=String(rig?.userData?.modelId??"");
+    if(!id||!animalById.has(id))return;
+    trackedAnimalId=id;
+    const p=rig.position,scale=rig.scale.x;
+    toLook.set(p.x,p.y+Math.max(.24,scale*.75),p.z);
+    toEye.set(p.x+2.2,p.y+1.8,p.z+3.0);cameraFloor(toEye);
+  }
   const ray=new THREE.Raycaster(),pointerMap=new Map();
   let gestureMoved=false,pinchDistance=null;
   canvas.addEventListener("pointerdown",e=>{pointerMap.set(e.pointerId,{x:e.clientX,y:e.clientY});gestureMoved=false;canvas.setPointerCapture(e.pointerId);if(pointerMap.size===2){const p=[...pointerMap.values()];pinchDistance=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y)}});
   canvas.addEventListener("pointermove",e=>{
     const p=pointerMap.get(e.pointerId);if(!p)return;
     const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
-    if(Math.abs(dx)+Math.abs(dy)>1)gestureMoved=true;
+    if(Math.abs(dx)+Math.abs(dy)>1){
+      gestureMoved=true;trackedAnimalId=null;
+    }
     if(pointerMap.size===2){
       const pair=[...pointerMap.values()];
       const d=Math.max(2,Math.hypot(pair[0].x-pair[1].x,pair[0].y-pair[1].y));
       if(pinchDistance!==null){
         const direction=THREE.MathUtils.clamp(pinchDistance/d,.82,1.22);
         const offset=toEye.clone().sub(toLook).multiplyScalar(direction);
-        offset.clampLength(9,155);toEye.copy(toLook).add(offset);
+        offset.clampLength(view==="farm"?2.8:8,155);
+        toEye.copy(toLook).add(offset);cameraFloor(toEye);
       }
       pinchDistance=d;
     }else if(pointerMap.size===1){
       const offset=toEye.clone().sub(toLook);
       const sph=new THREE.Spherical().setFromVector3(offset);
       sph.theta-=dx*.0048;sph.phi=THREE.MathUtils.clamp(sph.phi+dy*.0048,.24,1.43);
-      offset.setFromSpherical(sph);toEye.copy(toLook).add(offset);
+      offset.setFromSpherical(sph);
+      toEye.copy(toLook).add(offset);cameraFloor(toEye);
     }
   });
   canvas.addEventListener("pointerup",e=>{
@@ -1170,15 +1186,20 @@ export function makeScene(canvas,onSelect=()=>{}){
       while(g&&!g.userData.kind)g=g.parent;
       if(g?.userData.kind){
         const kind=g.userData.kind;
-        if(kind==="chicken"||kind==="rabbit")onSelect("farm",(kind==="chicken"?"Chicken":"Rabbit")+" #"+g.userData.id);
-        else onSelect(kind,g.userData.label);
+        if(kind==="chicken"||kind==="rabbit"){
+          onSelect("farm",(kind==="chicken"?"Chicken":"Rabbit")+" #"+g.userData.id);
+          focusAnimal(g);
+        }else onSelect(kind,g.userData.label);
       }
     }
   });
   canvas.addEventListener("pointercancel",e=>{pointerMap.delete(e.pointerId);pinchDistance=null});
   canvas.addEventListener("wheel",e=>{
-    e.preventDefault();const delta=Math.exp(e.deltaY*.0011);
-    const d=toEye.clone().sub(toLook);d.multiplyScalar(delta);d.clampLength(10,140);toEye.copy(toLook).add(d);
+    e.preventDefault();trackedAnimalId=null;
+    const delta=Math.exp(e.deltaY*.0011);
+    const d=toEye.clone().sub(toLook);
+    d.multiplyScalar(delta).clampLength(view==="farm"?2.8:8,140);
+    toEye.copy(toLook).add(d);cameraFloor(toEye);
   },{passive:false});
 
   [homestead,power,panels,water,tank,barn,animalArea,hutches,trough,garden].forEach(select);
@@ -1226,9 +1247,22 @@ export function makeScene(canvas,onSelect=()=>{}){
     const dt=frameDeltaSeconds(gap,document.hidden);previous=now;
     observeFrameGap(now,gap);
     if(playing)visualTime+=dt;
-    // At any refresh rate, camera convergence depends only on elapsed seconds.
+    // A clicked animal can be followed at eye level; drag/pinch/wheel releases
+    // follow mode. No biological state or agent motion is driven by this camera.
+    if(trackedAnimalId){
+      const animalRig=animalById.get(trackedAnimalId);
+      if(!animalRig)trackedAnimalId=null;
+      else {
+        const p=animalRig.position;
+        toLook.set(p.x,p.y+Math.max(.24,animalRig.scale.x*.75),p.z);
+        toEye.set(p.x+2.2,p.y+1.8,p.z+3.0);
+        cameraFloor(toEye);
+      }
+    }
+    // Exponential real-time camera easing is refresh-rate independent.
     const cameraBlend=smoothAlpha(6,dt);
     eye.lerp(toEye,cameraBlend);focus.lerp(toLook,cameraBlend);
+    cameraFloor(eye);
     camera.position.copy(eye);camera.lookAt(focus);
     // Farm Simulator world/agents.js and world/physics.js inspired species-specific
     // movement: chickens step and peck, rabbits hop; at night they settle.
@@ -1395,6 +1429,10 @@ export function makeScene(canvas,onSelect=()=>{}){
     },resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
+      camera:{requestedDistanceM:toEye.distanceTo(toLook),actualDistanceM:eye.distanceTo(focus),
+        heightAboveGroundM:eye.y-terrainY(eye.x,eye.z),
+        requestedHeightAboveGroundM:toEye.y-terrainY(toEye.x,toEye.z),
+        followAnimalId:trackedAnimalId},
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
       tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport(),
       structureAudit:{houseFacade:facadeProbe(homestead,houseFront,6,3),

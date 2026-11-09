@@ -112,7 +112,9 @@ function toggle(){if(playing){stop();return;}playing=true;scene?.setPlayback(tru
 $("playBtn").addEventListener("click",toggle);$("stepBtn").addEventListener("click",()=>{stop();tick()});
 $("dayBtn").addEventListener("click",()=>{stop();try{for(let i=0;i<24;i++)coordinator.stepHour();redraw(coordinator.snapshot())}catch(e){fail(e)}});
 $("resetBtn").addEventListener("click",()=>{stop();try{redraw(coordinator.reset());$("errors").style.display="none"}catch(e){fail(e)}});
-document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=null;selectArea(b.dataset.view);$("sceneHint").textContent="Drag to orbit · Pinch to zoom · Select equipment";renderAsset(coordinator.snapshot())}));
+document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=null;selectArea(b.dataset.view);$("sceneHint").textContent=selected==="farm"
+  ?"Tap an animal to follow · Drag to orbit · Pinch to zoom"
+  :"Drag to orbit · Pinch to zoom · Select equipment";renderAsset(coordinator.snapshot())}));
 $("inspectBtn").addEventListener("click",()=>$("inspector").classList.toggle("open"));
 $("hudToggle").addEventListener("click",()=>{const collapsed=$("summary").classList.toggle("collapsed");$("hudToggle").setAttribute("aria-expanded",String(!collapsed));$("hudToggle").setAttribute("aria-label",collapsed?"Expand resource summary":"Collapse resource summary");});
 // Keep the living landscape visible on narrow phones; all readings remain one tap away.
