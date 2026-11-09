@@ -115,6 +115,12 @@ $("resetBtn").addEventListener("click",()=>{stop();try{redraw(coordinator.reset(
 document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=null;selectArea(b.dataset.view);$("sceneHint").textContent="Drag to orbit · Pinch to zoom · Select equipment";renderAsset(coordinator.snapshot())}));
 $("inspectBtn").addEventListener("click",()=>$("inspector").classList.toggle("open"));
 $("hudToggle").addEventListener("click",()=>{const collapsed=$("summary").classList.toggle("collapsed");$("hudToggle").setAttribute("aria-expanded",String(!collapsed));$("hudToggle").setAttribute("aria-label",collapsed?"Expand resource summary":"Collapse resource summary");});
+// Keep the living landscape visible on narrow phones; all readings remain one tap away.
+if(window.matchMedia("(max-width: 650px)").matches){
+ $("summary").classList.add("collapsed");
+ $("hudToggle").setAttribute("aria-expanded","false");
+ $("hudToggle").setAttribute("aria-label","Expand resource summary");
+}
 $("closeInspector").addEventListener("click",()=>$("inspector").classList.remove("open"));
 for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*100,0)+"%"],["houseLoad","houseLoadOut","backgroundLoadW",x=>fmt(x,0)+" W"],["pumpLoad","pumpLoadOut","pumpElectricalW",x=>fmt(x,0)+" W"]]){
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
