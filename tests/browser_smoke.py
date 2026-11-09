@@ -42,7 +42,7 @@ try:
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==1
             assert page.evaluate("""() => {
                 const s = window.HomesteadApp.snapshot(), v = window.HomesteadApp.world();
-                return Math.abs(v.tankFillFraction - s.waterStoredL / Math.max(1, s.config.waterStorageCapacityL)) < 1e-8
+                return Math.abs(v.tankFillFraction - (s.config.waterStorageCapacityL > 0 ? s.waterStoredL / s.config.waterStorageCapacityL : 0)) < 1e-8
                   && v.visualFarmHour === s.clock.hourOfDay;
             }""")
             page.locator("[data-view=water]").click()
