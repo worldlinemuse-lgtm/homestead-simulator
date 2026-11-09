@@ -831,19 +831,53 @@ export function makeScene(canvas,onSelect=()=>{}){
     o.position.copy(at(ax,az));
     return o;
   }
-  let populationSignature="";
+  // Farm Simulator source/src/world/sync.js reconciles by immutable model ID.
+  // Preserve each surviving Three.js rig, pose, and future physics body.
+  const animalById=new Map(),ownedAnimalGeometry=new Set();
+  let animalAdded=0,animalRemoved=0;
+  function retireAnimal(key){
+    const creature=animalById.get(key);
+    if(!creature)return;
+    agents.remove(creature);
+    creature.traverse(node=>{
+      if(!node.isMesh||!node.geometry||node.geometry===eyeGeo)return;
+      // Every generated body part has its own geometry. Never dispose the
+      // shared eye sphere or global coat/fixture materials.
+      if(!ownedAnimalGeometry.has(node.geometry))return;
+      node.geometry.dispose();
+      ownedAnimalGeometry.delete(node.geometry);
+    });
+    animalById.delete(key);animalRemoved++;
+  }
   function syncAnimals(farm){
-    // Match ONLY actual model records, including entry/exit. Never instantiate invented livestock.
+    // Only actual farm records may create animals; no synthetic births/deaths.
     const present=(farm?.animals||[]).filter(a=>a.sp==="rabbit"||a.sp==="chicken").slice(0,50);
-    const signature=present.map(a=>a.id+":"+a.sp+":"+a.st).join(",");
-    if(signature!==populationSignature){
-      populationSignature=signature;
-      while(agents.children.length)agents.remove(agents.children[0]);
-      present.forEach((a,i)=>agents.add(animal(a,i)));
+    const lookup=new Map();
+    for(const a of present){
+      const key=String(a.id);
+      if(a.id==null||lookup.has(key))continue;
+      lookup.set(key,a);
     }
-    const lookup=new Map(present.map(a=>[String(a.id),a]));
+    for(const key of [...animalById.keys()])if(!lookup.has(key))retireAnimal(key);
+    for(const [key,a] of lookup){
+      let creature=animalById.get(key);
+      if(creature&&creature.userData.kind!==a.sp){
+        retireAnimal(key);creature=null;
+      }
+      if(!creature){
+        creature=animal(a,animalById.size);
+        creature.name="Animal "+a.sp+" #"+key;
+        creature.userData.modelId=key;
+        creature.userData.physicsRole="moving";
+        creature.traverse(node=>{
+          if(node.isMesh&&node.geometry&&node.geometry!==eyeGeo)
+            ownedAnimalGeometry.add(node.geometry);
+        });
+        animalById.set(key,creature);agents.add(creature);animalAdded++;
+      }
+    }
     for(const creature of agents.children){
-      const a=lookup.get(String(creature.userData.id));if(!a)continue;
+      const a=lookup.get(creature.userData.modelId);if(!a)continue;
       const u=creature.userData;u.stage=a.st;u.age=Number(a.age)||0;
       u.health=Number.isFinite(a.health)?THREE.MathUtils.clamp(a.health,0,100):100;
       // Stage size is a visual class, not a fabricated breed-specific weight curve.
@@ -1069,6 +1103,11 @@ export function makeScene(canvas,onSelect=()=>{}){
     renderer.render(scene,camera);
   }
   let groundingCache=null;
+  function animalLifecycleReport(){
+    return {active:animalById.size,added:animalAdded,removed:animalRemoved,
+      ownedGeometries:ownedAnimalGeometry.size,
+      stableIds:[...animalById.keys()]};
+  }
   function groundingReport(){
     if(groundingCache)return groundingCache;
     // Raycast the actual triangle mesh, not the analytic terrain source.
@@ -1093,6 +1132,6 @@ export function makeScene(canvas,onSelect=()=>{}){
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
-      tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport()}}
+      tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport()}}
   };
 }
