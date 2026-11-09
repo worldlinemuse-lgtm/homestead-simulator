@@ -830,19 +830,34 @@ export function makeScene(canvas,onSelect=()=>{}){
     }
     return animalMaterialCache.get(key);
   }
+  // Closed, bounded walking circuits in clear areas of the shared farmyard.
+  // These are visual roaming plans only; biological location/foraging activity
+  // is NOT present in the Farm model snapshot and is not inferred here.
+  function yardPath(species,id){
+    const chicken=species==="chicken";
+    const offset=(seeded(id*7.1)-.5)*.42;
+    const points=chicken?
+      [[32.9,1.3],[35.7,.65],[39.0,.75],[40.35,2.0],
+       [40.0,3.75],[36.6,4.0],[33.25,3.6],[32.4,2.2]]:
+      [[30.15,10.7],[31.4,10.25],[32.8,11.45],[33.05,13.7],
+       [32.55,16.4],[30.9,17.4],[29.75,16.0],[29.85,13.0]];
+    const curve=new THREE.CatmullRomCurve3(points.map(([x,z])=>
+      V(x+offset,0,z+offset*.18)),true,"centripetal",.28);
+    return {curve,length:curve.getLength()};
+  }
   function animal(a,index){
     const species=a.sp,id=Number(a.id)||index+1,chicken=species==="chicken";
     const o=new THREE.Group(),base=coat(species,id),darker=coat(species,id,true);
-    const head=new THREE.Group(),limbs=[],wings=[],ears=[];
-    o.add(head);
+    const head=new THREE.Group(),torso=new THREE.Group(),limbs=[],wings=[],ears=[];
+    o.add(torso);torso.add(head);
     if(chicken){
-      o.add(ell(.46,.43,.65,base,0,.65,0));
+      torso.add(ell(.46,.43,.65,base,0,.65,0));
       const tail=new THREE.Group();tail.position.set(0,.75,-.54);
       for(const side of [-1,0,1]){
         const feather=ell(.105,.26,.20,darker,side*.13,.12,-.10);
         feather.rotation.x=-.35;tail.add(feather);
       }
-      o.add(tail);
+      torso.add(tail);
       head.position.set(0,.83,.37);
       head.add(ell(.29,.31,.30,base,0,.19,.11));
       const beak=mesh(new THREE.ConeGeometry(.145,.34,7),m.beak,0,.11,.44);
@@ -850,7 +865,7 @@ export function makeScene(canvas,onSelect=()=>{}){
       head.add(ell(.105,.20,.09,m.comb,0,.52,.08));
       for(const side of [-1,1]){
         const wing=ell(.21,.18,.43,darker,side*.34,.75,-.08);
-        o.add(wing);wings.push(wing);
+        torso.add(wing);wings.push(wing);
         head.add(mesh(eyeGeo,m.eyes,side*.252,.24,.29,false));
         const leg=new THREE.Group();leg.position.set(side*.19,.35,.10);
         leg.add(cyl(.045,.053,.30,m.beak,0,-.16,0,7));
@@ -858,8 +873,8 @@ export function makeScene(canvas,onSelect=()=>{}){
         o.add(leg);limbs.push(leg);
       }
     }else{
-      o.add(ell(.56,.42,.80,base,0,.52,0));
-      o.add(ell(.23,.23,.22,base,0,.56,-.77)); // tail
+      torso.add(ell(.56,.42,.80,base,0,.52,0));
+      torso.add(ell(.23,.23,.22,base,0,.56,-.77)); // tail
       head.position.set(0,.67,.56);
       head.add(ell(.36,.33,.34,base,0,.08,.07));
       for(const side of [-1,1]){
@@ -874,12 +889,16 @@ export function makeScene(canvas,onSelect=()=>{}){
       }
       head.add(ell(.09,.075,.09,m.pink,0,.005,.41));
     }
-    const h=seeded(id*31+index*7);
-    const ax=chicken?30+(h-.5)*14:21+(h-.5)*5;
-    const az=chicken?4+(seeded(id*8+43)-.5)*9:11+(seeded(id*9+50)-.5)*7;
-    o.userData={kind:species,id,ax,az,phase:seeded(id*13+50)*Math.PI*2,
-      head,limbs,wings,ears,health:100,stage:a.st,age:Number(a.age)||0};
-    o.position.copy(at(ax,az));
+    const path=yardPath(species,id);
+    const pathProgress=seeded(id*15.7+17);
+    const p=path.curve.getPointAt(pathProgress);
+    o.userData={kind:species,id,phase:seeded(id*13+50)*Math.PI*2,
+      head,torso,limbs,wings,ears,health:100,stage:a.st,age:Number(a.age)||0,
+      path:path.curve,pathLength:path.length,pathProgress,travelM:0,
+      // Distinct rates & route phases prevent identical synchronized motion.
+      walkSpeed:chicken?.44+seeded(id*9.31)*.14:.36+seeded(id*4.8)*.12,
+      walking:false};
+    o.position.copy(at(p.x,p.z));
     return o;
   }
   // Farm Simulator source/src/world/sync.js reconciles by immutable model ID.
@@ -983,7 +1002,7 @@ export function makeScene(canvas,onSelect=()=>{}){
     overview:{eye:V(16,59,91),look:V(0,1.5,-8)},
     energy:{eye:V(-29,21,17),look:V(-29,2,-9)},
     water:{eye:V(17,24,-1),look:V(0,2,-23)},
-    farm:{eye:V(53,23,33),look:V(31,2,3)}
+    farm:{eye:V(48,17,23),look:V(33,2,3)}
   };
   let view="overview",moving=false;
   const eye=views.overview.eye.clone(),focus=views.overview.look.clone();
@@ -1102,32 +1121,43 @@ export function makeScene(canvas,onSelect=()=>{}){
       const a=agents.children[i],s=a.userData,chicken=s.kind==="chicken";
       const healthSpeed=.35+.65*THREE.MathUtils.clamp(s.health/100,0,1);
       const youngKit=!chicken&&s.stage==="kit"&&s.age<10;
-      const phase=visualTime*(chicken?1.65:1.2)*healthSpeed+s.phase;
-      const gait=gaitPose(playing,awake,youngKit,chicken,phase,i);
-      const active=gait.moving,dist=chicken?.96:.40;
-      // Pause must preserve each animal's current horizontal position, not
-      // silently walk it back to its spawn point or freeze it mid-hop.
-      const targetX=active?s.ax+Math.sin(phase*.56+i*.7)*dist:a.position.x;
-      const targetZ=active?s.az+Math.cos(phase*.68+i*.9)*dist:a.position.z;
-      const blend=smoothAlpha(4.5,dt);
-      const wasX=a.position.x,wasZ=a.position.z;
-      a.position.x+=(targetX-a.position.x)*blend;
-      a.position.z+=(targetZ-a.position.z)*blend;
-      a.position.y=terrainY(a.position.x,a.position.z)+gait.heightM;
-      const stepWave=gait.wave;
-      if(active){
-        const dx=a.position.x-wasX,dz=a.position.z-wasZ;
-        if(Math.hypot(dx,dz)>1e-5)a.rotation.y=Math.atan2(dx,dz);
+      const youngRest=!chicken&&youngKit;
+      const active=Boolean(playing&&awake&&!youngRest);
+      // The visual agent traverses genuine horizontal distance around the pen,
+      // rather than moving a few centimeters around a fixed sine-wave anchor.
+      const speed=active?s.walkSpeed*healthSpeed:0;
+      if(speed>0&&dt>0){
+        s.pathProgress=(s.pathProgress+dt*speed/Math.max(1,s.pathLength))%1;
+        const p=s.path.getPointAt(s.pathProgress);
+        const dx=p.x-a.position.x,dz=p.z-a.position.z;
+        s.travelM+=Math.hypot(dx,dz);
+        a.position.x=p.x;a.position.z=p.z;
+        const tangent=s.path.getTangentAt(s.pathProgress);
+        const targetYaw=Math.atan2(tangent.x,tangent.z);
+        const deltaYaw=Math.atan2(Math.sin(targetYaw-a.rotation.y),
+                                  Math.cos(targetYaw-a.rotation.y));
+        a.rotation.y+=deltaYaw*smoothAlpha(9,dt);
       }
-      s.head.rotation.x=active?(chicken?.16+Math.max(0,Math.sin(phase*3.2+i))*.57:
-        .035+Math.sin(phase*1.8)*.075):-.09;
-      s.head.rotation.y=active?Math.sin(phase*.8+i)*.06:0;
-      for(let k=0;k<s.limbs.length;k++)
-        s.limbs[k].rotation.x=active?(chicken?stepWave*(k?-.31:.31):Math.max(0,stepWave)*-.18):0;
+      const phase=s.travelM*(chicken?19:11)+s.phase;
+      const gait=gaitPose(playing,awake,youngRest,chicken,phase,i);
+      const stepWave=gait.wave;
+      // Chicken roots stay exactly on the triangulated ground; the torso bobs
+      // over independently animated alternating feet (no helicopter movement).
+      a.position.y=terrainY(a.position.x,a.position.z)+(chicken?0:gait.heightM);
+      s.torso.position.y=chicken&&active?Math.abs(stepWave)*.023:0;
+      s.walking=active;
+      s.head.rotation.x=active?(chicken?.08+Math.max(0,Math.sin(phase*.4+i))*.19:
+        .035+Math.sin(phase*.45)*.065):-.04;
+      s.head.rotation.y=active?Math.sin(phase*.18+i)*.07:0;
+      for(let k=0;k<s.limbs.length;k++){
+        const legPhase=k%2?-stepWave:stepWave;
+        s.limbs[k].rotation.x=active?(chicken?legPhase*.43:Math.max(0,legPhase)*-.18):0;
+        if(chicken)s.limbs[k].position.y=.35+(active?Math.max(0,legPhase)*.09:0);
+      }
       for(let k=0;k<s.wings.length;k++)
-        s.wings[k].rotation.z=active?Math.sin(phase*1.8+k)*.035*(k?1:-1):0;
+        s.wings[k].rotation.z=active?Math.sin(phase*.42+k)*.02*(k?1:-1):0;
       for(let k=0;k<s.ears.length;k++)
-        s.ears[k].rotation.z=active?Math.sin(phase*2.1+k)*.07:0;
+        s.ears[k].rotation.z=active?Math.sin(phase*.54+k)*.07:0;
     }
     const e=data?.last?.energy,w=data?.last?.water;
     for(const f of flows){
@@ -1192,6 +1222,10 @@ export function makeScene(canvas,onSelect=()=>{}){
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
       tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport(),
+      animalMotion:{walkingChickens:agents.children.filter(a=>a.userData.kind==="chicken"&&a.userData.walking).length,
+        chickenTravelM:agents.children.filter(a=>a.userData.kind==="chicken").reduce((n,a)=>n+a.userData.travelM,0),
+        maxRootGroundErrorM:agents.children.filter(a=>a.userData.kind==="chicken").reduce(
+          (n,a)=>Math.max(n,Math.abs(a.position.y-terrainY(a.position.x,a.position.z))),0)},
       pausedGroundErrorM:playing?null:agents.children.reduce((e,a)=>Math.max(e,Math.abs(a.position.y-terrainY(a.position.x,a.position.z))),0)}}
   };
 }
