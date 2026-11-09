@@ -133,6 +133,7 @@ try:
             assert feet["maxPenetrationM"] < 1e-6, feet
             page.locator("[data-view=farm]").click()
             page.wait_for_timeout(650)
+            (ROOT/"tests"/"artifacts").mkdir(exist_ok=True)
             page.screenshot(path=str((ROOT/"tests"/"artifacts"/
                 ("mobile-farm-stride.png" if mobile else "desktop-farm-stride.png"))))
             page.locator("#playBtn").click()
