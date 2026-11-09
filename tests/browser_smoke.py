@@ -52,6 +52,16 @@ try:
             # door frames rather than opaque solid fronts. Geometry is illustrative.
             assert page.evaluate("window.HomesteadApp.world().housingScreenCount") >= 2
             assert page.evaluate("window.HomesteadApp.world().illustrativeCageDoors") == 6
+            # Geometry-derived measurements, not decorative property flags.
+            assert page.evaluate("""() => {
+                const a=window.HomesteadApp.world().structureAudit;
+                return a.closedGables===4
+                  && a.houseDoorHeightM>=2.0 && a.houseDoorHeightM<=2.5
+                  && a.coopServiceDoorHeightM>=2.0 && a.coopServiceDoorHeightM<=2.5
+                  && a.coopPopDoorHeightM>=0.5 && a.coopPopDoorHeightM<=1
+                  && a.hasRampClearance && a.gateOpeningM-a.rampWidthM>=1
+                  && a.hutchFenceClearanceM>=1;
+            }""")
             # Visual-only adaptive DPR must never exceed physical device DPR or
             # change simulation time; the scene exposes its current render tier.
             assert page.evaluate("""() => {
@@ -94,9 +104,15 @@ try:
             # Stable survivors must not be recreated even when their stage ages.
             survivors=set(baseline["stableIds"]) & set(after["stableIds"])
             assert after["added"]-baseline["added"] <= len(set(after["stableIds"])-set(baseline["stableIds"]))+1
+            beforeMotion=page.evaluate("window.HomesteadApp.world().animalMotion")
             page.locator("#playBtn").click()
             assert page.evaluate("window.HomesteadApp.world().playing") is True
-            page.wait_for_timeout(450)  # sample at least one visible locomotion frame
+            page.wait_for_timeout(950)
+            afterMotion=page.evaluate("window.HomesteadApp.world().animalMotion")
+            assert afterMotion["walkingChickens"] > 0, afterMotion
+            assert afterMotion["chickenTravelM"] > beforeMotion["chickenTravelM"] + .05, (
+                "Chickens must traverse the yard, not just hover in place",beforeMotion,afterMotion)
+            assert afterMotion["maxRootGroundErrorM"] < 1e-9, afterMotion
             page.locator("#playBtn").click()
             assert page.evaluate("window.HomesteadApp.world().playing") is False
             # Pause must land all animals immediately, even if the frozen gait
