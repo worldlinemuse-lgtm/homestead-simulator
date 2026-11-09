@@ -403,19 +403,72 @@ export function makeScene(canvas,onSelect=()=>{}){
     end.userData={physicsRole:"fixed",collider:"visual-only",unit:"m"};
     parent.add(end);closedGableCount++;return end;
   }
+
+  // Construct real gaps in the front masonry; never paint doors or glass over
+  // an opaque building box. Each solid band has a named fixed AABB proxy.
+  function facadeWithOpenings(parent,label,w,h,z,openings,material,thickness=.28){
+    const parts=[],ys=[0,h],half=w/2,eps=1e-6;
+    for(const o of openings){
+      if(o.w<=0||o.h<=0||Math.abs(o.x)+o.w/2>half+eps||
+         o.y-o.h/2<0||o.y+o.h/2>h)throw Error("Invalid facade opening: "+o.name);
+      ys.push(o.y-o.h/2,o.y+o.h/2);
+    }
+    const cuts=[...new Set(ys.map(y=>Number(y.toFixed(7))))].sort((a,b)=>a-b);
+    for(let j=1;j<cuts.length;j++){
+      const lower=cuts[j-1],upper=cuts[j],cy=(lower+upper)/2;
+      if(upper-lower<eps)continue;
+      const holes=openings.filter(o=>cy>o.y-o.h/2+eps&&cy<o.y+o.h/2-eps)
+        .map(o=>[o.x-o.w/2,o.x+o.w/2]).sort((a,b)=>a[0]-b[0]);
+      let cursor=-half;
+      function addTo(right){
+        if(right-cursor<=eps)return;
+        const width=right-cursor;
+        const wall=box(width,upper-lower,thickness,material,(right+cursor)/2,cy,z);
+        wall.name=label+"/solid/"+parts.length;
+        wall.userData={assetId:label,physicsRole:"fixed",
+          collider:{type:"aabb",sizeM:[width,upper-lower,thickness]},unit:"m"};
+        parent.add(wall);parts.push(wall);
+      }
+      for(const [left,right] of holes){if(left>cursor)addTo(left);cursor=Math.max(cursor,right)}
+      addTo(half);
+    }
+    return {parts,openings,z};
+  }
+  function rearAndSides(parent,label,w,h,d,material){
+    const parts=[
+      box(w,h,.26,material,0,h/2,-d/2),
+      box(.26,h,d,material,-w/2,h/2,0),
+      box(.26,h,d,material,w/2,h/2,0)
+    ];
+    for(const [i,p] of parts.entries()){
+      p.name=label+"/"+["rear-wall","west-wall","east-wall"][i];
+      p.userData={physicsRole:"fixed",collider:{type:"aabb",
+        sizeM:[p.geometry.parameters.width,p.geometry.parameters.height,p.geometry.parameters.depth]}};
+      parent.add(p);
+    }
+    const base=box(w-.3,.14,d-.3,m.wood,0,.12,0);
+    base.name=label+"/floor";parent.add(base);
+  }
   // House and utility outbuilding belong to the same farmyard; no visual boxes as zones.
   const homestead=group("overview","Home and utility loads",6,12);
   foundationFor(homestead,6,12,13.1,9.7);
-  homestead.add(box(13,6.0,9.6,m.cedar,0,3,0));
+
+  const houseWindows=[-4.16,4.16].flatMap(x=>[1.63,4.43].map(y=>
+    ({name:"window-"+x+"-"+y,x,y,w:1.56,h:1.38})));
+  houseWindows.push({name:"upper-center",x:0,y:4.43,w:1.56,h:1.38});
+  const houseFront=facadeWithOpenings(homestead,"house/front",13,6,4.8,
+    [...houseWindows,{name:"door",x:0,y:1.23,w:1.20,h:2.18}],m.cedar);
+  rearAndSides(homestead,"house",13,6,9.6,m.cedar);
+  homestead.add(box(12.65,.18,9.2,m.wood,0,3.01,0));
   // A two-storey house with windows scaled as architectural openings,
   // not the previous 3.2 m tall single-pane billboards.
   const warmWindows=[];
-  function houseWindow(px,y,pz=4.87){
+  function houseWindow(px,y,pz=5.00){
     const trim=box(1.83,1.65,.13,m.trim,px,y,pz);homestead.add(trim);
-    const glass=box(1.56,1.38,.16,m.glass,px,y,pz+.10);homestead.add(glass);
-    homestead.add(box(.065,1.47,.14,m.trim,px,y,pz+.20));
-    homestead.add(box(1.62,.07,.14,m.trim,px,y,pz+.20));
-    homestead.add(box(2.06,.14,.35,m.stone,px,y-.88,pz+.19));
+    const glass=box(1.56,1.38,.09,m.glass,px,y,pz-.17);homestead.add(glass);
+    homestead.add(box(.065,1.47,.12,m.trim,px,y,pz+.04));
+    homestead.add(box(1.62,.07,.12,m.trim,px,y,pz+.04));
+    homestead.add(box(2.06,.14,.35,m.stone,px,y-.88,pz+.06));
     warmWindows.push(glass);
   }
   for(const x of [-4.16,4.16]){
@@ -645,7 +698,13 @@ export function makeScene(canvas,onSelect=()=>{}){
   foundationFor(barn,30,-10,9.25,8.5);
   // Continuous siding is textured wood; trim gives the coop construction-scale detail.
   barn.add(box(9.35,.32,8.8,m.stone,0,.16,0));
-  barn.add(box(9,5.5,8.4,m.cedar,0,2.8,0));
+  
+  const coopFront=facadeWithOpenings(barn,"coop/front",9,5.5,4.2,
+    [{name:"person-door",x:-2.42,y:1.30,w:1.56,h:2.38},
+     {name:"bird-door",x:0,y:1.24,w:.92,h:.79},
+     ...[-2.65,2.65].map(x=>({name:"window-"+x,x,y:3.93,w:1.58,h:1.27}))],
+     m.cedar,.26);
+  rearAndSides(barn,"coop",9,5.5,8.4,m.cedar);
   for(const x of [-4.4,-3.55,-2.7,-1.85,1.85,2.7,3.55,4.4]){
     barn.add(box(.07,5.05,.095,m.trim,x,2.87,4.27));
   }
@@ -681,9 +740,9 @@ export function makeScene(canvas,onSelect=()=>{}){
   }
   for(const x of [-2.65,2.65]){
     barn.add(box(1.83,1.53,.12,m.trim,x,3.93,4.33));
-    barn.add(box(1.58,1.27,.11,m.glass,x,3.93,4.41));
-    barn.add(box(.08,1.36,.12,m.trim,x,3.93,4.49));
-    barn.add(box(1.66,.07,.12,m.trim,x,3.93,4.49));
+    barn.add(box(1.58,1.27,.08,m.glass,x,3.93,4.24));
+    barn.add(box(.08,1.36,.12,m.trim,x,3.93,4.40));
+    barn.add(box(1.66,.07,.12,m.trim,x,3.93,4.40));
     barn.add(box(2.03,.14,.30,m.wood,x,3.12,4.46));
   }
   // Illustration of the exterior nest-access hatch; boxes do not alter egg count.
@@ -1187,6 +1246,19 @@ export function makeScene(canvas,onSelect=()=>{}){
     if(playing&&m.creek.map)m.creek.map.offset.y=(m.creek.map.offset.y+dt*.012)%1;
     renderer.render(scene,camera);
   }
+
+  function facadeProbe(parent,front,solidX,solidY){
+    const ray=new THREE.Raycaster(),dir=V(0,0,-1);
+    parent.updateMatrixWorld(true);
+    function count(x,y){
+      ray.set(V(parent.position.x+x,parent.position.y+y,
+        parent.position.z+front.z+1.5),dir);
+      return ray.intersectObjects(front.parts,false).length;
+    }
+    return {wallSegments:front.parts.length,openingCount:front.openings.length,
+      blockedOpenings:front.openings.filter(o=>count(o.x,o.y)>0).map(o=>o.name),
+      solidWallHits:count(solidX,solidY)};
+  }
   let groundingCache=null;
   function animalLifecycleReport(){
     return {active:animalById.size,added:animalAdded,removed:animalRemoved,
@@ -1223,7 +1295,9 @@ export function makeScene(canvas,onSelect=()=>{}){
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
       tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport(),
-      structureAudit:{houseDoorHeightM:frontDoor.geometry.parameters.height,
+      structureAudit:{houseFacade:facadeProbe(homestead,houseFront,6,3),
+        coopFacade:facadeProbe(barn,coopFront,4.1,2.7),
+        houseDoorHeightM:frontDoor.geometry.parameters.height,
         coopServiceDoorHeightM:coopDoor.geometry.parameters.height,
         coopPopDoorHeightM:popDoor.geometry.parameters.height,
         closedGables:closedGableCount,
