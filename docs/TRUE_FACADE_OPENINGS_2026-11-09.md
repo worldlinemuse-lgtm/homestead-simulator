@@ -33,3 +33,7 @@ These dimensions are **illustrative**, not construction specifications; the scen
 ## Next evidence-driven work
 
 The largest remaining realism issues are visual foot-planting during chicken walking, more diverse path planning/animal interactions without inventing biological records, non-intersecting entrance/fixture geometry and physical-model-aware materials. Any dynamic physics implementation should wait until stable collider contracts cover the remaining world props.
+
+## Open chicken access correction
+
+The previous solid black chicken door had been placed directly across the 0.79 m access opening at y=1.24 m. The new panel is a **raised sliding hatch** above the opening, with visible guide rails. This is one fixed visual pose, not an assertion that the biological model opens/closes a door or that chickens can physically cross that threshold. Browser regression checks the panel's lower edge remains at least 0.02 m clear of the opening's upper edge.
