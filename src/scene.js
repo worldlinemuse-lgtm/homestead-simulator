@@ -719,7 +719,11 @@ export function makeScene(canvas,onSelect=()=>{}){
   for(const x of [-3.27,-1.57])barn.add(box(.11,2.46,.18,m.trim,x,1.32,4.39));
   barn.add(box(1.79,.14,.18,m.trim,-2.42,2.55,4.39));
   barn.add(cyl(.075,.075,.09,m.metal,-1.91,1.31,4.45,10));
-  const popDoor=box(.92,.79,.15,m.darkWood,0,1.24,4.30);barn.add(popDoor);
+  // Open sliding chicken hatch: the slab is raised above its actual opening.
+  // This is visual static geometry; it does not claim dynamic gate automation.
+  const popDoor=box(.92,.79,.15,m.darkWood,0,2.08,4.34);
+  popDoor.name="Coop raised chicken hatch";barn.add(popDoor);
+  for(const x of [-.54,.54])barn.add(box(.06,1.65,.15,m.steel,x,1.62,4.45));
   for(const x of [-.52,.52])barn.add(box(.095,.97,.17,m.trim,x,1.23,4.39));
   barn.add(box(1.15,.12,.18,m.trim,0,1.76,4.39));
   barn.add(box(1.18,.11,.31,m.wood,0,.78,4.50));
@@ -1300,6 +1304,8 @@ export function makeScene(canvas,onSelect=()=>{}){
         houseDoorHeightM:frontDoor.geometry.parameters.height,
         coopServiceDoorHeightM:coopDoor.geometry.parameters.height,
         coopPopDoorHeightM:popDoor.geometry.parameters.height,
+        coopHatchClearanceM:popDoor.position.y-popDoor.geometry.parameters.height/2-
+          (1.24+.79/2),
         closedGables:closedGableCount,
         gateOpeningM:31.65-28.35,
         rampWidthM:ramp.geometry.parameters.width,
