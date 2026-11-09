@@ -444,8 +444,13 @@ export function makeScene(canvas,onSelect=()=>{}){
     for(const dx of [-1.62,0,1.62])mount.add(box(.035,.015,2.7,m.metal,dx,height+.19,-.09));
     for(const dz of [-.72,.72])mount.add(box(5.07,.025,.035,m.metal,0,height+.20,dz));
     for(const dx of [-2,2]){
-      mount.add(cyl(.11,.14,1.85,m.steel,dx,.92,-.75,8));
-      mount.add(cyl(.11,.14,2.6,m.steel,dx,1.3,.88,8));
+      for(const [dz,length,center] of [[-.75,1.85,.92],[.88,2.6,1.3]]){
+        mount.add(cyl(.11,.14,length,m.steel,dx,center,dz,8));
+        // Footing continues beneath the exact heightfield on the downhill side.
+        const floor=terrainY(panels.position.x+x+dx,panels.position.z+z+dz)-panels.position.y;
+        const top=.23,bottom=Math.min(-.08,floor-.24);
+        mount.add(cyl(.13,.16,top-bottom,m.concrete,dx,(top+bottom)/2,dz,9));
+      }
     }
     panels.add(mount);
   }
@@ -462,7 +467,7 @@ export function makeScene(canvas,onSelect=()=>{}){
 
   // Stream intake, pump, vertically arranged filter skids, elevated treated water tank.
   const water=group("water","Water treatment and storage",-7,-23);
-  foundationFor(water,-7.5,-23,9.2,5.9,m.concrete);
+  foundationFor(water,-7,-23,10.4,6.2,m.concrete);
   const intake=at(-18,-31,.16),pumpPos=at(-8,-25,.5);
   water.add(box(9,.3,5.8,m.concrete,-.5,.18,0));
   water.add(box(2.8,1.0,2.0,m.steel,-.4,.88,-1.7));
@@ -691,10 +696,16 @@ export function makeScene(canvas,onSelect=()=>{}){
     const roof=box(7.85,.24,3.58,m.roof,0,3.48,z);
     roof.rotation.x=-.09;hutches.add(roof);
     hutches.add(box(7.85,.14,.13,m.trim,0,3.33,z+1.77));
-    for(const x of [-3.40,-1.15,1.15,3.40]){
+      for(const x of [-3.40,-1.15,1.15,3.40]){
       hutches.add(box(.14,2.12,.17,m.wood,x,2.36,z+1.44));
-      hutches.add(cyl(.105,.12,2.92,m.wood,x,1.51,z-1.1,9));
-      hutches.add(cyl(.105,.12,2.92,m.wood,x,1.51,z+1.10,9));
+      for(const dz of [-1.1,1.10]){
+        hutches.add(cyl(.105,.12,2.92,m.wood,x,1.51,z+dz,9));
+        const land=terrainY(hutches.position.x+x,hutches.position.z+z+dz)-hutches.position.y;
+        if(land<.06){
+          const top=.23,bottom=land-.2;
+          hutches.add(cyl(.12,.15,top-bottom,m.wood,x,(top+bottom)/2,z+dz,9));
+        }
+      }
     }
     for(const xx of [-1.14,1.14]){
       hutches.add(box(.13,1.66,2.8,m.cedar,xx,2.39,z));
