@@ -37,6 +37,15 @@ try:
             # door frames rather than opaque solid fronts. Geometry is illustrative.
             assert page.evaluate("window.HomesteadApp.world().housingScreenCount") >= 2
             assert page.evaluate("window.HomesteadApp.world().illustrativeCageDoors") == 6
+            # Visual-only adaptive DPR must never exceed physical device DPR or
+            # change simulation time; the scene exposes its current render tier.
+            assert page.evaluate("""() => {
+                const v=window.HomesteadApp.world();
+                return Number.isFinite(v.qualityFps) && v.qualityTier>=0
+                  && v.qualityTier<=2 && v.qualityPixelRatio>=1
+                  && v.qualityPixelRatio<=Math.max(1,devicePixelRatio)
+                  && v.qualityChanges>=0;
+            }""")
             # Renderer metadata must agree with the model snapshot.
             assert page.evaluate("""() => {
                 const s = window.HomesteadApp.snapshot(), v = window.HomesteadApp.world();
