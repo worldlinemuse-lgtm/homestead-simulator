@@ -18,7 +18,12 @@ try:
             errors=[]
             page.on("pageerror",lambda e:errors.append(str(e)+"\n"+(getattr(e,"stack","") or "")))
             page.goto("http://127.0.0.1:%d/"%server.server_port,wait_until="load")
-            page.wait_for_function("window.HomesteadApp && window.HomesteadApp.snapshot().farm.counts.n > 0",timeout=40000)
+            try:
+                page.wait_for_function("window.HomesteadApp && window.HomesteadApp.snapshot().farm.counts.n > 0",timeout=40000)
+            except Exception as exc:
+                # Startup failures must expose the first browser exception, not
+                # only an opaque forty-second readiness timeout.
+                raise AssertionError(f"Homestead startup failed (mobile={mobile}); page errors={errors!r}; url={page.url}") from exc
             assert page.locator("#world").is_visible()
             if mobile:
                 assert page.evaluate("document.getElementById('summary').classList.contains('collapsed')")
