@@ -201,7 +201,17 @@ export function makeScene(canvas,onSelect=()=>{}){
   ribbon([[2,14],[2,4],[-4,-6],[-8,-15]],2.1,m.path,8);
   ribbon([[2,14],[16,6],[23,-4],[30,-14]],2.1,m.path,5);
   ribbon([[-8,-15],[-17,-20],[-27,-18]],1.5,m.path,2);
-  ribbon(creekNodes,7.1,m.bank,11);
+  // Separate shoreline strips: a full-width bank ribbon would render OVER the
+  // recessed water and visually erase it (caught in desktop/mobile CI images).
+  function shoreline(offset){
+    return creekNodes.map(([x,z],i)=>{
+      const before=creekNodes[Math.max(i-1,0)],after=creekNodes[Math.min(i+1,creekNodes.length-1)];
+      const dx=after[0]-before[0],dz=after[1]-before[1],len=Math.hypot(dx,dz)||1;
+      return [x-dz/len*offset,z+dx/len*offset];
+    });
+  }
+  ribbon(shoreline(3.5),1.4,m.bank,11);
+  ribbon(shoreline(-3.5),1.4,m.bank,12);
   const streamCurve=ribbon(creekNodes,4.65,m.creek,11);
   // Natural riverbank stones and scattered ground cover.
   const stoneGeometry=new THREE.DodecahedronGeometry(1,0);
