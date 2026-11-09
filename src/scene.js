@@ -253,6 +253,15 @@ export function makeScene(canvas,onSelect=()=>{}){
   const box=(w,h,d,material,x=0,y=0,z=0)=>mesh(new THREE.BoxGeometry(w,h,d),material,x,y,z);
   const cyl=(top,bottom,h,material,x=0,y=0,z=0,n=20)=>mesh(new THREE.CylinderGeometry(top,bottom,h,n),material,x,y,z);
   const ell=(a,b,c,material,x=0,y=0,z=0)=>{const o=mesh(new THREE.SphereGeometry(1,12,9),material,x,y,z);o.scale.set(a,b,c);return o};
+  // A single immutable feather silhouette buffer is shared across every bird.
+  // Farm source world/perf.js advocates visual-only efficiency: this lowers
+  // GPU buffer churn without changing animal identities, counts or biology.
+  // The feathers remain separate draw calls (future material batching work).
+  const plumageGeometry=new THREE.SphereGeometry(1,12,9);
+  const featherEll=(a,b,c,material,x=0,y=0,z=0)=>{
+    const o=mesh(plumageGeometry,material,x,y,z);
+    o.scale.set(a,b,c);return o;
+  };
   function group(kind,label,x,z){const o=new THREE.Group();o.position.copy(at(x,z));o.userData={kind,label};scene.add(o);return o}
   const selectable=[];
   function select(g){g.traverse(o=>{if(o.isMesh)selectable.push(o)});return g}
@@ -924,20 +933,20 @@ export function makeScene(canvas,onSelect=()=>{}){
       const featherCount=8;
       for(const side of [-1,1]){
         for(let row=0;row<3;row++){
-          const plume=ell(.095,.105,.285,row===2?darker:base,
+          const plume=featherEll(.095,.105,.285,row===2?darker:base,
             side*(.395-row*.025),.78-row*.105,-.13-row*.125);
           plume.rotation.y=side*(.22+row*.06);
           plume.rotation.x=-.22-row*.12;
           torso.add(plume);
         }
         // Downward-pointing wing tips extend beyond the oval wing body.
-        const flight=ell(.085,.09,.33,darker,side*.42,.63,-.32);
+        const flight=featherEll(.085,.09,.33,darker,side*.42,.63,-.32);
         flight.rotation.x=-.35;flight.rotation.y=side*.22;
         torso.add(flight);
       }
       const tail=new THREE.Group();tail.position.set(0,.75,-.54);
       for(const side of [-2,-1,0,1,2]){
-        const feather=ell(.072,.29,.13,side===0?base:darker,
+        const feather=featherEll(.072,.29,.13,side===0?base:darker,
           side*.095,.15+(.10-Math.abs(side)*.045),-.13);
         feather.rotation.x=-.54;
         feather.rotation.z=-side*.12;
@@ -1056,7 +1065,8 @@ export function makeScene(canvas,onSelect=()=>{}){
     if(!creature)return;
     agents.remove(creature);
     creature.traverse(node=>{
-      if(!node.isMesh||!node.geometry||node.geometry===eyeGeo)return;
+      if(!node.isMesh||!node.geometry||node.geometry===eyeGeo||
+         node.geometry===plumageGeometry)return;
       // Every generated body part has its own geometry. Never dispose the
       // shared eye sphere or global coat/fixture materials.
       if(!ownedAnimalGeometry.has(node.geometry))return;
@@ -1086,7 +1096,8 @@ export function makeScene(canvas,onSelect=()=>{}){
         creature.userData.modelId=key;
         creature.userData.physicsRole="moving";
         creature.traverse(node=>{
-          if(node.isMesh&&node.geometry&&node.geometry!==eyeGeo)
+          if(node.isMesh&&node.geometry&&node.geometry!==eyeGeo&&
+               node.geometry!==plumageGeometry)
             ownedAnimalGeometry.add(node.geometry);
         });
         animalById.set(key,creature);agents.add(creature);animalAdded++;
@@ -1451,7 +1462,8 @@ export function makeScene(canvas,onSelect=()=>{}){
     },resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
-      plumage:{chickens:agents.children.filter(a=>a.userData.kind==="chicken").length,
+      plumage:{sharedGeometry:true,sharedFeatherGeometryCount:1,
+        chickens:agents.children.filter(a=>a.userData.kind==="chicken").length,
         decorativeFeathers:agents.children.reduce((n,a)=>n+(a.userData.plumageFeathers||0),0)},
       camera:{requestedDistanceM:toEye.distanceTo(toLook),actualDistanceM:eye.distanceTo(focus),
         heightAboveGroundM:eye.y-terrainY(eye.x,eye.z),
