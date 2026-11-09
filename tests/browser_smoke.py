@@ -96,8 +96,18 @@ try:
             assert after["added"]-baseline["added"] <= len(set(after["stableIds"])-set(baseline["stableIds"]))+1
             page.locator("#playBtn").click()
             assert page.evaluate("window.HomesteadApp.world().playing") is True
+            page.wait_for_timeout(450)  # sample at least one visible locomotion frame
             page.locator("#playBtn").click()
             assert page.evaluate("window.HomesteadApp.world().playing") is False
+            # Pause must land all animals immediately, even if the frozen gait
+            # phase had them airborne; it must not keep walking toward spawn.
+            assert page.evaluate("""() => {
+                const w=window.HomesteadApp.world();
+                return Number.isFinite(w.pausedGroundErrorM)
+                  && w.pausedGroundErrorM<1e-9;
+            }""")
+            page.wait_for_timeout(130)
+            assert page.evaluate("window.HomesteadApp.world().pausedGroundErrorM") < 1e-9
             assert page.locator("#energyValue").inner_text().endswith("kWh")
             assert page.locator("#waterValue").inner_text().endswith("L")
             assert page.evaluate("document.getElementById('errors').style.display")!="block"
