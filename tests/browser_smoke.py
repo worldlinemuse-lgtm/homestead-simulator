@@ -20,6 +20,12 @@ try:
             page.goto("http://127.0.0.1:%d/"%server.server_port,wait_until="load")
             page.wait_for_function("window.HomesteadApp && window.HomesteadApp.snapshot().farm.counts.n > 0",timeout=40000)
             assert page.locator("#world").is_visible()
+            if mobile:
+                assert page.evaluate("document.getElementById('summary').classList.contains('collapsed')")
+                page.locator("#hudToggle").click()
+                assert not page.evaluate("document.getElementById('summary').classList.contains('collapsed')")
+                page.locator("#hudToggle").click()
+                assert page.evaluate("document.getElementById('summary').classList.contains('collapsed')")
             page.locator("#inspectBtn").click()
             assert page.evaluate("getComputedStyle(document.querySelector('#inspector')).display") == "block"
             assert page.locator("#assetReadout").is_visible()
