@@ -1277,7 +1277,19 @@ export function makeScene(canvas,onSelect=()=>{}){
       if(!origin || !["x","y","z"].every(k=>Number.isFinite(origin[k])))
         throw new TypeError("Native farm world requires finite farmWorldOriginM");
       const poses=nativeFarmWorldPoses(snapshot.farmWorld,origin);
-      nativeAnimalPoses=new Map(poses.map(p=>[p.id,p]));
+      const next=new Map();
+      for(const pose of poses){
+        if(next.has(pose.id))throw new Error("Duplicate native farm agent ID: "+pose.id);
+        next.set(pose.id,pose);
+      }
+      for(const rig of agents.children){
+        const current=next.get(String(rig.userData.modelId));
+        const prior=nativeAnimalPoses?.get(String(rig.userData.modelId));
+        rig.userData.nativePoseChanged=Boolean(current&&(!prior||
+          current.position.x!==prior.position.x||current.position.y!==prior.position.y||
+          current.position.z!==prior.position.z));
+      }
+      nativeAnimalPoses=next;
     }else nativeAnimalPoses=null;
     const last=snapshot.last,c=snapshot.config;
     const ratio=c.waterStorageCapacityL>0?THREE.MathUtils.clamp(snapshot.waterStoredL/c.waterStorageCapacityL,0,1):0;
@@ -1386,14 +1398,24 @@ export function makeScene(canvas,onSelect=()=>{}){
       // A native pose takes priority over the legacy curve. No interpolation
       // can write back into WV.agents or the farm biological model.
       if(nativeAnimalPoses){
-        if(!nativePose){s.walking=false;continue;}
+        if(!nativePose){
+          // Fail closed: an unmatched native ID must never be assigned a
+          // fabricated route, gait, or position by the renderer.
+          s.walking=false;
+          s.torso.position.y=0;
+          s.torso.rotation.z=0;
+          if(chicken)stepChickenFeet(a,s,false);
+          continue;
+        }
         const dx=nativePose.position.x-a.position.x;
         const dz=nativePose.position.z-a.position.z;
-        s.travelM+=Math.hypot(dx,dz);
-        a.position.x=nativePose.position.x;
-        a.position.z=nativePose.position.z;
-        if(Math.hypot(dx,dz)>1e-5)a.rotation.y=Math.atan2(dx,dz);
-        s.walking=Boolean(nativePose.moving);
+        const distance=Math.hypot(dx,dz);
+        // Travel is derived only from successive native physics snapshots.
+        // It must not accumulate again on repeated render frames.
+        if(s.nativePoseChanged)s.travelM+=distance;
+        a.position.set(nativePose.position.x,nativePose.position.y,nativePose.position.z);
+        if(distance>1e-5)a.rotation.y=Math.atan2(dx,dz);
+        s.nativePoseChanged=false;
       }
       const speed=nativeAnimalPoses?0:(active?s.walkSpeed*healthSpeed:0);
       if(speed>0&&dt>0){
