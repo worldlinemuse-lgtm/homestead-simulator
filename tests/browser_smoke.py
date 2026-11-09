@@ -79,9 +79,21 @@ try:
                 return Math.abs(v.tankFillFraction - (s.config.waterStorageCapacityL > 0 ? s.waterStoredL / s.config.waterStorageCapacityL : 0)) < 1e-8
                   && v.visualFarmHour === s.clock.hourOfDay;
             }""")
+            # Reconciliation regression: stable IDs survive day advances; each
+            # retired rig's unique GPU geometry is disposed rather than leaked.
+            baseline=page.evaluate("window.HomesteadApp.world().animalLifecycle")
+            assert baseline["active"] == page.evaluate("window.HomesteadApp.world().animals")
+            assert len(baseline["stableIds"]) == len(set(baseline["stableIds"]))
             page.locator("[data-view=water]").click()
             page.locator("#dayBtn").click()
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==25
+            after=page.evaluate("window.HomesteadApp.world().animalLifecycle")
+            assert after["active"] == page.evaluate("window.HomesteadApp.world().animals")
+            assert after["added"]-baseline["added"] <= 50
+            assert after["ownedGeometries"] <= 60*max(1,after["active"])
+            # Stable survivors must not be recreated even when their stage ages.
+            survivors=set(baseline["stableIds"]) & set(after["stableIds"])
+            assert after["added"]-baseline["added"] <= len(set(after["stableIds"])-set(baseline["stableIds"]))+1
             page.locator("#playBtn").click()
             assert page.evaluate("window.HomesteadApp.world().playing") is True
             page.locator("#playBtn").click()
