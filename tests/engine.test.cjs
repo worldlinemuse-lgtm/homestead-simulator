@@ -42,3 +42,42 @@ test("repeatability for sequential, seeded simulation runs",()=>{
  const run=()=>{const c=new ctx.HomesteadCoordinator.Coordinator();for(let i=0;i<25;i++)c.stepHour();return JSON.stringify(c.snapshot());};
  assert.equal(run(),run());
 });
+
+test("camera and animal interpolation depend on seconds, not frame count",async()=>{
+ const {smoothAlpha,frameDeltaSeconds}=await import("../src/visual-motion.mjs");
+ const expected=1-Math.exp(-6);
+ for(const hz of [10,15,24,30,60,120]){
+   let progress=0;
+   for(let frame=0;frame<hz;frame++)
+     progress+=(1-progress)*smoothAlpha(6,frameDeltaSeconds(1000/hz));
+   assert.ok(Math.abs(progress-expected)<1e-12,
+     "camera must converge identically at "+hz+" fps: "+progress);
+ }
+ assert.ok(frameDeltaSeconds(1000/15)>0.055,
+   "15 fps must not slow animation by clamping to 55 ms");
+ assert.equal(frameDeltaSeconds(1000/4),0.25);
+ assert.equal(frameDeltaSeconds(2000),0);
+ assert.equal(frameDeltaSeconds(16.7,true),0);
+ assert.equal(frameDeltaSeconds(NaN),0);
+ assert.equal(frameDeltaSeconds(-20),0);
+ assert.equal(smoothAlpha(6,-1),0);
+ assert.equal(smoothAlpha(Infinity,1),0);
+});
+test("visual rabbits and chicks land on pause without modifying biology",async()=>{
+ const {gaitPose}=await import("../src/visual-motion.mjs");
+ const rabbitPhase=Math.PI/(2*3.4),chickPhase=Math.PI/(2*5.5);
+ const airborne=gaitPose(true,true,false,false,rabbitPhase);
+ assert.equal(airborne.moving,true);
+ assert.ok(airborne.heightM>0.18);
+ const paused=gaitPose(false,true,false,false,rabbitPhase);
+ assert.equal(paused.moving,false);
+ assert.equal(paused.heightM,0);
+ for(const p of [gaitPose(true,false,false,false,rabbitPhase),
+                 gaitPose(true,true,true,false,rabbitPhase),
+                 gaitPose(false,true,false,true,chickPhase)]){
+   assert.equal(p.moving,false);assert.equal(p.heightM,0);
+ }
+ const steppingChick=gaitPose(true,true,false,true,chickPhase);
+ assert.equal(steppingChick.moving,true);
+ assert.ok(steppingChick.heightM>0);
+});
