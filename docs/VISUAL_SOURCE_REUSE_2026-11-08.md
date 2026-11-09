@@ -36,6 +36,14 @@ This is a source-informed adaptation, not a replacement of original engines or a
 - Screenshots and mobile GPU frame rate were NOT verified during this source-only development iteration; photorealism is not claimed.
 - The current representations of equipment, pipes, animal task choice and physical scale remain illustrative rather than dimensioned engineering drawings.
 
+## Screenshot-guided follow-up in the same PR
+
+The initial PR head passed GitHub model tests and browser smoke for desktop and 393px mobile. Its four CI screenshots were downloaded and inspected. Three visible defects were identified: the flat bright-blue creek hovered on the ground, scattered foliage read as dark spikes, and the mobile telemetry obscured a substantial part of the scene.
+
+Corrective commits now (1) recess the terrain beneath the existing creek route, (2) replace single cone vegetation instances with five-blade, double-sided green clumps and remove them from the water channel, and (3) collapse the mobile telemetry panel by default with an accessible toggle. The creek geometry, colors and animated surface remain scene art, **not calculated streambed hydraulics**.
+
+The model-driven animal and water animation changes remain unchanged. Final new-commit CI screenshots still require reinspection; do not treat previous screenshots as confirmation of the updated terrain or phone layout.
+
 ## Next improvements
 
 1. Adapt Farm's obstacle-aware roaming, nesting and enclosure collision into native 3D, without modifying biological RNG.
