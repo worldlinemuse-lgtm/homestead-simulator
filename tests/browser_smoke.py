@@ -52,6 +52,16 @@ try:
             # door frames rather than opaque solid fronts. Geometry is illustrative.
             assert page.evaluate("window.HomesteadApp.world().housingScreenCount") >= 2
             assert page.evaluate("window.HomesteadApp.world().illustrativeCageDoors") == 6
+            # Real wall apertures: cast rays against physical segmented front
+            # wall meshes, not style metadata or a transparent decal.
+            architecture=page.evaluate("window.HomesteadApp.world().structureAudit")
+            assert architecture["houseFacade"]["openingCount"] == 6, architecture
+            assert architecture["coopFacade"]["openingCount"] == 4, architecture
+            for building in ("houseFacade","coopFacade"):
+                facade=architecture[building]
+                assert facade["wallSegments"] >= 12, facade
+                assert facade["blockedOpenings"] == [], facade
+                assert facade["solidWallHits"] > 0, facade
             # Geometry-derived measurements, not decorative property flags.
             assert page.evaluate("""() => {
                 const a=window.HomesteadApp.world().structureAudit;
