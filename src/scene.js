@@ -8,7 +8,54 @@ import * as THREE from "three";
  */
 export function makeScene(canvas,onSelect=()=>{}){
   const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:"high-performance"});
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.5));
+  // Adapt Farm Simulator world/perf.js's visual-only Auto quality policy.
+  // Device DPR is an upper bound, not a promise of smooth rendering.
+  const deviceDpr=Math.max(1,window.devicePixelRatio||1);
+  const qualityDpr=[1,1.25,1.5];
+  let qualityTier=deviceDpr>1.25?2:0,qualityFps=0;
+  const quality={gaps:[],windowStart:0,slowSince:0,fastSince:0,coolUntil:0,
+    changes:0,failedHigh:0,lockedHigh:false,frameCount:0};
+  function pixelRatio(){return Math.min(deviceDpr,qualityDpr[qualityTier])}
+  renderer.setPixelRatio(pixelRatio());
+  function setVisualTier(t,now){
+    if(t===qualityTier)return;
+    qualityTier=THREE.MathUtils.clamp(t,0,2);
+    quality.changes++;quality.coolUntil=now+5000;
+    quality.slowSince=quality.fastSince=0;
+    quality.gaps.length=0;
+    renderer.setPixelRatio(pixelRatio());
+    const r=canvas.getBoundingClientRect();
+    renderer.setSize(Math.max(1,r.width),Math.max(1,r.height),false);
+  }
+  function observeFrameGap(now,gap){
+    // Hidden tabs, debugging pauses and browser wakeups must not downgrade quality.
+    if(document.hidden||gap>250||gap<=0){
+      quality.gaps.length=0;quality.slowSince=quality.fastSince=0;
+      quality.windowStart=now;return;
+    }
+    quality.gaps.push(gap);
+    if(quality.gaps.length>90)quality.gaps.shift();
+    if(now-quality.windowStart<600||quality.gaps.length<25)return;
+    quality.windowStart=now;
+    const ordered=[...quality.gaps].sort((a,b)=>a-b);
+    const median=ordered[Math.floor(ordered.length/2)];
+    qualityFps=1000/median;
+    if(now<quality.coolUntil)return;
+    if(qualityFps<39){
+      quality.fastSince=0;
+      if(!quality.slowSince)quality.slowSince=now;
+      if(now-quality.slowSince>=2200&&qualityTier>0){
+        if(qualityTier===2)quality.failedHigh++;
+        if(quality.failedHigh>=2)quality.lockedHigh=true;
+        setVisualTier(qualityTier-1,now);
+      }
+    }else if(qualityFps>55){
+      quality.slowSince=0;
+      if(!quality.fastSince)quality.fastSince=now;
+      if(now-quality.fastSince>=10000&&qualityTier<2&&
+         !(qualityTier===1&&quality.lockedHigh))setVisualTier(qualityTier+1,now);
+    }else{quality.slowSince=quality.fastSince=0}
+  }
   renderer.setClearColor(0xb9d8e6);
   renderer.outputColorSpace=THREE.SRGBColorSpace;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
@@ -863,7 +910,9 @@ export function makeScene(canvas,onSelect=()=>{}){
   function animate(now){
     if(disposed)return;
     requestAnimationFrame(animate);
-    const dt=THREE.MathUtils.clamp((now-previous)/1000,0,.055);previous=now;
+    const gap=now-previous;
+    const dt=THREE.MathUtils.clamp(gap/1000,0,.055);previous=now;
+    observeFrameGap(now,gap);
     if(playing)visualTime+=dt;
     eye.lerp(toEye,.095);focus.lerp(toLook,.095);
     camera.position.copy(eye);camera.lookAt(focus);
@@ -941,6 +990,6 @@ export function makeScene(canvas,onSelect=()=>{}){
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
-      tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors}}
+      tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes}}
   };
 }
