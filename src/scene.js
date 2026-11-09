@@ -604,7 +604,7 @@ export function makeScene(canvas,onSelect=()=>{}){
     }
     data=snapshot;syncAnimals(snapshot.farm);
     const last=snapshot.last,c=snapshot.config;
-    const ratio=THREE.MathUtils.clamp(snapshot.waterStoredL/Math.max(1,c.waterStorageCapacityL),0,1);
+    const ratio=c.waterStorageCapacityL>0?THREE.MathUtils.clamp(snapshot.waterStoredL/c.waterStorageCapacityL,0,1):0;
     visualTankFraction=ratio;
     const height=ratio*4.85;
     tankFill.visible=ratio>1e-8;tankRim.visible=tankFill.visible;
@@ -614,13 +614,15 @@ export function makeScene(canvas,onSelect=()=>{}){
     const tankMoving=(last?.water?.treatedL||0)>0 && ratio>1e-8;
     tankRipples.forEach(r=>{r.visible=tankMoving;r.position.y=.407+height});
     troughWater.visible=(last?.water?.consumedL||0)>1e-8; // Hourly modeled allocation, not a livestock behavior claim.
-    const br=THREE.MathUtils.clamp(snapshot.batteryWh/Math.max(1,c.batteryCapacityWh),0,1);
+    const br=c.batteryCapacityWh>0?THREE.MathUtils.clamp(snapshot.batteryWh/c.batteryCapacityWh,0,1):0;
     chargeRail.scale.x=Math.max(.015,br);chargeRail.visible=br>1e-8;
     inverterLed.intensity=last?.energy?.servedBaseWh>0?.85:0;
     pumpLight.intensity=last?.energy?.servedPumpWh>0?1.0:0;
     const sunLevel=Math.max(0,Math.sin(Math.PI*(snapshot.clock.hourOfDay-6)/12));
-    skyLight.intensity=1.05+1.0*sunLevel;
-    direct.intensity=.38+2.30*sunLevel;
+    // Cloud transmittance is an EXPLICIT synthetic-scenario assumption, not observed weather.
+    const syntheticClarity=THREE.MathUtils.clamp(c.cloudTransmittance,0,1);
+    skyLight.intensity=1.05+sunLevel*(.65+.35*syntheticClarity);
+    direct.intensity=.38+2.30*sunLevel*syntheticClarity;
     scene.background.setHSL(.56,.28,.24+sunLevel*.53);
     scene.fog.color.copy(scene.background);
   }
