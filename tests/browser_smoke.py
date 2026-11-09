@@ -36,6 +36,12 @@ try:
             plumage=page.evaluate("window.HomesteadApp.world().plumage")
             assert plumage["chickens"] > 0, plumage
             assert plumage["decorativeFeathers"] == 13*plumage["chickens"], plumage
+            # All feathers share one immutable GPU geometry; no per-animal
+            # disposal can free it while other live chickens still use it.
+            assert plumage["sharedGeometry"] is True, plumage
+            assert plumage["sharedFeatherGeometryCount"] == 1, plumage
+            lifecycle=page.evaluate("window.HomesteadApp.world().animalLifecycle")
+            assert lifecycle["ownedGeometries"] < 50*lifecycle["active"], lifecycle
             assert page.evaluate("window.HomesteadApp.world().paths") >= 8
             assert page.evaluate("window.HomesteadApp.world().meshes") >= 30
             # P0: GPU-rendered terrain triangles and all ground-height queries agree.
