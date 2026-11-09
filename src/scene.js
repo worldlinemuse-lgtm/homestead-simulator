@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import {nativeFarmWorldPoses} from "./upstream/farm-world/pose-adapter.mjs";
 import {frameDeltaSeconds,smoothAlpha,gaitPose,chickenFootPhase,chickenSwingLift,
   CHICKEN_STANCE_FRACTION} from "./visual-motion.mjs";
 
@@ -1268,6 +1269,16 @@ export function makeScene(canvas,onSelect=()=>{}){
       lastModelHour=snapshot.clock.hours;
     }
     data=snapshot;syncAnimals(snapshot.farm);
+    // Native farm-world motion is an explicit, read-only optional integration.
+    // Never infer native agent positions from biological aggregates or invent them.
+    // An actual WV.agents Map and calibrated origin must be supplied together.
+    if(snapshot.farmWorld != null){
+      const origin=snapshot.farmWorldOriginM;
+      if(!origin || !["x","y","z"].every(k=>Number.isFinite(origin[k])))
+        throw new TypeError("Native farm world requires finite farmWorldOriginM");
+      const poses=nativeFarmWorldPoses(snapshot.farmWorld,origin);
+      nativeAnimalPoses=new Map(poses.map(p=>[p.id,p]));
+    }else nativeAnimalPoses=null;
     const last=snapshot.last,c=snapshot.config;
     const ratio=c.waterStorageCapacityL>0?THREE.MathUtils.clamp(snapshot.waterStoredL/c.waterStorageCapacityL,0,1):0;
     visualTankFraction=ratio;
@@ -1324,6 +1335,7 @@ export function makeScene(canvas,onSelect=()=>{}){
       elevationDeg:elevation*180/Math.PI,azimuthDeg:azimuth*180/Math.PI,
       directIntensity:direct.intensity};
   }
+  let nativeAnimalPoses=null;
   let visualSunState=null;
   let previous=performance.now();
   function animate(now){
@@ -1369,7 +1381,20 @@ export function makeScene(canvas,onSelect=()=>{}){
       const active=Boolean(playing&&awake&&!youngRest);
       // The visual agent traverses genuine horizontal distance around the pen,
       // rather than moving a few centimeters around a fixed sine-wave anchor.
-      const speed=active?s.walkSpeed*healthSpeed:0;
+      const nativePose=nativeAnimalPoses?.get(String(s.modelId));
+      // A native pose takes priority over the legacy curve. No interpolation
+      // can write back into WV.agents or the farm biological model.
+      if(nativeAnimalPoses){
+        if(!nativePose){s.walking=false;continue;}
+        const dx=nativePose.position.x-a.position.x;
+        const dz=nativePose.position.z-a.position.z;
+        s.travelM+=Math.hypot(dx,dz);
+        a.position.x=nativePose.position.x;
+        a.position.z=nativePose.position.z;
+        if(Math.hypot(dx,dz)>1e-5)a.rotation.y=Math.atan2(dx,dz);
+        s.walking=Boolean(nativePose.moving);
+      }
+      const speed=nativeAnimalPoses?0:(active?s.walkSpeed*healthSpeed:0);
       if(speed>0&&dt>0){
         s.pathProgress=(s.pathProgress+dt*speed/Math.max(1,s.pathLength))%1;
         const p=s.path.getPointAt(s.pathProgress);
