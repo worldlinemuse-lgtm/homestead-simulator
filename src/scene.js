@@ -927,18 +927,6 @@ export function makeScene(canvas,onSelect=()=>{}){
   // Closed, bounded walking circuits in clear areas of the shared farmyard.
   // These are visual roaming plans only; biological location/foraging activity
   // is NOT present in the Farm model snapshot and is not inferred here.
-  function yardPath(species,id){
-    const chicken=species==="chicken";
-    const offset=(seeded(id*7.1)-.5)*.42;
-    const points=chicken?
-      [[32.9,1.3],[35.7,.65],[39.0,.75],[40.35,2.0],
-       [40.0,3.75],[36.6,4.0],[33.25,3.6],[32.4,2.2]]:
-      [[30.15,10.7],[31.4,10.25],[32.8,11.45],[33.05,13.7],
-       [32.55,16.4],[30.9,17.4],[29.75,16.0],[29.85,13.0]];
-    const curve=new THREE.CatmullRomCurve3(points.map(([x,z])=>
-      V(x+offset,0,z+offset*.18)),true,"centripetal",.28);
-    return {curve,length:curve.getLength()};
-  }
   function animal(a,index){
     const species=a.sp,id=Number(a.id)||index+1,chicken=species==="chicken";
     const o=new THREE.Group(),base=coat(species,id),darker=coat(species,id,true);
@@ -1011,15 +999,14 @@ export function makeScene(canvas,onSelect=()=>{}){
       }
       head.add(ell(.09,.075,.09,m.pink,0,.005,.41));
     }
-    const path=yardPath(species,id);
-    const pathProgress=seeded(id*15.7+17);
-    const p=path.curve.getPointAt(pathProgress);
+    // Native Farm controller owns movement; spawn is a stationary display placeholder.
+    // Never synthesize a circular route while awaiting native world initialization.
+    const p=species==="chicken"?V(35+(index%4)*.6,0,2+(Math.floor(index/4)%3)*.6):
+      V(31+(index%4)*.45,0,13+(Math.floor(index/4)%3)*.45);
     o.userData={kind:species,id,plumageFeathers:chicken?13:0,
       phase:seeded(id*13+50)*Math.PI*2,
       head,torso,limbs,wings,ears,health:100,stage:a.st,age:Number(a.age)||0,
-      path:path.curve,pathLength:path.length,pathProgress,travelM:0,
-      // Distinct rates & route phases prevent identical synchronized motion.
-      walkSpeed:chicken?.44+seeded(id*9.31)*.14:.36+seeded(id*4.8)*.12,
+      travelM:0,
       footPhaseOffset:seeded(id*47.21),walking:false};
     o.position.copy(at(p.x,p.z));
     return o;
@@ -1391,7 +1378,7 @@ export function makeScene(canvas,onSelect=()=>{}){
       const youngKit=!chicken&&s.stage==="kit"&&s.age<10;
       const youngRest=!chicken&&youngKit;
       const nativeActive=nativeAnimalPoses?.get(String(s.modelId))?.moving;
-      const active=nativeAnimalPoses?Boolean(playing&&nativeActive):Boolean(playing&&awake&&!youngRest);
+      const active=Boolean(playing&&nativeAnimalPoses&&nativeActive);
       // The visual agent traverses genuine horizontal distance around the pen,
       // rather than moving a few centimeters around a fixed sine-wave anchor.
       const nativePose=nativeAnimalPoses?.get(String(s.modelId));
@@ -1420,19 +1407,7 @@ export function makeScene(canvas,onSelect=()=>{}){
         if(distance>1e-5)a.rotation.y=Math.atan2(dx,dz);
         s.nativePoseChanged=false;
       }
-      const speed=nativeAnimalPoses?0:(active?s.walkSpeed*healthSpeed:0);
-      if(speed>0&&dt>0){
-        s.pathProgress=(s.pathProgress+dt*speed/Math.max(1,s.pathLength))%1;
-        const p=s.path.getPointAt(s.pathProgress);
-        const dx=p.x-a.position.x,dz=p.z-a.position.z;
-        s.travelM+=Math.hypot(dx,dz);
-        a.position.x=p.x;a.position.z=p.z;
-        const tangent=s.path.getTangentAt(s.pathProgress);
-        const targetYaw=Math.atan2(tangent.x,tangent.z);
-        const deltaYaw=Math.atan2(Math.sin(targetYaw-a.rotation.y),
-                                  Math.cos(targetYaw-a.rotation.y));
-        a.rotation.y+=deltaYaw*smoothAlpha(9,dt);
-      }
+      // No native pose means stationary. Never generate a synthetic path.
       const phase=s.travelM*(chicken?19:11)+s.phase;
       const gait=gaitPose(playing,nativeAnimalPoses?active:awake,
         nativeAnimalPoses?false:youngRest,chicken,phase,i);
