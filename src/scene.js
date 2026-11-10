@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import {nativeFarmWorldPoses,nativeFarmComponentFootprint} from "./upstream/farm-world/pose-adapter.mjs";
+import {nativeFarmWorldPoses,nativeFarmComponentFootprint,FEET_TO_METRES} from "./upstream/farm-world/pose-adapter.mjs";
 import {frameDeltaSeconds,smoothAlpha,gaitPose,chickenFootPhase,chickenSwingLift,
   CHICKEN_STANCE_FRACTION} from "./visual-motion.mjs";
 
@@ -915,6 +915,13 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   // inside the same landscape, rather than inventing unrelated pen rectangles.
   // Heights, rail diameter and construction are illustrative; footprint is not.
   const nativeEnclosures=new THREE.Group();scene.add(nativeEnclosures);
+  // Original Farm world/base.js floorZ(hutch) = 2.05 ft. This is the
+  // visual-only support surface used by native rabbit agent poses, not a
+  // replacement for Farm collision or its biological state.
+  const NATIVE_HUTCH_FLOOR_M=2.05*FEET_TO_METRES;
+  const nativeHutchFloors=new THREE.Group();scene.add(nativeHutchFloors);
+  const hutchFloorMat=mat(0x8d9b9d,{roughness:.69,metalness:.44,side:THREE.DoubleSide});
+  const hutchWireMat=new THREE.LineBasicMaterial({color:0xc0cecc,transparent:true,opacity:.8,depthWrite:false});
   let nativeEnclosureKey="",nativeEnclosureCount=0,nativeEnclosureFootprints=[];
   function syncNativeEnclosures(farm,origin){
     // An absent or invalid placement origin must remove the old visual pens.
@@ -926,8 +933,11 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     const key=JSON.stringify([validOrigin?origin:null,comps]);
     if(key===nativeEnclosureKey)return;
     nativeEnclosureKey=key;
-    nativeEnclosures.traverse(o=>{if(o.isMesh&&o.geometry)o.geometry.dispose();});
-    nativeEnclosures.clear();nativeEnclosureCount=0;nativeEnclosureFootprints=[];
+    nativeEnclosures.traverse(o=>{if(o.geometry)o.geometry.dispose();});
+    nativeEnclosures.clear();
+    nativeHutchFloors.traverse(o=>{if(o.geometry)o.geometry.dispose();});
+    nativeHutchFloors.clear();
+    nativeEnclosureCount=0;nativeEnclosureFootprints=[];
     if(!validOrigin)return;
     for(const c of comps){
       const footprint=nativeFarmComponentFootprint(c,origin);
@@ -959,6 +969,55 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       }
       nativeEnclosureCount++;
       nativeEnclosureFootprints.push(footprint);
+      if(c.type==="hutch"){
+        // A real raised floor, following the SAME triangulated terrain sampler
+        // under the native rabbit rigs. Mesh and wire are illustrative; no
+        // model fixture levels or animal health outcomes are inferred.
+        const width=x1-x0,depth=z1-z0,cx=(x0+x1)/2,cz=(z0+z1)/2;
+        const nx=Math.max(1,Math.ceil(width/.4)),nz=Math.max(1,Math.ceil(depth/.4));
+        const floorGeometry=new THREE.PlaneGeometry(width-.08,depth-.08,nx,nz);
+        const vertices=floorGeometry.attributes.position;
+        for(let i=0;i<vertices.count;i++){
+          const x=cx+vertices.getX(i),z=cz-vertices.getY(i);
+          vertices.setZ(i,terrainY(x,z)+NATIVE_HUTCH_FLOOR_M);
+        }
+        floorGeometry.computeVertexNormals();
+        const deck=new THREE.Mesh(floorGeometry,hutchFloorMat);
+        deck.name="Native rabbit hutch raised floor "+String(c.id);
+        deck.userData={nativeComponentId:c.id,visualOnly:true};
+        deck.position.set(cx,0,cz);deck.rotation.x=-Math.PI/2;
+        deck.receiveShadow=true;deck.castShadow=false;
+        nativeHutchFloors.add(deck);
+        const segments=[];
+        const line=(xA,zA,xB,zB)=>{
+          segments.push(xA,terrainY(xA,zA)+NATIVE_HUTCH_FLOOR_M+.008,zA,
+            xB,terrainY(xB,zB)+NATIVE_HUTCH_FLOOR_M+.008,zB);
+        };
+        const xCount=Math.max(1,Math.ceil((width-.08)/.24));
+        const zCount=Math.max(1,Math.ceil((depth-.08)/.24));
+        for(let xi=0;xi<=xCount;xi++){
+          const x=x0+.04+(width-.08)*xi/xCount;
+          for(let zi=0;zi<zCount;zi++){
+            const za=z0+.04+(depth-.08)*zi/zCount;
+            const zb=z0+.04+(depth-.08)*(zi+1)/zCount;
+            line(x,za,x,zb);
+          }
+        }
+        for(let zi=0;zi<=zCount;zi++){
+          const z=z0+.04+(depth-.08)*zi/zCount;
+          for(let xi=0;xi<xCount;xi++){
+            const xa=x0+.04+(width-.08)*xi/xCount;
+            const xb=x0+.04+(width-.08)*(xi+1)/xCount;
+            line(xa,z,xb,z);
+          }
+        }
+        const wireGeometry=new THREE.BufferGeometry();
+        wireGeometry.setAttribute("position",new THREE.Float32BufferAttribute(segments,3));
+        const wire=new THREE.LineSegments(wireGeometry,hutchWireMat);
+        wire.name="Native hutch wire floor "+String(c.id);
+        wire.userData={nativeComponentId:c.id,visualOnly:true};
+        nativeHutchFloors.add(wire);
+      }
     }
   }
   // Visual vocabulary adapted from the user's Farm Simulator:
@@ -1486,13 +1545,13 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         // from a legacy spawn point is a coordinate-frame jump, not walking.
         if(s.nativePoseChanged&&s.nativePoseInitialized)s.travelM+=distance;
         s.nativePoseInitialized=true;
-        // The native controller owns horizontal motion and rabbit elevation.
-        // Chicken roots follow the shared terrain: do not float the whole bird
-        // 0.35 native feet above the ground (native coop floor is illustrative).
+        // Native rabbit height includes the original raised hutch floor of
+        // 2.05 ft and any native hop. Preserve it even while playback is paused;
+        // subtracting 0.625 m previously dropped rabbits through their decks.
+        // Chickens remain terrain-grounded because the coop floor is illustrative.
         const nativeGround=terrainY(nativePose.position.x,nativePose.position.z);
         a.position.set(nativePose.position.x,
-          !playing||chicken?nativeGround:
-            nativeGround+Math.max(0,nativePose.position.y-0.625),
+          nativeGround+(chicken?0:Math.max(0,nativePose.position.y)),
           nativePose.position.z);
         if(distance>1e-5)a.rotation.y=Math.atan2(dx,dz);
         s.nativePoseChanged=false;
@@ -1640,7 +1699,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     update,go,setPlayback(on){
       playing=Boolean(on);
       if(!playing)for(const rig of agents.children){
-        rig.position.y=terrainY(rig.position.x,rig.position.z);
+        const pose=nativeAnimalPoses?.get(String(rig.userData.modelId));
+        rig.position.y=terrainY(rig.position.x,rig.position.z)+
+          (rig.userData.kind==="chicken"?0:Math.max(0,pose?.position.y??0));
         rig.userData.walking=false;
         if(rig.userData.kind==="chicken"){
           rig.userData.torso.position.y=0;
@@ -1667,6 +1728,21 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
           return {min:{x:b.min.x,y:b.min.y,z:b.min.z},
             max:{x:b.max.x,y:b.max.y,z:b.max.z}};
         })},
+      nativeHutchFloors:{heightAboveTerrainM:NATIVE_HUTCH_FLOOR_M,
+        count:nativeHutchFloors.children.filter(o=>o.isMesh).length,
+        surfaces:nativeHutchFloors.children.filter(o=>o.isMesh).map(o=>{
+          const b=new THREE.Box3().setFromObject(o);
+          return {componentId:o.userData.nativeComponentId,visualOnly:true,
+            min:{x:b.min.x,y:b.min.y,z:b.min.z},
+            max:{x:b.max.x,y:b.max.y,z:b.max.z}};
+        })},
+      rabbitElevation:agents.children.filter(o=>o.userData.kind==="rabbit").map(o=>{
+        const p=nativeAnimalPoses?.get(String(o.userData.modelId));
+        const nativeHeightM=Math.max(0,p?.position.y??0);
+        return {id:String(o.userData.modelId),nativeHeightM,
+          renderedHeightM:o.position.y-terrainY(o.position.x,o.position.z),
+          errorM:Math.abs(o.position.y-terrainY(o.position.x,o.position.z)-nativeHeightM)};
+      }),
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
       tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport(),
       structureAudit:{houseFacade:facadeProbe(homestead,houseFront,6,3),
@@ -1691,6 +1767,10 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         chickenTravelM:agents.children.filter(a=>a.userData.kind==="chicken").reduce((n,a)=>n+a.userData.travelM,0),
         maxRootGroundErrorM:agents.children.filter(a=>a.userData.kind==="chicken").reduce(
           (n,a)=>Math.max(n,Math.abs(a.position.y-terrainY(a.position.x,a.position.z))),0)},
-      pausedGroundErrorM:playing?null:agents.children.reduce((e,a)=>Math.max(e,Math.abs(a.position.y-terrainY(a.position.x,a.position.z))),0)}}
+      pausedGroundErrorM:playing?null:agents.children.reduce((e,a)=>{
+        const p=nativeAnimalPoses?.get(String(a.userData.modelId));
+        const elevated=a.userData.kind==="chicken"?0:Math.max(0,p?.position.y??0);
+        return Math.max(e,Math.abs(a.position.y-terrainY(a.position.x,a.position.z)-elevated));
+      },0)}}
   };
 }
