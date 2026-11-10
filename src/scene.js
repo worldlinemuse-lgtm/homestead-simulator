@@ -917,13 +917,18 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   const nativeEnclosures=new THREE.Group();scene.add(nativeEnclosures);
   let nativeEnclosureKey="",nativeEnclosureCount=0,nativeEnclosureFootprints=[];
   function syncNativeEnclosures(farm,origin){
-    if(!origin)return;
-    const comps=(farm?.components||[]).filter(c=>["run","hutch"].includes(c.type));
-    const key=JSON.stringify([origin,comps]);
+    // An absent or invalid placement origin must remove the old visual pens.
+    // Otherwise a scenario switch can leave obsolete collision-looking rails
+    // in the scene, even though no authoritative placement is available.
+    const validOrigin=origin&&["x","y","z"].every(k=>Number.isFinite(origin[k]));
+    const comps=validOrigin&&Array.isArray(farm?.components)
+      ?farm.components.filter(c=>["run","hutch"].includes(c.type)):[];
+    const key=JSON.stringify([validOrigin?origin:null,comps]);
     if(key===nativeEnclosureKey)return;
     nativeEnclosureKey=key;
     nativeEnclosures.traverse(o=>{if(o.isMesh&&o.geometry)o.geometry.dispose();});
     nativeEnclosures.clear();nativeEnclosureCount=0;nativeEnclosureFootprints=[];
+    if(!validOrigin)return;
     for(const c of comps){
       const footprint=nativeFarmComponentFootprint(c,origin);
       if(!footprint)continue;
