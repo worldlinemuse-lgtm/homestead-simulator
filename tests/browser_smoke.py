@@ -66,6 +66,20 @@ try:
                 window.HomesteadApp.world().nativeEnclosureLayout.renderedMeshes""")
             assert isinstance(enclosure_meshes,int) and enclosure_meshes>0, (
                 "Native Farm enclosure meshes missing",mobile,enclosure_meshes)
+            # The renderer creates four posts per enclosure and three rails
+            # per <=1.1 m perimeter segment. Assert the exact mesh budget
+            # against authoritative Farm dimensions, not merely a nonzero count.
+            assert page.evaluate("""() => {
+                const farm=window.HomesteadApp.snapshot().farm;
+                const layout=window.HomesteadApp.world().nativeEnclosureLayout;
+                const components=farm.components.filter(c=>c.type==="run"||c.type==="hutch");
+                const expected=components.reduce((total,c)=>{
+                    const w=c.w*0.3048, d=c.d*0.3048;
+                    const segments=2*Math.ceil(w/1.1)+2*Math.ceil(d/1.1);
+                    return total+4+3*segments;
+                },0);
+                return layout.renderedMeshes===expected && expected>0;
+            }"""), ("Native enclosure rail mesh budget differs from Farm footprints",mobile)
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
             # Visual sun and shadows are driven by coordinator hour, never
             # fed back into the Solar energy ledger. Check actual UI steps.
