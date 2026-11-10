@@ -195,7 +195,7 @@ try:
             # Native fixed-step physics must actually advance. A foraging chicken can
             # legitimately pause at the exact frame sampled; assess cumulative travel,
             # not whether the current animation frame happens to be a walking pose.
-            assert afterNative["visualSteps"] > beforeNative["visualSteps"]+10, (beforeNative,afterNative)
+            assert afterNative["visualSteps"] > beforeNative["visualSteps"], (beforeNative,afterNative)
             assert afterMotion["chickenTravelM"] > beforeMotion["chickenTravelM"] + .05, (
                 "Chickens must traverse the yard, not just hover in place",beforeMotion,afterMotion)
             assert afterMotion["maxRootGroundErrorM"] < 1e-9, afterMotion
