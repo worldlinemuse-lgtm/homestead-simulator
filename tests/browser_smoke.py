@@ -129,6 +129,26 @@ try:
                       s.min.y>-.5;
                   });
             }"""), ("Raised native hutch floors do not match Farm footprints",mobile)
+            # Four terrain-embedded load-bearing supports per authoritative
+            # hutch footprint. Prevent a floating-deck visual regression.
+            assert page.evaluate("""() => {
+                const w=window.HomesteadApp.world();
+                const h=w.nativeHutchSupports;
+                const hutches=w.nativeEnclosureLayout.footprints.filter(f=>f.type==="hutch");
+                const eps=1e-6;
+                return h.count===4*hutches.length && h.count>0 &&
+                  h.legs.length===h.count &&
+                  h.legs.every(leg=>{
+                    const f=hutches.find(x=>x.id===leg.componentId);
+                    return f && leg.visualOnly===true &&
+                      [leg.x,leg.z,leg.baseY,leg.groundY,leg.topY]
+                        .every(Number.isFinite) &&
+                      leg.x>=f.x0-eps && leg.x<=f.x1+eps &&
+                      leg.z>=f.z0-eps && leg.z<=f.z1+eps &&
+                      leg.baseY<=leg.groundY &&
+                      Math.abs(leg.topY-leg.groundY-2.05*0.3048)<1e-9;
+                  });
+            }"""), ("Native hutch deck supports float or leave Farm footprints",mobile)
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
             # Visual sun and shadows are driven by coordinator hour, never
             # fed back into the Solar energy ledger. Check actual UI steps.
