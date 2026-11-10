@@ -924,6 +924,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   const hutchFloorMat=mat(0x8d9b9d,{roughness:.69,metalness:.44,side:THREE.DoubleSide});
   const hutchWireMat=new THREE.LineBasicMaterial({color:0xc0cecc,transparent:true,opacity:.8,depthWrite:false});
   let nativeEnclosureKey="",nativeEnclosureCount=0,nativeEnclosureFootprints=[];
+  let nativeRailEndpointResidualM=0,nativeRailCount=0;
   function syncNativeEnclosures(farm,origin){
     // An absent or invalid placement origin must remove the old visual pens.
     // Otherwise a scenario switch can leave obsolete collision-looking rails
@@ -941,6 +942,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     nativeHutchSupports.traverse(o=>{if(o.geometry)o.geometry.dispose();});
     nativeHutchSupports.clear();
     nativeEnclosureCount=0;nativeEnclosureFootprints=[];
+    nativeRailEndpointResidualM=0;nativeRailCount=0;
     if(!validOrigin)return;
     for(const c of comps){
       const footprint=nativeFarmComponentFootprint(c,origin);
@@ -974,6 +976,13 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
             const bar=box(railLength,.031,.036,m.steel,0,0,0);
             bar.quaternion.setFromUnitVectors(V(1,0,0),railVector.normalize());
             bar.position.set(cx,(ya+yb)/2,cz);
+            // Independently inspect the rotated geometry's actual endpoints.
+            const half=V(railLength/2,0,0).applyQuaternion(bar.quaternion);
+            const endpointA=bar.position.clone().sub(half);
+            const endpointB=bar.position.clone().add(half);
+            nativeRailEndpointResidualM=Math.max(nativeRailEndpointResidualM,
+              endpointA.distanceTo(V(xa,ya,za)),endpointB.distanceTo(V(xb,yb,zb)));
+            nativeRailCount++;
             nativeEnclosures.add(bar);
           }
         }
@@ -1743,7 +1752,8 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         requestedHeightAboveGroundM:toEye.y-terrainY(toEye.x,toEye.z),
         followAnimalId:trackedAnimalId},
       visualSun:visualSunState?{...visualSunState}:null,
-      nativeEnclosureLayout:{count:nativeEnclosureCount,footprints:nativeEnclosureFootprints,renderedMeshes:nativeEnclosures.children.length, 
+      nativeEnclosureLayout:{count:nativeEnclosureCount,footprints:nativeEnclosureFootprints,renderedMeshes:nativeEnclosures.children.length,
+        railEndpointResidualM:nativeRailEndpointResidualM,railCount:nativeRailCount, 
         // Derive rail/post centers from actual rendered meshes, not source metadata. 
         meshCenters:nativeEnclosures.children.map(o=>({x:o.position.x,y:o.position.y,z:o.position.z})),
         // Actual world-space AABBs include post radii and rotated rail thickness.
