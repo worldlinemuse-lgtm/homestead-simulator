@@ -46,6 +46,10 @@ try:
                   relevant.every(c=>{
                     const x=e.footprints.find(p=>p.id===c.id);
                     return x&&x.unit==="m"&&x.type===c.type&&
+                      Math.abs(x.x0-(s.farmWorldOriginM.x+c.x*0.3048))<1e-8&&
+                      Math.abs(x.z0-(s.farmWorldOriginM.z+c.y*0.3048))<1e-8&&
+                      Math.abs(x.x1-(s.farmWorldOriginM.x+(c.x+c.w)*0.3048))<1e-8&&
+                      Math.abs(x.z1-(s.farmWorldOriginM.z+(c.y+c.d)*0.3048))<1e-8&&
                       Math.abs((x.x1-x.x0)-c.w*0.3048)<1e-8&&
                       Math.abs((x.z1-x.z0)-c.d*0.3048)<1e-8;
                   });
