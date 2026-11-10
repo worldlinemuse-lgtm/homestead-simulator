@@ -961,11 +961,19 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         for(let q=0;q<N;q++){
           const t0=q/N,t1=(q+1)/N;
           const xa=ax+dx*t0,za=az+dz*t0,xb=ax+dx*t1,zb=az+dz*t1;
-          const cx=(xa+xb)/2,cz=(za+zb)/2,edge=Math.hypot(xb-xa,zb-za);
+          const cx=(xa+xb)/2,cz=(za+zb)/2;
           for(const h of [.25,.65,H]){
-            const bar=box(edge,.031,.036,m.steel,0,0,0);
-            bar.rotation.y=Math.atan2(-(zb-za),xb-xa);
-            bar.position.set(cx,terrainY(cx,cz)+raised+h,cz);
+            // A flat midpoint-height rail can float above the uphill corner
+            // and cut through the downhill one. Fit the rail to the exact
+            // terrain-sampled endpoint elevations instead. Its X/Z endpoints
+            // still coincide with the original Farm component footprint.
+            const ya=terrainY(xa,za)+raised+h;
+            const yb=terrainY(xb,zb)+raised+h;
+            const railVector=V(xb-xa,yb-ya,zb-za);
+            const railLength=railVector.length();
+            const bar=box(railLength,.031,.036,m.steel,0,0,0);
+            bar.quaternion.setFromUnitVectors(V(1,0,0),railVector.normalize());
+            bar.position.set(cx,(ya+yb)/2,cz);
             nativeEnclosures.add(bar);
           }
         }
