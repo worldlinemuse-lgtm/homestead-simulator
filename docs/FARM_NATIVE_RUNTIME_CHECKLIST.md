@@ -6,7 +6,7 @@
 - [x] Import original farm-sim world/agents.js, physics.js and sync.js as upstream source (PR #18).
 - [x] Add read-only feet-to-meters pose adapter (PR #18).
 - [x] Remove synthetic CatmullRom animal circles from src/scene.js (commit 3c9bca4); no native world means no fabricated locomotion.
-- [ ] Confirm latest PR head passes integrated model and browser smoke workflows; capture mobile and desktop screenshots and baseline animal positions.
+- [x] Confirm exact PR head `691b3c3` passes integrated model and browser smoke workflows (GitHub Actions runs 42738880015 and 42738879999, both success). Screenshots were generated as artifacts, but have **not** been manually inspected; animal positions and performance are not yet visually accepted.
 
 ## Gate 1 — Map the original runtime dependencies (must precede bootstrap)
 - [x] Inspect original farm-sim source/src/world/{agents,physics,looks,weather,perf,draw,sync,loop}.js and the source that initializes WV, S, P, CLOCK, PHYS, pens, layout, RNG, buildCtx and visual context.
@@ -29,8 +29,8 @@
 - [x] Deterministic replay: identical seed/snapshot/timestep -> identical positions (CI model tests passing on 32454a1 and 4131593); collision counters tracked by original PHYS.
 - [ ] Edge tests: zero animals, births/deaths, enclosure move, pause/resume, fast-forward, malformed coordinates, mobile frame stalls, and repeated render of unchanged pose.
 - [x] Run integrated solar/water/farm numerical and conservation tests; assert visual runtime cannot mutate authoritative daily results.
-- [ ] Run browser smoke and inspect desktop/mobile screenshots; measure frame-time/animal-count scaling.
-- [ ] Document actual test results, CI URLs, upstream source revisions, remaining assumptions and merge decision in PR #18.
+- [ ] Inspect desktop/mobile screenshot artifacts from successful browser smoke run 42738879999; measure frame-time/animal-count scaling and check animal positions, fixture correspondence and clipping.
+- [ ] Document screenshot inspection, frame-time results, upstream source revisions, remaining assumptions and merge decision in PR #18. Exact-head CI: https://github.com/worldlinemuse-lgtm/homestead-simulator/actions/runs/42738880015 and https://github.com/worldlinemuse-lgtm/homestead-simulator/actions/runs/42738879999.
 - [ ] Merge only after successful evidence; do not merge unrelated conflicting engineering PRs as a shortcut.
 
 ## Implementation evidence and runtime contract
@@ -39,7 +39,7 @@
 - `src/main.js` supplies rigid farm-to-homestead origin `{x:23,y:0,z:6}` metres. Native x/y in feet become world x/z in metres. The Three.js renderer samples native poses every frame. No CatmullRom fallback is allowed.
 - Biological day continues to be advanced ONLY by the existing chronological coordinator; `nativeVisual` never calls `step()` or changes its S/P state.
 - Scene also draws native run/hutch enclosure rail footprints using authoritative `farm.components` x/y/w/d in feet; heights/materials are illustrative. Full coop/wall/door reconciliation still pending.
-- `tests/engine.test.cjs` exercises actual locomotion, seeded replay, pause and biological-state immutability. GitHub Actions numerical suite passed for commit 4131593. Browser smoke is still required on latest head and must include screenshots (desktop/mobile) and verified native displacement. Do not claim it passed until completed.
+- `tests/engine.test.cjs` exercises actual locomotion, seeded replay, pause and biological-state immutability. GitHub Actions numerical suite passed for commit 4131593. Browser smoke workflow succeeded on exact head `691b3c3`; screenshot artifacts exist but have not been manually reviewed. Native displacement is exercised by model tests; browser visual correspondence and performance are not yet independently accepted.
 
 ## Decision log
 - 2026-11-10: Initialized and wired the native Farm visual controller with original world sources and original fixed-step behavior; added deterministic isolation proof and scenario footprint rendering. Remaining gate: browser validation and physical door/fixture correspondence before merge.
