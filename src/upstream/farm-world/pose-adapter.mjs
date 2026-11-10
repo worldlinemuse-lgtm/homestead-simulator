@@ -17,15 +17,18 @@ export function nativeFarmAgentPose(agent, origin={x:0,y:0,z:0}) {
   const vx=Number.isFinite(agent.vx)?agent.vx:0;
   const vy=Number.isFinite(agent.vy)?agent.vy:0;
   const moving=Math.hypot(vx,vy)>1e-4 || Boolean(agent.jump);
+  const position={
+    x:origin.x+agent.x*FEET_TO_METRES,
+    y:origin.y+agent.z*FEET_TO_METRES,
+    z:origin.z+agent.y*FEET_TO_METRES
+  };
+  if (!Object.values(position).every(Number.isFinite))
+    throw new RangeError("Native Farm pose exceeds finite world coordinates");
   return Object.freeze({
     id:String(agent.id),
     species:agent.ref?.sp ?? null,
     action:agent.act ?? "idle",
-    position:Object.freeze({
-      x:origin.x+agent.x*FEET_TO_METRES,
-      y:origin.y+agent.z*FEET_TO_METRES,
-      z:origin.z+agent.y*FEET_TO_METRES
-    }),
+    position:Object.freeze(position),
     moving,
     heading: Number.isFinite(agent.face)?agent.face:null,
     // Native physics and agent behavior remain the sole position authority.
