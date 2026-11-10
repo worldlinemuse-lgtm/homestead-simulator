@@ -176,3 +176,23 @@ test("native Farm visual runtime handles malformed inputs, same-day pause and mo
   assert.equal(present.size,model.animals.length);
   for(const a of model.animals)assert.ok(present.has(a.id));
 });
+
+
+test("native Farm component footprint is read-only, unit-correct and rejects malformed geometry",async()=>{
+ const {nativeFarmComponentFootprint,FEET_TO_METRES}=await import("../src/upstream/farm-world/pose-adapter.mjs");
+ assert.equal(FEET_TO_METRES,0.3048);
+ const origin=Object.freeze({x:23,y:0,z:6});
+ const c=Object.freeze({id:"run-1",type:"run",x:40,y:10,w:8,d:12});
+ const p=nativeFarmComponentFootprint(c,origin);
+ assert.deepEqual({...p},{id:"run-1",type:"run",
+   x0:23+40*.3048,x1:23+48*.3048,z0:6+10*.3048,z1:6+22*.3048,unit:"m"});
+ assert.ok(Object.isFrozen(p));
+ assert.equal(c.x,40);assert.equal(origin.x,23);
+ for(const bad of [
+   null,{...c,w:0},{...c,d:-1},{...c,x:NaN},
+   {...c,y:Infinity},{...c,w:Infinity},{...c,w:1e308},
+   {...c,d:1e308}
+ ])assert.equal(nativeFarmComponentFootprint(bad,origin),null);
+ assert.equal(nativeFarmComponentFootprint(c,{...origin,z:NaN}),null);
+ assert.equal(nativeFarmComponentFootprint(c,null),null);
+});
