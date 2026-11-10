@@ -80,17 +80,23 @@ try:
                 },0);
                 return layout.renderedMeshes===expected && expected>0;
             }"""), ("Native enclosure rail mesh budget differs from Farm footprints",mobile)
-            # Each rail must slope between the terrain-sampled endpoints.
-            # This rejects midpoint-height rails that hover/cut through sloped
-            # ground while still passing footprint and mesh-budget assertions.
-            assert page.evaluate("""() => {
+            # All three rendered rails per perimeter segment must meet
+            # their terrain-sampled endpoints (not the segment midpoint).
+            # railCount counts actual rail MESHES, not edge segments; each
+            # enclosure also creates four corner posts.
+            rail_result=page.evaluate("""() => {
                 const l=window.HomesteadApp.world().nativeEnclosureLayout;
-                const expected=(l.renderedMeshes-4*l.count)/3;
-                return Number.isFinite(l.railEndpointResidualM) &&
-                  l.railEndpointResidualM<1e-6 &&
-                  Number.isInteger(l.railCount) && l.railCount===expected &&
-                  l.railCount>0;
-            }"""), ("Farm rails do not meet terrain-sampled endpoints",mobile)
+                const expectedRailMeshes=l.renderedMeshes-4*l.count;
+                return {pass:Number.isFinite(l.railEndpointResidualM) &&
+                    l.railEndpointResidualM<1e-6 &&
+                    Number.isInteger(l.railCount) &&
+                    l.railCount===expectedRailMeshes &&
+                    l.railCount>0 && l.railCount%3===0,
+                  measured:l.railCount,expected:expectedRailMeshes,
+                  residualM:l.railEndpointResidualM};
+            }""")
+            assert rail_result["pass"], (
+                "Farm rails do not meet terrain-sampled endpoints",mobile,rail_result)
             # Validate the actual Three.js mesh centers against authoritative
             # Farm footprint bounds; mesh-count checks alone miss displaced rails.
             assert page.evaluate("""() => {
