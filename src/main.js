@@ -2,6 +2,12 @@ import {makeScene} from "./scene.js";
 const $=id=>document.getElementById(id);
 const fmt=(n,d=1)=>Number(n).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
 const coordinator=new window.HomesteadCoordinator.Coordinator();
+// This is the ORIGINAL Farm world, running inside the same biological model closure.
+// It has an independent seeded visual RNG and never writes numeric model results.
+const farmVisual=window.HomesteadFarmCore.nativeVisual;
+farmVisual.init(20261104,9);
+// Whole-plot rigid transform (feet -> metres); not a modification of farm pen data.
+const farmWorldOriginM=Object.freeze({x:21,y:0,z:-3});
 let selected="overview",playing=false,timer=null,scene;
 let selectedAsset=null;
 function fail(e){playing=false;scene?.setPlayback(false);clearInterval(timer);timer=null;$("playBtn").textContent="▶ Play";$("errors").textContent="Simulation stopped: "+(e?.message||e);$("errors").style.display="block";console.error(e);}
@@ -94,7 +100,8 @@ function renderAsset(s){
 }
 
 function redraw(s){
- scene?.update(s);renderAsset(s);
+ farmVisual.sync(s.clock.hourOfDay);
+ scene?.update({...s,farmWorld:farmVisual.world(),farmWorldOriginM});renderAsset(s);
  const e=s.last?.energy,w=s.last?.water,f=s.farm;
  $("energyValue").textContent=fmt(s.batteryWh/1000,2)+" kWh";
  $("energyDetail").textContent=e?"PV "+fmt(e.pvWh/1000,2)+" kWh/h · "+(e.pumpEnabled?"pump on":"pump off")+" · residual "+fmt(e.residualWh,4)+" Wh":"Battery remaining · awaiting interval";
@@ -137,7 +144,7 @@ try{scene=makeScene($("world"),(kind,label)=>{
   $("inspectTitle").textContent=selectedAsset||descriptions[kind][0];
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
   renderAsset(coordinator.snapshot());$("inspector").classList.add("open");
-});selectArea("overview");redraw(coordinator.snapshot())}catch(e){fail(e)}
-window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),step:tick,reset:()=>redraw(coordinator.reset()),world:()=>scene?.stats()});
+},farmVisual);selectArea("overview");redraw(coordinator.snapshot())}catch(e){fail(e)}
+window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),step:tick,reset:()=>redraw(coordinator.reset()),world:()=>({...scene?.stats(),nativeFarm:farmVisual.stats()})});
 
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(console.warn));
