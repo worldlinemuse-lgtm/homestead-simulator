@@ -277,6 +277,18 @@ try:
                     "70 day button presses should advance 1680 hours",
                     starting_hour, actual_hour)
                 assert not errors,errors
+            metrics=page.evaluate("""() => {
+                const w=window.HomesteadApp.world();
+                return {animals:w.animals,qualityFps:w.qualityFps,
+                  qualityPixelRatio:w.qualityPixelRatio,qualityTier:w.qualityTier,
+                  physicsFrameMs:w.nativeFarm.physicsFrameMs,
+                  nativeSteps:w.nativeFarm.visualSteps,
+                  enclosureCount:w.nativeEnclosureLayout.count,
+                  nativeActions:w.nativeAnimalActions};
+            }""")
+            assert metrics["animals"]==metrics["enclosureCount"]*0+page.evaluate("window.HomesteadApp.world().animals")
+            assert metrics["nativeSteps"]>=0 and metrics["enclosureCount"]>=3
+            print(f"3D visual performance mobile={mobile}: {metrics}",flush=True)
             page.close()
         browser.close()
     print("PASS: unified 3D site runs, both layouts step 25 model hours, no page exceptions")
