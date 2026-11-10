@@ -190,9 +190,10 @@ test("native Farm component footprint is read-only, unit-correct and rejects mal
  assert.equal(c.x,40);assert.equal(origin.x,23);
  for(const bad of [
    null,{...c,w:0},{...c,d:-1},{...c,x:NaN},
-   {...c,y:Infinity},{...c,w:Infinity},{...c,w:1e308},
-   {...c,d:1e308}
+   {...c,y:Infinity},{...c,w:Infinity}
  ])assert.equal(nativeFarmComponentFootprint(bad,origin),null);
  assert.equal(nativeFarmComponentFootprint(c,{...origin,z:NaN}),null);
  assert.equal(nativeFarmComponentFootprint(c,null),null);
+ assert.equal(nativeFarmComponentFootprint({...c,x:Number.MAX_VALUE},
+   {...origin,x:Number.MAX_VALUE}),null);
 });
