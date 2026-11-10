@@ -73,13 +73,53 @@ try:
                 const farm=window.HomesteadApp.snapshot().farm;
                 const layout=window.HomesteadApp.world().nativeEnclosureLayout;
                 const components=farm.components.filter(c=>c.type==="run"||c.type==="hutch");
+                const origin=window.HomesteadApp.world().farmWorldOriginM;
+                const portal=window.HomesteadApp.world().nativeCoopLayout.portal;
                 const expected=components.reduce((total,c)=>{
-                    const w=c.w*0.3048, d=c.d*0.3048;
-                    const segments=2*Math.ceil(w/1.1)+2*Math.ceil(d/1.1);
+                    const x0=origin.x+c.x*.3048,z0=origin.z+c.y*.3048;
+                    const x1=x0+c.w*.3048,z1=z0+c.d*.3048;
+                    const corners=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]];
+                    let segments=0;
+                    for(let edge=0;edge<4;edge++){
+                      const a=corners[edge],b=corners[(edge+1)%4];
+                      const N=Math.max(1,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/1.1));
+                      const shared=c.type==="run"&&c.id===portal?.runId&&
+                        (portal?.axis==="x"?
+                          Math.abs(a[0]-portal.plane)<1e-6&&Math.abs(b[0]-portal.plane)<1e-6:
+                          Math.abs(a[1]-portal?.plane)<1e-6&&Math.abs(b[1]-portal?.plane)<1e-6);
+                      if(!shared){segments+=N;continue;}
+                      const v0=portal.axis==="x"?a[1]:a[0],v1=portal.axis==="x"?b[1]:b[0];
+                      const lo=Math.min((portal.start-v0)/(v1-v0),(portal.end-v0)/(v1-v0));
+                      const hi=Math.max((portal.start-v0)/(v1-v0),(portal.end-v0)/(v1-v0));
+                      for(let q=0;q<N;q++){
+                        const t0=q/N,t1=(q+1)/N;
+                        if(Math.min(t1,lo)-t0>1e-7)segments++;
+                        if(t1-Math.max(t0,hi)>1e-7)segments++;
+                      }
+                    }
                     return total+4+3*segments;
                 },0);
-                return layout.renderedMeshes===expected && expected>0;
+                return layout.renderedMeshes===expected &&
+                  layout.railCount===expected-4*components.length && expected>0;
             }"""), ("Native enclosure rail mesh budget differs from Farm footprints",mobile)
+            # The model-derived coop portal must be physically OPEN; neither
+            # opaque coop walls nor the real Three.js run rails may cover it.
+            assert page.evaluate("""() => {
+                const v=window.HomesteadApp.world(),p=v.nativeCoopLayout.portal;
+                if(!p||p.axis!=="x"||p.width<.8||
+                   v.nativeCoopLayout.footprints.length!==1||v.nativeCoopLayout.meshCount<6)return false;
+                if(v.nativeCoopLayout.walls.some(w=>w.label.startsWith("east wall")&&
+                   w.z1>p.start+.05&&w.z0<p.end-.05))return false;
+                return v.nativeEnclosureLayout.meshBounds.every(b=>
+                  !(b.min.x<=p.plane+.03 && b.max.x>=p.plane-.03 &&
+                    b.min.z<p.end-.08 && b.max.z>p.start+.08 &&
+                    b.max.y-b.min.y<.65));
+            }"""), ("Native chicken doorway is blocked by a modeled wall or rail",mobile)
+            assert page.evaluate("""() => {
+                const g=window.HomesteadApp.world().gardenLayout;
+                return g.fenceClearanceM>1&&g.runOverlap===false &&
+                  g.bounds.x0<g.bounds.x1&&g.bounds.z0<g.bounds.z1;
+            }"""), ("Garden intersects livestock or property fence",mobile)
             # All three rendered rails per perimeter segment must meet
             # their terrain-sampled endpoints (not the segment midpoint).
             # railCount counts actual rail MESHES, not edge segments; each
@@ -172,6 +212,17 @@ try:
             initial_sun=page.evaluate("window.HomesteadApp.world().visualSun")
             initial_hour=page.evaluate("window.HomesteadApp.snapshot().clock.hourOfDay")
             assert initial_sun and initial_sun["hour"]==initial_hour, initial_sun
+            assert initial_sun["date"]==page.evaluate("window.HomesteadApp.snapshot().clock.date")
+            assert initial_sun["latitudeDeg"]==41.6
+            assert 9<initial_sun["dayLengthHours"]<11, initial_sun
+            assert page.evaluate("""async () => {
+                const {seasonalSun}=await import('./src/seasonal-sun.mjs');
+                const summer=seasonalSun('2026-06-21',12);
+                const winter=seasonalSun('2026-12-21',12);
+                return summer.dayLengthHours>15&&winter.dayLengthHours<9.5&&
+                  summer.sunriseHour<6&&summer.sunsetHour>20&&
+                  winter.sunriseHour>7&&winter.sunsetHour<17;
+            }"""), ("Date-sensitive PA daylength must vary seasonally",mobile)
             assert initial_sun["syntheticClarity"]>=0 and initial_sun["syntheticClarity"]<=1
             assert initial_sun["directIntensity"]>=0
             initial_lamps=initial_sun["decorativeLighting"]
@@ -235,7 +286,7 @@ try:
                   && g.foundationCount>=5
                   && g.minimumEmbedM>=0.30
                   && g.coverViolations===0
-                  && ["Home and utility loads","Henhouse","Solar inverter and battery",
+                  && ["Home and utility loads","Feed and equipment storage barn","Solar inverter and battery",
                       "Water treatment and storage","Treated-water storage tank"]
                      .every(s=>g.foundationAssets.includes(s));
             }""")
