@@ -149,3 +149,29 @@ test("native Farm runtime never mutates biological state or the visual seed mode
     fingerprint,"Identical visual seeds and timestep schedules must replay identically");
   assert.equal(JSON.stringify(farm.snapshot()),biologicalBefore);
 });
+
+test("native Farm visual runtime handles malformed inputs, same-day pause and model-day synchronization",()=>{
+  const f=ctx.HomesteadFarmCore,n=f.nativeVisual;
+  f.reset(11);f.advanceDay();
+  assert.throws(()=>n.init(NaN,9),/integer/);
+  assert.throws(()=>n.init(20261104,-1),/hour/);
+  n.init(20261104,9);
+  const current=JSON.stringify(f.snapshot());
+  const pts=JSON.stringify([...n.world().agents].map(([id,g])=>[id,g.x,g.y,g.z]));
+  n.frame(0,true,9);n.frame(0.1,false,9);
+  assert.equal(JSON.stringify([...n.world().agents].map(([id,g])=>[id,g.x,g.y,g.z])),pts);
+  assert.throws(()=>n.frame(-1,true,9),/Invalid native Farm frame/);
+  assert.throws(()=>n.frame(Infinity,true,9),/Invalid native Farm frame/);
+  assert.throws(()=>n.frame(0,false,24),/hour/);
+  assert.equal(JSON.stringify(f.snapshot()),current,"native view cannot mutate biology");
+  // The biological engine alone is allowed to progress the day and create
+  // births/deaths. Native worldSync must reconcile the exact model population.
+  for(let i=0;i<25;i++)f.advanceDay();
+  n.sync(12);
+  const model=f.snapshot();
+  assert.equal(n.stats().day,model.day);
+  assert.equal(n.stats().agentCount,model.animals.length);
+  const present=new Set([...n.world().agents.keys()]);
+  assert.equal(present.size,model.animals.length);
+  for(const a of model.animals)assert.ok(present.has(a.id));
+});
