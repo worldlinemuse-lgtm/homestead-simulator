@@ -2,6 +2,9 @@ import * as THREE from "three";
 import {nativeFarmWorldPoses,nativeFarmComponentFootprint,FEET_TO_METRES} from "./upstream/farm-world/pose-adapter.mjs";
 import {frameDeltaSeconds,smoothAlpha,gaitPose,chickenFootPhase,chickenSwingLift,
   CHICKEN_STANCE_FRACTION} from "./visual-motion.mjs";
+import {FARM_PERIMETER,GARDEN_PLAN,gardenBounds,fenceToGardenClearance,
+  nativeCoopRunPortal,aabbOverlap} from "./plot-layout.mjs";
+import {seasonalSun} from "./seasonal-sun.mjs";
 
 /**
  * Homestead 3D landscape v2: a single physical site, NOT isolated simulation stages.
@@ -723,12 +726,13 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     target.add(screen);housingScreenCount++;
     return screen;
   }
-  const barn=group("farm","Henhouse",33,7.2);
-  foundationFor(barn,33,7.2,9.25,8.5);
-  // Place the illustrated building's east wall alongside the native 8 ft coop
-  // and attached run footprint (Farm original x40/y10 and x48/y10 in feet).
-  // It is still a scale illustration, not a claim that its interior fixtures
-  // or bird-door openings exactly match the original compact Farm enclosure.
+  // Retire the oversized false 'henhouse' as a storage barn OUTSIDE the
+  // native chicken habitat. Only the model-aligned small coop constructed below
+  // is chicken housing. Do not stretch a 2.44 m Farm coop into a 9 m collider.
+  const barn=group("farm","Feed and equipment storage barn",33,-12);
+  foundationFor(barn,33,-12,9.25,8.5);
+  // Decorative doors and exterior cabinets on this separate storage building
+  // do not represent native Farm fixtures or alter biological state.
   // Continuous siding is textured wood; trim gives the coop construction-scale detail.
   barn.add(box(9.35,.32,8.8,m.stone,0,.16,0));
   
@@ -808,10 +812,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   barn.add(box(2.24,.055,.48,m.darkWood,2.9,.79,6.0));
   for(const x of [1.87,3.93])barn.add(box(.16,.65,.20,m.wood,x,.33,6.0));
   const animalArea=group("farm","Pasture, hutches and livestock",30,5);
-  // South entrance remains open precisely where the coop ramp crosses the fence.
-  // The surrounding rails do not intersect the ramp or form an invisible gate.
-  const fenceLines=[[[19,-2],[28.35,-2]],[[31.65,-2],[44,-2]],
-    [[44,-2],[47,20]],[[47,20],[18,20]],[[18,20],[19,-2]]];
+  // The outer property fence is distinct from native chicken-run collision rails.
+  // Its gate is a farm-access opening, not a false doorway into the native coop.
+  const fenceLines=FARM_PERIMETER;
   function woodFence(a,b){
     const dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz),num=Math.ceil(len/2.2);
     const dir=V(dx/len,0,dz/len);
@@ -894,11 +897,14 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   trough.add(cyl(.95,.95,.88,m.steel,0,.48,0,16));
   const troughWater=cyl(.84,.84,.05,m.water,0,.90,0,16);trough.add(troughWater);
   trough.add(cyl(.13,.13,2.0,m.pipe,-.2,1.08,0,10));
-  const garden=group("farm","Pasture forage patch",41,17);
-  for(let row=0;row<5;row++){
-    const bed=box(1.4,.12,9.4,m.earth,row*1.65-3.25,.12,0);garden.add(bed);
-    for(let i=0;i<9;i++){
-      const x=row*1.65-3.25,z=-4+i;
+  // Setback from BOTH the property fence and the authoritative chicken run.
+  // Plant and bed positions share this one plan; never put rows through rails.
+  const garden=group("farm","Kitchen garden",GARDEN_PLAN.x,GARDEN_PLAN.z);
+  for(let row=0;row<GARDEN_PLAN.rows;row++){
+    const x=(row-(GARDEN_PLAN.rows-1)/2)*GARDEN_PLAN.rowSpacingM;
+    const bed=box(GARDEN_PLAN.bedWidthM,.12,GARDEN_PLAN.bedLengthM,m.earth,x,.12,0);garden.add(bed);
+    for(let i=0;i<GARDEN_PLAN.plantsPerRow;i++){
+      const z=(i-(GARDEN_PLAN.plantsPerRow-1)/2)*GARDEN_PLAN.plantSpacingM;
       garden.add(cyl(.1,.03,.4,m.foliage2,x,.43,z,5));
       for(const side of [-1,1]){
         const leaf=ell(.24,.085,.43,m.foliage2,x+side*.16,.62,z+side*.13);
@@ -915,6 +921,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   // inside the same landscape, rather than inventing unrelated pen rectangles.
   // Heights, rail diameter and construction are illustrative; footprint is not.
   const nativeEnclosures=new THREE.Group();scene.add(nativeEnclosures);
+  // Built from the ORIGINAL native coop footprint, not the storage barn.
+  const nativeCoopHouses=new THREE.Group();scene.add(nativeCoopHouses);
+  let nativeCoopProof={footprints:[],walls:[],portal:null};
   // Original Farm world/base.js floorZ(hutch) = 2.05 ft. This is the
   // visual-only support surface used by native rabbit agent poses, not a
   // replacement for Farm collision or its biological state.
@@ -930,13 +939,18 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     // Otherwise a scenario switch can leave obsolete collision-looking rails
     // in the scene, even though no authoritative placement is available.
     const validOrigin=origin&&["x","y","z"].every(k=>Number.isFinite(origin[k]));
-    const comps=validOrigin&&Array.isArray(farm?.components)
-      ?farm.components.filter(c=>["run","hutch"].includes(c.type)):[];
-    const key=JSON.stringify([validOrigin?origin:null,comps]);
+    const components=validOrigin&&Array.isArray(farm?.components)?farm.components:[];
+    const comps=components.filter(c=>["run","hutch"].includes(c.type));
+    const coops=components.filter(c=>c.type==="coop");
+    const portal=nativeCoopRunPortal(components,origin);
+    const key=JSON.stringify([validOrigin?origin:null,comps,coops]);
     if(key===nativeEnclosureKey)return;
     nativeEnclosureKey=key;
     nativeEnclosures.traverse(o=>{if(o.geometry)o.geometry.dispose();});
     nativeEnclosures.clear();
+    nativeCoopHouses.traverse(o=>{if(o.geometry)o.geometry.dispose();});
+    nativeCoopHouses.clear();
+    nativeCoopProof={footprints:[],walls:[],portal};
     nativeHutchFloors.traverse(o=>{if(o.geometry)o.geometry.dispose();});
     nativeHutchFloors.clear();
     nativeHutchSupports.traverse(o=>{if(o.geometry)o.geometry.dispose();});
@@ -944,6 +958,48 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     nativeEnclosureCount=0;nativeEnclosureFootprints=[];
     nativeRailEndpointResidualM=0;nativeRailCount=0;
     if(!validOrigin)return;
+    // Build all opaque walls exactly at native coop boundaries. The east-side
+    // shared portal is cut out where the original Farm routes birds into its run.
+    // A flat open doorway has no invented raised threshold or blocking ramp.
+    for(const c of coops){
+      const fp=nativeFarmComponentFootprint(c,origin);
+      if(!fp)continue;
+      nativeCoopProof.footprints.push(fp);
+      const {x0,x1,z0,z1}=fp,cx=(x0+x1)/2,cz=(z0+z1)/2;
+      const corners=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]];
+      const heights=corners.map(([x,z])=>terrainY(x,z));
+      const base=Math.max(...heights),bottom=Math.min(...heights)-.10;
+      const top=base+2.02,height=top-bottom;
+      function wall(w,d,x,z,label,y0=bottom,y1=top){
+        if(w<=0||d<=0||y1<=y0)return;
+        const mesh=box(w,y1-y0,d,m.cedar,x,(y0+y1)/2,z);
+        mesh.name="Native coop "+label+" "+String(c.id);
+        nativeCoopHouses.add(mesh);
+        const b=new THREE.Box3().setFromObject(mesh);
+        nativeCoopProof.walls.push({label,componentId:c.id,
+          x0:b.min.x,x1:b.max.x,z0:b.min.z,z1:b.max.z});
+      }
+      // Wall thickness extends OUTWARD from the agent's physical boundary.
+      wall(.09,z1-z0+.16,x0-.045,cz,"west wall");
+      wall(x1-x0+.18,.09,cx,z0-.045,"south wall");
+      wall(x1-x0+.18,.09,cx,z1+.045,"north wall");
+      const onEast=portal&&portal.coopId===c.id&&portal.axis==="x"&&
+        Math.abs(portal.plane-x1)<1e-6;
+      if(onEast){
+        const p0=Math.max(z0,portal.start),p1=Math.min(z1,portal.end);
+        if(p0>z0+.01)wall(.09,p0-z0,x1+.045,(z0+p0)/2,"east wall left");
+        if(p1<z1-.01)wall(.09,z1-p1,x1+.045,(p1+z1)/2,"east wall right");
+        // Lintel above the native shared-door route; birds stay at ground level.
+        wall(.09,p1-p0,x1+.045,(p0+p1)/2,"portal lintel",base+1.22,top);
+      }else wall(.09,z1-z0+.16,x1+.045,cz,"east wall");
+      for(const side of [-1,1]){
+        const roof=box(x1-x0+.35,.13,(z1-z0)/2+.25,m.roof,
+          cx,top+.14,cz+side*(z1-z0)/4);
+        roof.rotation.x=side*.34;
+        roof.name="Native coop pitched roof "+String(c.id);
+        nativeCoopHouses.add(roof);
+      }
+    }
     for(const c of comps){
       const footprint=nativeFarmComponentFootprint(c,origin);
       if(!footprint)continue;
@@ -961,7 +1017,26 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         const dx=bx-ax,dz=bz-az,len=Math.hypot(dx,dz);
         const N=Math.max(1,Math.ceil(len/1.1));
         for(let q=0;q<N;q++){
-          const t0=q/N,t1=(q+1)/N;
+          // Cut the ORIGINAL Farm coop-to-run doorway out of the attached
+          // run's west fence. The former 3-rail solid wall crossed the birds'
+          // native door transition and was visible in the user's screenshot.
+          const start=q/N,end=(q+1)/N;
+          let portions=[[start,end]];
+          const axis=portal?.axis;
+          const attached=c.type==="run"&&portal?.runId===c.id &&
+            (axis==="x"?Math.abs(ax-portal.plane)<1e-6&&Math.abs(bx-portal.plane)<1e-6:
+             axis==="z"?Math.abs(az-portal.plane)<1e-6&&Math.abs(bz-portal.plane)<1e-6:false);
+          if(attached){
+            const v0=axis==="x"?az:ax,v1=axis==="x"?bz:bx;
+            const cut0=(portal.start-v0)/(v1-v0);
+            const cut1=(portal.end-v0)/(v1-v0);
+            const lo=Math.min(cut0,cut1),hi=Math.max(cut0,cut1);
+            portions=[];
+            if(start<lo-1e-7)portions.push([start,Math.min(end,lo)]);
+            if(end>hi+1e-7)portions.push([Math.max(start,hi),end]);
+          }
+          for(const [t0,t1] of portions){
+          if(t1-t0<1e-7)continue;
           const xa=ax+dx*t0,za=az+dz*t0,xb=ax+dx*t1,zb=az+dz*t1;
           const cx=(xa+xb)/2,cz=(za+zb)/2;
           for(const h of [.25,.65,H]){
@@ -984,6 +1059,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
               endpointA.distanceTo(V(xa,ya,za)),endpointB.distanceTo(V(xb,yb,zb)));
             nativeRailCount++;
             nativeEnclosures.add(bar);
+          }
           }
         }
       }
@@ -1441,14 +1517,13 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     chargeRail.scale.x=Math.max(.015,br);chargeRail.visible=br>1e-8;
     inverterLed.intensity=last?.energy?.servedBaseWh>0?.85:0;
     pumpLight.intensity=last?.energy?.servedPumpWh>0?1.0:0;
-    // Illustrative day/night key-light and directional shadow animation.
-    // Scenario clock, not ephemeris: never feed these visuals into Solar physics.
+    // Approximate local NOAA solar position, keyed to the actual scenario
+    // calendar date and PA latitude/longitude. Separate from Solar dispatch.
     const hour=Number(snapshot.clock.hourOfDay);
-    const dayPhase=THREE.MathUtils.clamp((hour-6)/12,0,1);
-    const sunLevel=Math.max(0,Math.sin(Math.PI*dayPhase));
-    const isDay=hour>=6&&hour<=18;
-    const azimuth=(dayPhase-.5)*Math.PI*.86;
-    const elevation=(.075+.83*sunLevel)*Math.PI/2;
+    const sun=seasonalSun(snapshot.clock.date,hour);
+    const sunLevel=sun.sunLevel,isDay=sun.daylight;
+    const azimuth=sun.azimuthDeg*Math.PI/180;
+    const elevation=sun.elevationDeg*Math.PI/180;
     const sunDistance=85;
     direct.position.set(
       Math.sin(azimuth)*sunDistance*Math.cos(elevation),
@@ -1459,27 +1534,27 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     direct.target.updateMatrixWorld();
     // Synthetic cloud factor is a scenario assumption, not observed weather.
     const syntheticClarity=THREE.MathUtils.clamp(c.cloudTransmittance,0,1);
-    const twilight=isDay?Math.pow(1-sunLevel,5):0;
+    const twilight=1-sun.twilightLevel;
     // The site-level servedBaseWh is an aggregate, not a lamp circuit meter.
     // These lights are strictly illustrative: no consumption is subtracted.
     // Without supplied base energy the fixtures cannot imply powered lighting.
     const baseSupplyWh=Number(last?.energy?.servedBaseWh)||0;
-    const darkness=THREE.MathUtils.clamp((.45-sunLevel)/.45,0,1);
+    const darkness=1-sun.twilightLevel;
     const lampLevel=baseSupplyWh>0?darkness:0;
     for(const lamp of porchFixtures)lamp.intensity=lampLevel*1.55;
     fixtureGlass.emissiveIntensity=lampLevel*1.8;
     litWindowMaterial.emissiveIntensity=lampLevel*.75;
-    skyLight.intensity=.42+sunLevel*(.9+.45*syntheticClarity);
-    direct.intensity=isDay?(.08+2.62*sunLevel*syntheticClarity):0;
+    skyLight.intensity=.18+sun.twilightLevel*.25+sunLevel*(1.1+.35*syntheticClarity);
+    direct.intensity=isDay?(.06+2.8*sunLevel*syntheticClarity):0;
     direct.color.setHSL(.105-.045*sunLevel,.40+.08*twilight,.70+.19*sunLevel);
     skyLight.color.setHSL(.58,.24,.64+.24*sunLevel);
-    scene.background.setHSL(.57+.025*twilight,.29+.16*sunLevel,.105+.59*sunLevel);
+    scene.background.setHSL(.57+.025*twilight,.28+.16*sunLevel,
+      .055+sun.twilightLevel*.24+sunLevel*.42);
     scene.fog.color.copy(scene.background);
-    visualSunState={hour,daylight:isDay,syntheticClarity,
+    visualSunState={...sun,syntheticClarity,
       decorativeLighting:{lampCount:porchFixtures.length,intensity:porchFixtures[0].intensity,
         windowEmissive:litWindowMaterial.emissiveIntensity,baseSupplyWh,
         modeledLampLoad:false},
-      elevationDeg:elevation*180/Math.PI,azimuthDeg:azimuth*180/Math.PI,
       directIntensity:direct.intensity};
   }
   let nativeAnimalPoses=null,nativeGeneration=null;
@@ -1546,7 +1621,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       (data?.last?.water?.treatedL??0)>0;
     if(pumpActive)pumpFan.rotation.z+=dt*10;
     const modelHour=data?.clock?.hourOfDay??9;
-    const awake=modelHour>=6&&modelHour<20;
+    const awake=data?.clock?.date?seasonalSun(data.clock.date,modelHour).daylight:false;
     for(let i=0;i<agents.children.length;i++){
       const a=agents.children[i],s=a.userData,chicken=s.kind==="chicken";
       const healthSpeed=.35+.65*THREE.MathUtils.clamp(s.health/100,0,1);
@@ -1752,6 +1827,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         requestedHeightAboveGroundM:toEye.y-terrainY(toEye.x,toEye.z),
         followAnimalId:trackedAnimalId},
       visualSun:visualSunState?{...visualSunState}:null,
+      gardenLayout:{bounds:gardenBounds(),fenceClearanceM:fenceToGardenClearance(),
+        runOverlap:nativeCoopProof.portal? aabbOverlap(gardenBounds(),nativeCoopProof.portal.run):null},
+      nativeCoopLayout:{...nativeCoopProof,meshCount:nativeCoopHouses.children.length},
       nativeEnclosureLayout:{count:nativeEnclosureCount,footprints:nativeEnclosureFootprints,renderedMeshes:nativeEnclosures.children.length,
         railEndpointResidualM:nativeRailEndpointResidualM,railCount:nativeRailCount, 
         // Derive rail/post centers from actual rendered meshes, not source metadata. 
