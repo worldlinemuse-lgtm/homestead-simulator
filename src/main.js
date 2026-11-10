@@ -118,7 +118,13 @@ function stop(){playing=false;scene?.setPlayback(false);clearInterval(timer);tim
 function toggle(){if(playing){stop();return;}playing=true;scene?.setPlayback(true);$("playBtn").textContent="Ⅱ Pause";timer=setInterval(tick,1200);tick()}
 $("playBtn").addEventListener("click",toggle);$("stepBtn").addEventListener("click",()=>{stop();tick()});
 $("dayBtn").addEventListener("click",()=>{stop();try{for(let i=0;i<24;i++)coordinator.stepHour();redraw(coordinator.snapshot())}catch(e){fail(e)}});
-$("resetBtn").addEventListener("click",()=>{stop();try{redraw(coordinator.reset());$("errors").style.display="none"}catch(e){fail(e)}});
+function resetScenario(){
+  const next=coordinator.reset();
+  farmVisual.init(20261104,next.clock.hourOfDay);
+  redraw(next);
+  return next;
+}
+$("resetBtn").addEventListener("click",()=>{stop();try{resetScenario();$("errors").style.display="none"}catch(e){fail(e)}});
 document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=null;selectArea(b.dataset.view);$("sceneHint").textContent=selected==="farm"
   ?"Tap an animal to follow · Drag to orbit · Pinch to zoom"
   :"Drag to orbit · Pinch to zoom · Select equipment";renderAsset(coordinator.snapshot())}));
@@ -145,6 +151,6 @@ try{scene=makeScene($("world"),(kind,label)=>{
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
   renderAsset(coordinator.snapshot());$("inspector").classList.add("open");
 },farmVisual);selectArea("overview");redraw(coordinator.snapshot())}catch(e){fail(e)}
-window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),step:tick,reset:()=>redraw(coordinator.reset()),world:()=>({...scene?.stats(),nativeFarm:farmVisual.stats()})});
+window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),step:tick,reset:()=>{stop();return resetScenario()},world:()=>({...scene?.stats(),nativeFarm:farmVisual.stats()})});
 
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(console.warn));
