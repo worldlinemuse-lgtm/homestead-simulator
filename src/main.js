@@ -7,7 +7,7 @@ const coordinator=new window.HomesteadCoordinator.Coordinator();
 const farmVisual=window.HomesteadFarmCore.nativeVisual;
 farmVisual.init(20261104,9);
 // Whole-plot rigid transform (feet -> metres); not a modification of farm pen data.
-const farmWorldOriginM=Object.freeze({x:21,y:0,z:-3});
+const farmWorldOriginM=Object.freeze({x:23,y:0,z:6});
 let selected="overview",playing=false,timer=null,scene;
 let selectedAsset=null;
 function fail(e){playing=false;scene?.setPlayback(false);clearInterval(timer);timer=null;$("playBtn").textContent="▶ Play";$("errors").textContent="Simulation stopped: "+(e?.message||e);$("errors").style.display="block";console.error(e);}
