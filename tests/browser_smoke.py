@@ -105,6 +105,30 @@ try:
                       b.min.x>=f.x0-allowance && b.max.x<=f.x1+allowance &&
                       b.min.z>=f.z0-allowance && b.max.z<=f.z1+allowance));
             }"""), ("Rendered enclosure mesh extends outside Farm footprint",mobile)
+            # The native Farm hutch bank floor is 2.05 ft above ground.
+            # Unlike the old freestanding decorative hutches, these new
+            # rendered wire-floor decks follow the exact Farm footprints.
+            assert page.evaluate("""() => {
+                const w=window.HomesteadApp.world();
+                const l=w.nativeEnclosureLayout;
+                const h=w.nativeHutchFloors;
+                const hutches=l.footprints.filter(f=>f.type==="hutch");
+                const eps=1e-6;
+                return h.count===hutches.length && h.count>=2 &&
+                  h.surfaces.length===h.count &&
+                  Math.abs(h.heightAboveTerrainM-2.05*0.3048)<1e-10 &&
+                  h.surfaces.every(s=>{
+                    const f=hutches.find(x=>x.id===s.componentId);
+                    return f&&s.visualOnly===true &&
+                      [s.min.x,s.min.y,s.min.z,s.max.x,s.max.y,s.max.z]
+                        .every(Number.isFinite) &&
+                      s.min.x>=f.x0-eps&&s.max.x<=f.x1+eps &&
+                      s.min.z>=f.z0-eps&&s.max.z<=f.z1+eps &&
+                      s.min.y<s.max.y &&
+                      s.max.y-s.min.y<1 &&
+                      s.min.y>-.5;
+                  });
+            }"""), ("Raised native hutch floors do not match Farm footprints",mobile)
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
             # Visual sun and shadows are driven by coordinator hour, never
             # fed back into the Solar energy ledger. Check actual UI steps.
@@ -274,8 +298,9 @@ try:
                 ("mobile-farm-stride.png" if mobile else "desktop-farm-stride.png"))))
             page.locator("#playBtn").click()
             assert page.evaluate("window.HomesteadApp.world().playing") is False
-            # Pause must land all animals immediately, even if the frozen gait
-            # phase had them airborne; it must not keep walking toward spawn.
+            # Pausing freezes native poses. Chickens remain grounded, while
+            # rabbits in raised hutches must retain original Farm floor height;
+            # flattening all animals onto the ground was a visual bug.
             assert page.evaluate("""() => {
                 const w=window.HomesteadApp.world();
                 return Number.isFinite(w.pausedGroundErrorM)
@@ -283,6 +308,12 @@ try:
             }""")
             page.wait_for_timeout(130)
             assert page.evaluate("window.HomesteadApp.world().pausedGroundErrorM") < 1e-9
+            assert page.evaluate("""() => {
+                const rabbits=window.HomesteadApp.world().rabbitElevation;
+                return rabbits.length>0 &&
+                  rabbits.some(r=>r.nativeHeightM>.6) &&
+                  rabbits.every(r=>Number.isFinite(r.errorM)&&r.errorM<1e-6);
+            }"""), ("Paused rabbits lost native raised floor elevation",mobile)
             resting=page.evaluate("window.HomesteadApp.world().chickenFootContact")
             assert resting["planted"] == 2*resting["chickens"], resting
             assert resting["swinging"] == 0, resting
