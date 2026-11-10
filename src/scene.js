@@ -1213,7 +1213,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     overview:{eye:V(16,59,91),look:V(0,1.5,-8)},
     energy:{eye:V(-29,21,17),look:V(-29,2,-9)},
     water:{eye:V(17,24,-1),look:V(0,2,-23)},
-    farm:{eye:V(41.8,3.4,10.2),look:V(36.3,.52,2.3)}
+    farm:{eye:V(43,10.5,26),look:V(33,.90,9)}
   };
   let view="overview",moving=false,trackedAnimalId=null;
   const eye=views.overview.eye.clone(),focus=views.overview.look.clone();
