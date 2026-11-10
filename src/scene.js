@@ -723,8 +723,12 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     target.add(screen);housingScreenCount++;
     return screen;
   }
-  const barn=group("farm","Henhouse",35.5,2.5);
-  foundationFor(barn,35.5,2.5,9.25,8.5);
+  const barn=group("farm","Henhouse",33,7.2);
+  foundationFor(barn,33,7.2,9.25,8.5);
+  // Place the illustrated building's east wall alongside the native 8 ft coop
+  // and attached run footprint (Farm original x40/y10 and x48/y10 in feet).
+  // It is still a scale illustration, not a claim that its interior fixtures
+  // or bird-door openings exactly match the original compact Farm enclosure.
   // Continuous siding is textured wood; trim gives the coop construction-scale detail.
   barn.add(box(9.35,.32,8.8,m.stone,0,.16,0));
   
