@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import {nativeFarmWorldPoses} from "./upstream/farm-world/pose-adapter.mjs";
+import {nativeFarmWorldPoses,nativeFarmComponentFootprint} from "./upstream/farm-world/pose-adapter.mjs";
 import {frameDeltaSeconds,smoothAlpha,gaitPose,chickenFootPhase,chickenSwingLift,
   CHICKEN_STANCE_FRACTION} from "./visual-motion.mjs";
 
@@ -924,11 +924,10 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     nativeEnclosureKey=key;
     nativeEnclosures.traverse(o=>{if(o.isMesh&&o.geometry)o.geometry.dispose();});
     nativeEnclosures.clear();nativeEnclosureCount=0;nativeEnclosureFootprints=[];
-    const ft=0.3048;
     for(const c of comps){
-      if(![c.x,c.y,c.w,c.d].every(Number.isFinite)||c.w<=0||c.d<=0)continue;
-      const x0=origin.x+c.x*ft,x1=x0+c.w*ft;
-      const z0=origin.z+c.y*ft,z1=z0+c.d*ft;
+      const footprint=nativeFarmComponentFootprint(c,origin);
+      if(!footprint)continue;
+      const {x0,x1,z0,z1}=footprint;
       const raised=c.type==="hutch"?.625:0;
       const H=c.type==="run"?1.28:.87;
       const corners=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]];
@@ -954,7 +953,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         }
       }
       nativeEnclosureCount++;
-      nativeEnclosureFootprints.push({id:c.id,type:c.type,x0,x1,z0,z1,unit:"m"});
+      nativeEnclosureFootprints.push(footprint);
     }
   }
   // Visual vocabulary adapted from the user's Farm Simulator:
