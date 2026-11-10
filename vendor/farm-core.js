@@ -6447,7 +6447,7 @@ function goF(F, t, sp, dt) {
  * Source: farm-sim/source/src/world/{base,cages,context,agents,physics,sync}.js
  */
 const nativeVisual=(function(){
-  let booted=false;
+  let booted=false,generation=0;
   function setHour(hour){
     if(!Number.isFinite(hour)||hour<0||hour>=24)throw new RangeError("Native Farm hour must be in [0,24)");
     WV.hour=hour;
@@ -6457,6 +6457,7 @@ const nativeVisual=(function(){
   function init(seed=20261104,hour=9){
     if(!Number.isSafeInteger(seed))throw new TypeError("Native visual seed must be an integer");
     vSeed=(seed>>>0)||20261104;
+    generation++;
     WV.ctx={}; // non-drawing sentinel: original worldSync checks canvas readiness
     WV.agents.clear();
     WV.fx=[];WV.fly=[];WV.air=[];WV.nest={};WV.queue=[];
@@ -6501,7 +6502,7 @@ const nativeVisual=(function(){
     return stats();
   }
   function stats(){
-    return {initialized:booted,agentCount:WV.agents.size,day:WV.lastDay,
+    return {initialized:booted,generation,agentCount:WV.agents.size,day:WV.lastDay,
       visualSteps:PHYS.steps,wallHits:PHYS.wallHits,pairHits:PHYS.pairHits,
       hops:PHYS.hops,jumps:PHYS.jumps,visualOnly:true};
   }
