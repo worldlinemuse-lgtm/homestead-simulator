@@ -80,6 +80,17 @@ try:
                 },0);
                 return layout.renderedMeshes===expected && expected>0;
             }"""), ("Native enclosure rail mesh budget differs from Farm footprints",mobile)
+            # Each rail must slope between the terrain-sampled endpoints.
+            # This rejects midpoint-height rails that hover/cut through sloped
+            # ground while still passing footprint and mesh-budget assertions.
+            assert page.evaluate("""() => {
+                const l=window.HomesteadApp.world().nativeEnclosureLayout;
+                const expected=(l.renderedMeshes-4*l.count)/3;
+                return Number.isFinite(l.railEndpointResidualM) &&
+                  l.railEndpointResidualM<1e-6 &&
+                  Number.isInteger(l.railCount) && l.railCount===expected &&
+                  l.railCount>0;
+            }"""), ("Farm rails do not meet terrain-sampled endpoints",mobile)
             # Validate the actual Three.js mesh centers against authoritative
             # Farm footprint bounds; mesh-count checks alone miss displaced rails.
             assert page.evaluate("""() => {
