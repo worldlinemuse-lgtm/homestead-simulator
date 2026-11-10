@@ -153,6 +153,6 @@ try{scene=makeScene($("world"),(kind,label)=>{
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
   renderAsset(coordinator.snapshot());$("inspector").classList.add("open");
 },farmVisual);selectArea("overview");redraw(coordinator.snapshot())}catch(e){fail(e)}
-window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),step:tick,reset:()=>{stop();return resetScenario()},world:()=>({...scene?.stats(),nativeFarm:farmVisual.stats()})});
+window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),step:tick,reset:()=>{stop();return resetScenario()},world:()=>({...scene?.stats(),nativeFarm:farmVisual.stats(),farmWorldOriginM})});
 
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(console.warn));
