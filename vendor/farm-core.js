@@ -2599,5 +2599,3536 @@ function reset(seed=7){P.env_seed=seed>>>0;newState();return snapshot();}
 function advanceDay(){step();return snapshot();}
 function snapshot(){const r=S.hist.length?S.hist[S.hist.length-1]:null;return {day:S.day,date:dateOf(S.day).toISOString().slice(0,10),animals:S.animals.map(a=>({id:a.id,sp:a.sp,st:a.st,health:a.health})),components:S.comps.map(c=>({id:c.id,type:c.type,x:c.x,y:c.y,w:c.w,d:c.d})),daily:r?{...r}:null,counts:counts()};}
 function setParameter(key,value){if(!Object.prototype.hasOwnProperty.call(P,key))throw new Error('Unknown farm parameter '+key);if(!Number.isFinite(value))throw new Error('Parameter must be finite');P[key]=value;refreshToday();}
-return Object.freeze({reset,advanceDay,snapshot,setParameter});
+
+/* BEGIN native farm visual runtime: original farm-sim source, unchanged below. */
+
+// Original upstream file: source/src/app/clock.js (blob 7d36ad05a1fa2bfbc4be43a63579028761b9cd8a)
+// app/clock.js
+// ---------- clock: the one owner of playback time ----------
+// Context: Clock (app layer). Reads: SPEEDS below. Calls into the model: step() only.
+// Model time is whole days. S.day moves only inside step(), at midnight, and every formula is a
+// daily formula. The clock adds a time of day for watching: CLOCK.frac is the fraction of the
+// current model day that has passed (0 = midnight). At watching speeds it moves with real time and
+// each midnight it crosses runs one step(). At skipping speeds the shown hour holds still and whole
+// days are owed instead. Either way the model sees the same sequence of step() calls, so a seed and
+// its settings give the same totals at any speed or frame rate.
+const SPEEDS = [
+  { label: 'Real time', rate: 1 / 86400 },
+  { label: '1 minute per second', rate: 1 / 1440 },
+  { label: '1 day in 2 minutes', rate: 1 / 120 },
+  { label: '1 day in 20 seconds', rate: 1 / 20 },
+  { label: '1 hour per second', rate: 1 / 24 },
+  { label: '1 day in 5 seconds', rate: 1 / 5 },
+  { label: '1 day per second', rate: 1 },
+  { label: '4 days per second', rate: 4 },
+  { label: '15 days per second', rate: 15 },
+  { label: '60 days per second', rate: 60 },
+  { label: '180 days per second', rate: 180 }
+];
+const WATCH_MAX = 0.2; // days per second; at or below this the day and night play live
+// CLOCK: running: playing or paused; speed: index into SPEEDS (the default 7 is 4 days a second); frac: time of day
+// shown, as a fraction of the day (13/24 = 1 PM); owed: model days still to step at fast speeds, carried
+// between frames; done: [time ms, days stepped] for the last 2 s, for the days-per-second readout; frameMs:
+// longest a frame may spend stepping days (ms; the speed test sets it very high).
+const CLOCK = { running: false, speed: 7, frac: 13 / 24, owed: 0, done: [], frameMs: 30 };
+// Model days per real second at the chosen speed.
+function clockRate() {
+  return SPEEDS[CLOCK.speed].rate;
+}
+// True at the slower speeds, where the world shows the time of day passing (rate up to WATCH_MAX).
+function clockLive() {
+  return clockRate() <= WATCH_MAX + 1e-12;
+}
+// The clock hour now shown in the world (0 to 24), from the share of the day gone.
+function clockHour() {
+  return CLOCK.frac * 24;
+}
+// Advance by dtReal seconds of real time. Returns the number of model days stepped.
+function clockAdvance(dtReal) {
+  if (!CLOCK.running) return 0;
+  const rate = clockRate(),
+    dt = Math.min(Math.max(0, dtReal), 0.25),
+    t0 = performance.now();
+  let n = 0;
+  if (clockLive()) {
+    CLOCK.frac += dt * rate;
+    while (CLOCK.frac >= 1) {
+      step();
+      CLOCK.frac -= 1;
+      n++;
+    }
+  } else {
+    // owed days carry over to later frames when a frame runs out of time; the backlog is capped
+    // at half a second of play so a slow computer plays slower instead of piling up work
+    CLOCK.owed = Math.min(CLOCK.owed + dt * rate, Math.max(2, rate * 0.5));
+    while (CLOCK.owed >= 1 && performance.now() - t0 < CLOCK.frameMs) {
+      step();
+      CLOCK.owed -= 1;
+      n++;
+    }
+  }
+  if (n) {
+    const now = performance.now();
+    CLOCK.done.push([now, n]);
+    while (CLOCK.done.length && now - CLOCK.done[0][0] > 2000) CLOCK.done.shift();
+  }
+  return n;
+}
+// Days actually stepped per second over the last two seconds (shows when the computer is the limit).
+function clockActualRate() {
+  if (!CLOCK.running || CLOCK.done.length < 2) return 0;
+  const span = (performance.now() - CLOCK.done[0][0]) / 1000;
+  return span > 0.5 ? CLOCK.done.reduce((t, x) => t + x[1], 0) / span : 0;
+}
+// Starts or pauses the clock. Pausing redraws every panel.
+function setRun(on) {
+  CLOCK.running = !!on;
+  CLOCK.owed = 0;
+  CLOCK.done = [];
+  clockUi();
+  if (!CLOCK.running) {
+    renderAll();
+    if (sel) renderInsp();
+  }
+}
+// Picks speed i from SPEEDS (clamped to the list).
+function setSpeed(i) {
+  CLOCK.speed = clamp(Math.round(i), 0, SPEEDS.length - 1);
+  CLOCK.owed = 0;
+  CLOCK.done = [];
+  clockUi();
+}
+// Sets the time of day shown in the world (hour 0 to 23.99). Does not step the model.
+function setHour(h) {
+  CLOCK.frac = clamp(h, 0, 23.99) / 24;
+}
+// Jump: run n whole days now. The time of day shown stays where it is.
+function stepN(n) {
+  for (let i = 0; i < n; i++) step();
+  renderAll();
+  if (sel) renderInsp();
+}
+// Brings the Run / Pause button, the speed list and the slower / faster buttons in line with the clock.
+function clockUi() {
+  const b = $('bRun');
+  if (!b) return;
+  b.textContent = CLOCK.running ? 'Pause' : 'Run';
+  b.classList.toggle('on', CLOCK.running);
+  $('speed').value = CLOCK.speed;
+  $('bSlow').disabled = CLOCK.speed === 0;
+  $('bFast').disabled = CLOCK.speed === SPEEDS.length - 1;
+}
+
+
+// Original upstream file: source/src/world/base.js (blob b8d322100b14787dc4df831489a2454f08942300)
+// world/base.js
+// Farm world (read only). Shared view state WV, the isometric projection and small helpers. The world
+// draws the model; it never changes S or P and never uses the model's dice (it has its own, vr()).
+// =================== FARM WORLD: the visual layer ===================
+// Formulas first. Every number the world shows is read from the model (S, P, micro, loads, density,
+// intake, layFactors, brooderTemp, labor). The world never calls rngNext() and never writes to the
+// simulation, so drawing can't change a simulated number at any frame rate.
+// Illustrative only: exact spots, walking paths, and the hour of the day an event is shown.
+// ---- Contents (top-level functions, in file order; kept by tools/code_contents.py) ----
+//   vr - The world's own random number, 0 to 1 (xorshift32 on vSeed).
+//   iso - Screen point (CSS pixels) of the farm point x, y (ft across the plot), z (ft up), in the isometric
+//         view: x and y axes 30 degrees off horizontal, then camera centre and zoom.
+//   unIso - The farm point (x, y in ft) under screen point sx, sy, on the level z ft up.
+//   planeT - Sets the canvas transform so drawing in farm feet on the flat level z lands where iso would put
+//         it (used for ground pictures and floor patterns).
+//   screenT - Sets the canvas transform back to plain CSS pixels (for text, labels and the HUD).
+//   rgb - The red, green, blue numbers of a "#rrggbb" colour (cached).
+//   shd - A "#rrggbb" colour made lighter or darker by factor f, with opacity a, as an rgba() string.
+//   mix - A blend of two "#rrggbb" colours, t of the way from the first to the second, with opacity a, as an
+//         rgba() string.
+//   lw - Line width in pixels for a line f ft wide at the current zoom, never under half a pixel.
+//   poly - Fills and/or strokes a polygon given as farm points [x, y, z].
+//   line3 - Draws a straight line between two farm points [x, y, z].
+//   box - Draws a solid box (ground footprint x, y, w by d ft, bottom z, height h ft) with its three visible
+//         faces shaded, colour col, opacity al.
+//   wallX - Draws a flat wall along x from x0 to x1 at y, from height z0 to z1.
+//   wallY - Draws a flat wall along y from y0 to y1 at x, from height z0 to z1.
+//   wireStep - the spacing [across, up] drawn for cage side wire at the current zoom, in ft
+//   meshLines - many wire segments in one stroke (the fine mesh has hundreds of them)
+//   mesh - wire mesh along x (fixed y) or along y (fixed x); fine: rabbit cage wire (real size when close)
+//   E - Fills an ellipse in screen pixels (centre x, y, radii rx, ry, turned rot).
+//   floorZ - Height in ft of the floor animals stand on in building c: hutch wire floor 2.05, coop 0.35,
+//         brooder 0.3, anything else the ground (0).
+//   envNow - Today's weather from the model (S.today.env), or worked out without moving the day on when today
+//         has not been run yet.
+//   sunInfo - Sunrise and sunset hours, the sun's height above the horizon at the hour shown, and whether it
+//         is night (sun more than 1 degree down).
+// ---- end of contents ----
+const WV = {
+  cv: null, // canvas element the world draws on
+  ctx: null, // its 2D drawing context
+  dpr: 1, // device pixels per CSS pixel (screen sharpness)
+  w: 900, // canvas width in CSS pixels
+  h: 560, // canvas height in CSS pixels
+  zoom: 9, // CSS pixels per foot
+  cx: 13, // camera centre in projected units (see iso): across
+  cy: 27, // camera centre in projected units: down
+  agents: new Map(), // every animal in the world, by animal id: position, path, task (built in agents.js)
+  fx: [], // floating text ("+1 egg") and puff effects
+  fly: [], // eggs flying from a nest to the incubator
+  air: [], // fan air particles
+  nest: {}, // eggs lying in each coop's nests today, by coop id
+  queue: [], // world events waiting for their hour of the day ({t, fn, timed}), run by loop.js
+  lens: 'none', // overlay drawn on the ground (none, heat, crowding, light ...)
+  roofs: 1, // roof drawing: 0 off, 1 see-through, 2 solid
+  labels: 1, // building labels on or off
+  hour: 13, // clock hour the world is showing
+  follow: 0, // 1 while the camera follows the selected animal
+  hover: null, // what the pointer is over: {g} an animal or {c} a building
+  selA: null, // selected animal (its card is open)
+  lastDay: -1, // model day the world last caught up with
+  lastS: null, // the S object the world last saw (a new one means a load or reset)
+  lastToday: null, // the S.today object the world last saw
+  layoutKey: '', // buildings and their sizes as one string, to notice layout edits
+  pos: {}, // last seen position of each building, by id, to notice drags
+  t: 0, // world time in real seconds (animation clock)
+  ground: null, // cached ground picture (a canvas)
+  groundKey: '', // what the cached ground picture was drawn for
+  lensCv: null, // cached lens overlay picture (a canvas)
+  lensKey: '', // what the cached lens picture was drawn for
+  K: {}, // per-building layout worked out once per layout: fixtures, nests, cages, doors, roosts (context.js)
+  vis: new Map(), // today's visual state per animal id (fill levels, poses) read from the model
+  farmer: null, // the farmer walking the chore route
+  route: null, // chore route: stops, feed and water stores, nodes and the day's chore time from labor()
+  agg: {}, // today's feed and water totals gathered for the HUD
+  aggT: 0, // when the HUD totals were last shown
+  hudT: 0, // when the HUD text was last refreshed
+  live: false, // true at speeds where the time of day is shown passing (clockLive)
+  sun: null // sunrise, sunset, sun height and night flag for the hour shown (sunInfo)
+};
+// vSeed: state of the world's own random stream (vr below). The start value is just a fixed date.
+let vSeed = 20261104;
+// The world's own random number, 0 to 1 (xorshift32 on vSeed). Used only for looks and movement, never by the
+// model, so drawing can't change a simulated number. Note: the live animation and the test tools draw from the
+// same sequence, so any change to how often an animal calls vr() shifts what every later animal does.
+function vr() {
+  vSeed ^= vSeed << 13;
+  vSeed >>>= 0;
+  vSeed ^= vSeed >>> 17;
+  vSeed ^= vSeed << 5;
+  vSeed >>>= 0;
+  return vSeed / 4294967296;
+}
+// vrr(a, b): a random number between a and b from the world stream.
+const vrr = (a, b) => a + (b - a) * vr();
+// cos 30° and sin 30°, for the isometric view below.
+const C30 = 0.8660254,
+  S30 = 0.5;
+// Screen point (CSS pixels) of the farm point x, y (ft across the plot), z (ft up), in the isometric view: x
+// and y axes 30 degrees off horizontal, then camera centre and zoom.
+function iso(x, y, z) {
+  return [
+    WV.w / 2 + ((x - y) * C30 - WV.cx) * WV.zoom,
+    WV.h / 2 + ((x + y) * S30 - (z || 0) - WV.cy) * WV.zoom
+  ];
+}
+// The farm point (x, y in ft) under screen point sx, sy, on the level z ft up. The inverse of iso.
+function unIso(sx, sy, z) {
+  const ix = (sx - WV.w / 2) / WV.zoom + WV.cx,
+    iy = (sy - WV.h / 2) / WV.zoom + WV.cy + (z || 0);
+  const a = ix / C30,
+    b = iy / S30;
+  return [(a + b) / 2, (b - a) / 2];
+}
+// Sets the canvas transform so drawing in farm feet on the flat level z lands where iso would put it (used for
+// ground pictures and floor patterns).
+function planeT(z) {
+  const k = WV.zoom * WV.dpr;
+  WV.ctx.setTransform(
+    C30 * k,
+    S30 * k,
+    -C30 * k,
+    S30 * k,
+    (WV.w / 2 - WV.cx * WV.zoom) * WV.dpr,
+    (WV.h / 2 - (WV.cy + (z || 0)) * WV.zoom) * WV.dpr
+  );
+}
+// Sets the canvas transform back to plain CSS pixels (for text, labels and the HUD).
+function screenT() {
+  WV.ctx.setTransform(WV.dpr, 0, 0, WV.dpr, 0, 0);
+}
+// cache for rgb(): colour string -> [r, g, b].
+const _cc = {};
+// The red, green, blue numbers of a "#rrggbb" colour (cached).
+function rgb(h) {
+  if (_cc[h]) return _cc[h];
+  const n = parseInt(h.slice(1), 16);
+  return (_cc[h] = [(n >> 16) & 255, (n >> 8) & 255, n & 255]);
+}
+// A "#rrggbb" colour made lighter or darker by factor f, with opacity a, as an rgba() string. Used for shaded
+// faces.
+function shd(h, f, a) {
+  const c = rgb(h);
+  return (
+    'rgba(' +
+    Math.min(255, (c[0] * f) | 0) +
+    ',' +
+    Math.min(255, (c[1] * f) | 0) +
+    ',' +
+    Math.min(255, (c[2] * f) | 0) +
+    ',' +
+    (a == null ? 1 : a) +
+    ')'
+  );
+}
+// A blend of two "#rrggbb" colours, t of the way from the first to the second, with opacity a, as an rgba()
+// string.
+function mix(h1, h2, t, a) {
+  const p = rgb(h1),
+    q = rgb(h2);
+  t = clamp(t, 0, 1);
+  return (
+    'rgba(' +
+    ((p[0] + (q[0] - p[0]) * t) | 0) +
+    ',' +
+    ((p[1] + (q[1] - p[1]) * t) | 0) +
+    ',' +
+    ((p[2] + (q[2] - p[2]) * t) | 0) +
+    ',' +
+    (a == null ? 1 : a) +
+    ')'
+  );
+}
+// Line width in pixels for a line f ft wide at the current zoom, never under half a pixel.
+function lw(f) {
+  return Math.max(0.5, WV.zoom * (f || 0.05));
+}
+// Fills and/or strokes a polygon given as farm points [x, y, z].
+function poly(pts, fill, stroke, w) {
+  const c = WV.ctx;
+  c.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const s = iso(pts[i][0], pts[i][1], pts[i][2]);
+    i ? c.lineTo(s[0], s[1]) : c.moveTo(s[0], s[1]);
+  }
+  c.closePath();
+  if (fill) {
+    c.fillStyle = fill;
+    c.fill();
+  }
+  if (stroke) {
+    c.strokeStyle = stroke;
+    c.lineWidth = w || lw();
+    c.stroke();
+  }
+}
+// Draws a straight line between two farm points [x, y, z].
+function line3(a, b, stroke, w) {
+  const c = WV.ctx,
+    p = iso(a[0], a[1], a[2]),
+    q = iso(b[0], b[1], b[2]);
+  c.beginPath();
+  c.moveTo(p[0], p[1]);
+  c.lineTo(q[0], q[1]);
+  c.strokeStyle = stroke;
+  c.lineWidth = w || lw();
+  c.stroke();
+}
+// Draws a solid box (ground footprint x, y, w by d ft, bottom z, height h ft) with its three visible faces
+// shaded, colour col, opacity al.
+function box(x, y, z, w, d, h, col, al) {
+  const a = al == null ? 1 : al,
+    st = shd(col, 0.5, a * 0.7);
+  poly(
+    [
+      [x, y + d, z],
+      [x + w, y + d, z],
+      [x + w, y + d, z + h],
+      [x, y + d, z + h]
+    ],
+    shd(col, 0.84, a),
+    st
+  );
+  poly(
+    [
+      [x + w, y, z],
+      [x + w, y + d, z],
+      [x + w, y + d, z + h],
+      [x + w, y, z + h]
+    ],
+    shd(col, 0.68, a),
+    st
+  );
+  poly(
+    [
+      [x, y, z + h],
+      [x + w, y, z + h],
+      [x + w, y + d, z + h],
+      [x, y + d, z + h]
+    ],
+    shd(col, 1.06, a),
+    st
+  );
+}
+// Draws a flat wall along x from x0 to x1 at y, from height z0 to z1.
+function wallX(x0, x1, y, z0, z1, col, a) {
+  poly(
+    [
+      [x0, y, z0],
+      [x1, y, z0],
+      [x1, y, z1],
+      [x0, y, z1]
+    ],
+    shd(col, 0.84, a),
+    shd(col, 0.5, a)
+  );
+  if (WV.zoom > 10 && (a == null || a > 0.5))
+    for (let z = z0 + 0.5; z < z1; z += 0.5) line3([x0, y, z], [x1, y, z], shd(col, 0.62, 0.5), lw(0.02));
+}
+// Draws a flat wall along y from y0 to y1 at x, from height z0 to z1.
+function wallY(y0, y1, x, z0, z1, col, a) {
+  poly(
+    [
+      [x, y0, z0],
+      [x, y1, z0],
+      [x, y1, z1],
+      [x, y0, z1]
+    ],
+    shd(col, 0.7, a),
+    shd(col, 0.5, a)
+  );
+  if (WV.zoom > 10 && (a == null || a > 0.5))
+    for (let z = z0 + 0.5; z < z1; z += 0.5) line3([x, y0, z], [x, y1, z], shd(col, 0.55, 0.5), lw(0.02));
+}
+// phase 40: the rabbit cage wire at its real size, from Penn State (psu_rabbit.txt: 1 by 2 in mesh for
+// the sides and top, 0.5 by 1 in for the floor). Drawn at that size from zoom 60, where 1 in is 5 px or
+// more; further out the coarser texture of earlier phases stays. Which way the 2 in runs (up) and the wire
+// thickness (14 gauge, 0.083 in) are my choices. Visual only.
+const WIRE_ZOOM = 60,
+  WIRE_SIDE = [1 / 12, 1 / 6],
+  WIRE_FLOOR = [1 / 24, 1 / 12],
+  WIRE_T = 0.083 / 12,
+  WIRE_COL = 'rgba(228,231,235,0.62)'; // at least 0.9 px wide so the thin wire still shows on a screen
+// the spacing [across, up] drawn for cage side wire at the current zoom, in ft
+function wireStep() {
+  if (WV.zoom > WIRE_ZOOM && !WV.noFineWire) return WIRE_SIDE.slice();
+  const st = WV.zoom > 40 ? 0.25 : WV.zoom > 16 ? 0.5 : 1;
+  return [st, st];
+}
+// many wire segments in one stroke (the fine mesh has hundreds of them)
+function meshLines(segs, stroke, w) {
+  const c = WV.ctx;
+  c.beginPath();
+  for (const [a, b] of segs) {
+    const p = iso(a[0], a[1], a[2]),
+      q = iso(b[0], b[1], b[2]);
+    c.moveTo(p[0], p[1]);
+    c.lineTo(q[0], q[1]);
+  }
+  c.strokeStyle = stroke;
+  c.lineWidth = w;
+  c.stroke();
+}
+// wire mesh along x (fixed y) or along y (fixed x); fine: rabbit cage wire (real size when close)
+function mesh(alongX, a0, a1, k, z0, z1, fine) {
+  // phase 37: close in (zoom > 40) the wire is drawn at 3 in squares, lighter, so it reads as mesh
+  const st = WV.zoom > 40 ? 0.25 : WV.zoom > 16 ? 0.5 : 1,
+    col = WV.zoom > 40 ? 'rgba(225,228,232,0.42)' : 'rgba(225,228,232,0.55)',
+    w = lw(0.018);
+  if (alongX)
+    poly(
+      [
+        [a0, k, z0],
+        [a1, k, z0],
+        [a1, k, z1],
+        [a0, k, z1]
+      ],
+      'rgba(220,225,230,0.07)'
+    );
+  else
+    poly(
+      [
+        [k, a0, z0],
+        [k, a1, z0],
+        [k, a1, z1],
+        [k, a0, z1]
+      ],
+      'rgba(220,225,230,0.07)'
+    );
+  if (WV.zoom < 6) return;
+  if (fine && WV.zoom > WIRE_ZOOM && !WV.noFineWire) {
+    const [sa, sz] = WIRE_SIDE,
+      segs = [];
+    for (let t = a0; t <= a1 + 1e-6; t += sa) segs.push(alongX ? [[t, k, z0], [t, k, z1]] : [[k, t, z0], [k, t, z1]]);
+    for (let z = z0; z <= z1 + 1e-6; z += sz) segs.push(alongX ? [[a0, k, z], [a1, k, z]] : [[k, a0, z], [k, a1, z]]);
+    meshLines(segs, WIRE_COL, Math.max(0.9, lw(WIRE_T)));
+    return;
+  }
+  for (let t = a0; t <= a1 + 1e-6; t += st) {
+    alongX ? line3([t, k, z0], [t, k, z1], col, w) : line3([k, t, z0], [k, t, z1], col, w);
+  }
+  for (let z = z0; z <= z1 + 1e-6; z += st) {
+    alongX ? line3([a0, k, z], [a1, k, z], col, w) : line3([k, a0, z], [k, a1, z], col, w);
+  }
+}
+// Fills an ellipse in screen pixels (centre x, y, radii rx, ry, turned rot). Used for animal bodies and heads.
+function E(x, y, rx, ry, rot, fill) {
+  const c = WV.ctx;
+  c.beginPath();
+  c.ellipse(x, y, Math.max(0.1, rx), Math.max(0.1, ry), rot || 0, 0, 6.2832);
+  c.fillStyle = fill;
+  c.fill();
+}
+
+// ---------- reading the model ----------
+// Height in ft of the floor animals stand on in building c: hutch wire floor 2.05, coop 0.35, brooder
+// 0.3, anything else the ground (0).
+function floorZ(c) {
+  if (!c) return 0;
+  return c.type === 'hutch' ? 2.05 : c.type === 'coop' ? 0.35 : c.type === 'brooder' ? 0.3 : 0;
+}
+// Today's weather from the model (S.today.env), or worked out without moving the day on when today has not
+// been run yet.
+function envNow() {
+  return (S.today && S.today.env) || weather(false);
+}
+// Sunrise and sunset hours, the sun's height above the horizon at the hour shown, and whether it is night (sun
+// more than 1 degree down).
+function sunInfo() {
+  const env = envNow(),
+    day = env.day,
+    rise = 12 - day / 2,
+    set = 12 + day / 2;
+  const lat = (P.env_lat * Math.PI) / 180,
+    dec = ((23.44 * Math.PI) / 180) * Math.sin((2 * Math.PI * (284 + doyOf(S.day))) / 365),
+    H = ((WV.hour - 12) * 15 * Math.PI) / 180;
+  const el =
+    (Math.asin(Math.sin(lat) * Math.sin(dec) + Math.cos(lat) * Math.cos(dec) * Math.cos(H)) * 180) / Math.PI;
+  return { rise, set, el, day, env, night: el < -1 };
+}
+
+
+// Original upstream file: source/src/world/cages.js (blob df970efce33baad6cd246b27ccee14aca4646afd)
+// world/cages.js
+// Farm world (visual only). Phase 28: the separate cages inside each rabbit hutch bank and the wire
+// dividers between them. The model pools a bank's floor (rb_cage sq ft per adult or doe with her
+// litter, rb_grower per weaned grower, at most rb_grp_max growers to a group cage) and never says which
+// rabbit sits in which cage. cagePlan() works one out for the picture, from today's model state only
+// (no memory, so a reload draws the same cages):
+//  - the bank is cut into equal cages running its full depth, as many as fit at rb_cage sq ft each
+//    (Penn State's all-wire hutch: one cage per breeding rabbit), never narrower than 1.5 ft;
+//  - each adult (buck, doe) and each young buck kept apart (rb_split) gets a cage of its own; kits stay
+//    with their mother; pooled growers go in groups of rb_grp_max (the model's own group count), and a
+//    group that needs more floor than one cage gets neighbouring cages with the divider left out;
+//  - single cages fill from the left end in id order (oldest rabbits first, so they keep their cage
+//    from day to day), group cages from the right end, which keeps the free floor in one run;
+//  - when the bank has no free cage left, the extra rabbits share a cage (growers with their own
+//    mother or with other growers first) and the map says so (it never draws more cages than fit).
+// Fixtures: the hoppers and bottles set for the bank are what the model shares out among the pooled
+// growers (core/access.js rgCalc), so they are drawn in the group cages (in empty cages when there are
+// no growers). Each cage with an adult or a single young buck also gets a hopper and bottle on its
+// front wire (Penn State, psu_rabbit.txt: "Each cage should have a feed hopper and a watering system
+// attached to the outside of the cage"; phase 40 found this sourced, it was marked my illustration).
+// The model does not ration adults by hopper, so these change nothing.
+// the first free run of n cages: from the left end, or from the right end when fromRight
+function cageRun(owner, n, fromRight) {
+  const N = owner.length,
+    top = N - n + 1;
+  if (top < 1) return -1;
+  for (let j = 0; j < top; j++) {
+    const s = fromRight ? top - 1 - j : j;
+    let ok = true;
+    for (let t = s; t < s + n; t++)
+      if (owner[t] >= 0) {
+        ok = false;
+        break;
+      }
+    if (ok) return s;
+  }
+  return -1;
+}
+// The longest run of free places (owner below 0) in a row of cage places.
+function cageLongest(owner) {
+  let best = 0,
+    run = 0;
+  for (const o of owner) {
+    run = o < 0 ? run + 1 : 0;
+    best = Math.max(best, run);
+  }
+  return best;
+}
+// builds K.spans (one per cage or merged group cage), K.cageOf (animal id -> span), K.divs (divider x),
+// K.hops/K.drinks (the setting's fixtures), K.ownHops/K.ownDrinks, K.nests/K.nestOf and K.cg (summary)
+function cagePlan(c, K) {
+  const area = c.w * c.d,
+    N = Math.max(1, Math.min(Math.floor(area / Math.max(0.5, +P.rb_cage) + 1e-9), Math.floor(c.w / 1.5))),
+    cw = c.w / N,
+    cageSq = cw * c.d,
+    gmax = Math.max(1, Math.round(+P.rb_grp_max));
+  const rs = S.animals.filter(a => a.enc === c.id && a.sp === 'rabbit').sort((p, q) => p.id - q.id),
+    here = new Set(rs.map(a => a.id)),
+    singles = [],
+    pools = { g: [], f: [], k: [] };
+  for (const a of rs) {
+    if (a.st === 'kit' && a.mother != null && here.has(a.mother)) continue; // in its mother's cage
+    if (a.st === 'kit') pools.k.push(a);
+    else if (a.st === 'grower' && !(rabSplit(a) && a.sex === 'M')) pools[rabSplit(a) ? 'f' : 'g'].push(a);
+    else
+      singles.push({
+        key: 'a' + a.id,
+        ids: [a.id],
+        kind: a.st === 'adult' ? (a.sex === 'M' ? 'buck' : 'doe') : 'single',
+        sq: rabSpace(a),
+        need: 1
+      });
+  }
+  // groups: oldest first, rb_grp_max to a cage group (rgCalc's groups = ceil(n / rb_grp_max))
+  const groups = [];
+  for (const p of ['g', 'f', 'k']) {
+    const L = pools[p].sort((x, y) => y.age - x.age || x.id - y.id);
+    for (let i = 0; i < L.length; i += gmax) {
+      const m = L.slice(i, i + gmax),
+        sq = m.reduce((s, a) => s + rabSpace(a), 0);
+      groups.push({ key: p + (i / gmax), ids: m.map(a => a.id), kind: 'group', sq, need: Math.max(1, Math.ceil(sq / cageSq - 1e-9)) });
+    }
+  }
+  const owner = new Array(N).fill(-1),
+    units = [],
+    over = [];
+  // singles first (one cage each, at their hashed spot), then groups in the longest free runs left
+  for (const u of singles) {
+    const s = cageRun(owner, 1, false);
+    if (s < 0) {
+      over.push(u);
+      continue;
+    }
+    u.at = s;
+    u.n = 1;
+    owner[s] = units.push(u) - 1;
+  }
+  let squeezed = 0;
+  for (const u of groups) {
+    const best = cageLongest(owner);
+    if (!best) {
+      over.push(u);
+      continue;
+    }
+    const n = Math.min(u.need, best);
+    if (n < u.need) squeezed++;
+    const s = cageRun(owner, n, true);
+    u.at = s;
+    u.n = n;
+    const ui = units.push(u) - 1;
+    for (let t = s; t < s + n; t++) owner[t] = ui;
+  }
+  // spans: neighbouring cages of one unit form one cage; each empty cage is its own
+  const spans = [],
+    spanAt = new Array(N);
+  for (let t = 0; t < N; t++) {
+    if (t > 0 && owner[t] >= 0 && owner[t] === owner[t - 1]) {
+      spans[spans.length - 1].n++;
+      spans[spans.length - 1].w += cw;
+    } else {
+      const u = owner[t] >= 0 ? units[owner[t]] : null;
+      spans.push({ x: c.x + t * cw, y: c.y, w: cw, d: c.d, i0: t, n: 1, kind: u ? u.kind : 'empty', ids: u ? u.ids.slice() : [], sq: u ? u.sq : 0, hops: [], drinks: [] });
+    }
+    spanAt[t] = spans.length - 1;
+  }
+  // no free cage: the extra rabbits share the cage with the least floor in use per sq ft, growers
+  // first with other growers, then with their own mother; adults away from bucks while there is a choice
+  let doubled = 0;
+  const momOf = {};
+  for (const a of rs) momOf[a.id] = a.mother;
+  for (const u of over) {
+    const load = s => s.sq / (s.w * s.d),
+      moms = new Set(u.ids.map(i => momOf[i]).filter(m => m != null)),
+      rank = s => (u.kind === 'group' ? (s.kind === 'group' ? 0 : s.ids.some(i => moms.has(i)) ? 1 : 2) : 0);
+    let cand = spans.filter(s => s.kind !== 'empty' && (u.kind === 'group' || s.kind !== 'buck'));
+    if (u.kind === 'group') cand = cand.filter(s => s.kind !== 'buck');
+    if (!cand.length) cand = spans.filter(s => s.kind !== 'empty');
+    if (!cand.length) cand = spans;
+    cand.sort((a, b) => rank(a) - rank(b) || load(a) - load(b) || a.i0 - b.i0);
+    const s = cand[0];
+    s.ids.push(...u.ids);
+    s.sq += u.sq;
+    s.shared = 1;
+    if (s.kind === 'empty') s.kind = u.kind;
+    doubled += u.ids.length;
+  }
+  const of = {};
+  spans.forEach((s, i) => s.ids.forEach(id => (of[id] = i)));
+  for (const a of rs) if (a.st === 'kit' && a.mother != null && of[a.mother] != null) of[a.id] = of[a.mother];
+  // dividers between cages that are not one merged group cage
+  const divs = [];
+  for (let t = 1; t < N; t++) if (spanAt[t] !== spanAt[t - 1]) divs.push(c.x + t * cw);
+  // the setting's hoppers and bottles (counts as before phase 28: as many as fit along the wire)
+  const nh = Math.max(0, Math.round(hutchFix(c, 'hoppers'))),
+    nd0 = Math.max(0, Math.round(hutchFix(c, 'drinkers'))),
+    room = Math.max(2, Math.floor((c.w - 0.3) / 0.55)),
+    dh = Math.min(nh, Math.ceil(room / 2)),
+    dd = Math.min(nd0, room - dh);
+  let tgt = spans.filter(s => s.kind === 'group');
+  if (!tgt.length) tgt = spans.filter(s => s.kind === 'empty');
+  if (!tgt.length) tgt = spans;
+  // share the items out by cage width (largest remainder), then interleave hoppers and bottles
+  const tot = dh + dd,
+    wsum = tgt.reduce((s, x) => s + x.n, 0),
+    cnt = tgt.map(s => Math.floor((tot * s.n) / wsum));
+  let left = tot - cnt.reduce((s, x) => s + x, 0);
+  tgt
+    .map((s, i) => [((tot * s.n) / wsum) % 1, i])
+    .sort((a, b) => b[0] - a[0] || a[1] - b[1])
+    .forEach(([, i]) => {
+      if (left > 0) cnt[i]++, left--;
+    });
+  K.hops = [];
+  K.drinks = [];
+  let ih = 0,
+    id = 0;
+  tgt.forEach((s, j) => {
+    for (let i = 0; i < cnt[j]; i++) {
+      const px = s.x + ((i + 0.5) * s.w) / cnt[j],
+        wantH = ih < dh && (id >= dd || ih * dd <= id * dh);
+      if (wantH) {
+        const p = [px, c.y + c.d - 0.35];
+        K.hops.push(p);
+        s.hops.push(p);
+        ih++;
+      } else if (id < dd) {
+        const p = [px, c.y + c.d - 0.3];
+        K.drinks.push(p);
+        s.drinks.push(p);
+        id++;
+      }
+    }
+  });
+  // each cage with an adult or a single young buck: its own hopper and bottle on the front wire
+  K.ownHops = [];
+  K.ownDrinks = [];
+  for (const s of spans) {
+    if (s.kind === 'empty' || s.kind === 'group') continue;
+    if (!s.hops.length) {
+      const p = [s.x + s.w * 0.3, c.y + c.d - 0.35];
+      K.ownHops.push(p);
+      s.hops.push(p);
+    }
+    if (!s.drinks.length) {
+      const p = [s.x + s.w * 0.74, c.y + c.d - 0.3];
+      K.ownDrinks.push(p);
+      s.drinks.push(p);
+    }
+  }
+  K.hopDrawn = K.hops.length;
+  K.drinkDrawn = K.drinks.length;
+  K.feeder = K.hops[0] || K.ownHops[0] || [c.x + c.w * 0.25, c.y + c.d - 0.35];
+  K.water = K.drinks[0] || K.ownDrinks[0] || [c.x + c.w * 0.62, c.y + c.d - 0.3];
+  // nest boxes: in the back of each kindling or nursing doe's own cage (a second doe sharing an
+  // over-full cage gets the other back corner when it fits)
+  const nd = rs.filter(
+    a =>
+      a.sex === 'F' &&
+      (a.st === 'adult' || a.st === 'grower') &&
+      ((a.preg != null && a.preg >= a.gestLen - 5) || (a.kindle != null && S.day - a.kindle < P.rb_wean))
+  );
+  K.nestOf = {};
+  K.nests = [];
+  const used = {};
+  for (const a of nd) {
+    const si = of[a.id];
+    if (si == null) continue;
+    const s = spans[si],
+      nw = Math.min(1.15, s.w - 0.5),
+      k = used[si] || 0;
+    if (nw < 0.6 || k > 1 || (k === 1 && s.w < 2 * nw + 0.45)) continue;
+    const n = { x: k ? s.x + s.w - 0.12 - nw : s.x + 0.12, y: c.y + 0.15, w: nw, d: Math.min(1.4, c.d - 0.6), doe: a.id, hole: k ? 'l' : 'r' };
+    used[si] = k + 1;
+    K.nests.push(n);
+    K.nestOf[a.id] = n;
+  }
+  K.doors = cageDoorPlan(spans);
+  K.spans = spans;
+  K.cageOf = of;
+  K.divs = divs;
+  K.cg = { N, cw, cageSq, over: K.dens > 1 + 1e-9, doubled, squeezed, groups: groups.length };
+}
+// the floor an animal may use: its cage in a hutch bank, else the whole pen (or an object with x,y,w,d)
+function cageBox(g, zc) {
+  if (!zc || zc.type !== 'hutch') return zc;
+  const K = WV.K[zc.id],
+    i = K && K.cageOf ? K.cageOf[g.ref ? g.ref.id : g.id] : null;
+  return i != null && K.spans[i] ? K.spans[i] : zc;
+}
+// the hopper and bottle a rabbit uses: inside its own cage (spread by id, no dice)
+function rabFix(g, home, K) {
+  const s = cageBox(g, home),
+    id = g.ref.id;
+  if (s !== home) {
+    const hop = s.hops.length ? s.hops[id % s.hops.length] : [s.x + s.w * 0.3, home.y + home.d - 0.35],
+      bot = s.drinks.length ? s.drinks[id % s.drinks.length] : [s.x + s.w * 0.74, home.y + home.d - 0.3];
+    return [hop, bot];
+  }
+  return [
+    K.hops && K.hops.length ? K.hops[id % K.hops.length] : K.feeder,
+    K.drinks && K.drinks.length ? K.drinks[id % K.drinks.length] : K.water
+  ];
+}
+// one panel of divider wire, drawn in short lengths so each sorts with the rabbits on either side
+function cageWire(xd, ya, yb, yFront) {
+  const z0 = 2.05,
+    z1 = 4.1;
+  poly(
+    [
+      [xd, ya, z0],
+      [xd, yb, z0],
+      [xd, yb, z1],
+      [xd, ya, z1]
+    ],
+    'rgba(220,225,230,0.07)'
+  );
+  if (WV.zoom < 6) {
+    line3([xd, ya, z1], [xd, yb, z1], 'rgba(225,228,232,0.55)', lw(0.018));
+    return;
+  }
+  // phase 40: from zoom 60 the divider is Penn State's 1 by 2 in wire at its real size (world/base.js)
+  if (WV.zoom > WIRE_ZOOM && !WV.noFineWire) {
+    const [sa, sz] = WIRE_SIDE,
+      segs = [],
+      b0 = yFront - Math.ceil((yFront - ya) / sa - 1e-6) * sa;
+    for (let t = b0; t < yb - 1e-6; t += sa) if (t >= ya - 1e-6) segs.push([[xd, t, z0], [xd, t, z1]]);
+    for (let z = z0; z <= z1 + 1e-6; z += sz) segs.push([[xd, ya, z], [xd, yb, z]]);
+    meshLines(segs, WIRE_COL, Math.max(0.9, lw(WIRE_T)));
+    line3([xd, ya, z1], [xd, yb, z1], 'rgba(150,155,160,0.8)', lw(0.03));
+    if (Math.abs(yb - yFront) < 1e-6) line3([xd, yb, z0], [xd, yb, z1], 'rgba(150,155,160,0.8)', lw(0.03));
+    return;
+  }
+  const st = WV.zoom > 40 ? 0.25 : WV.zoom > 16 ? 0.5 : 1,
+    col = WV.zoom > 40 ? 'rgba(225,228,232,0.42)' : 'rgba(225,228,232,0.55)',
+    w = lw(0.018),
+    base = yFront - Math.ceil((yFront - ya) / st - 1e-6) * st;
+  for (let t = base; t < yb - 1e-6; t += st) if (t >= ya - 1e-6) line3([xd, t, z0], [xd, t, z1], col, w);
+  for (let z = z0; z <= z1 + 1e-6; z += st) line3([xd, ya, z], [xd, yb, z], col, w);
+  line3([xd, ya, z1], [xd, yb, z1], 'rgba(150,155,160,0.8)', lw(0.03));
+  if (Math.abs(yb - yFront) < 1e-6) line3([xd, yb, z0], [xd, yb, z1], 'rgba(150,155,160,0.8)', lw(0.03));
+}
+// phase 37: one front access door per cage (FAO x5082: access to the cage is through a door in the
+// front), in the widest stretch of front wire clear of the hopper and the bottle, since FAO says feeders
+// should be filled from outside without opening the door. Visual only; the door's size (up to 15 by 15
+// in) and the raised door over a hopper are illustrations.
+function cageDoorPlan(spans) {
+  const out = [];
+  // widest stretch of front wire between the given blocked intervals
+  const widest = (s, blk) => {
+    const end = s.x + s.w - 0.1;
+    let a = s.x + 0.1,
+      best = null;
+    for (const b of blk.sort((p, q) => p[0] - q[0]).concat([[end, end]])) {
+      const g1 = Math.min(b[0], end);
+      if (g1 - a > (best ? best[1] - best[0] : 0)) best = [a, g1];
+      a = Math.max(a, b[1]);
+    }
+    return best;
+  };
+  spans.forEach((s, i) => {
+    const bot = s.drinks.map(p => [p[0] - 0.17, p[0] + 0.17]);
+    let g = widest(s, s.hops.map(p => [p[0] - 0.3, p[0] + 0.3]).concat(bot)),
+      z0 = 2.3,
+      hmax = 1.25;
+    // no room beside the hoppers: a door above them (hopper tops reach 0.77 ft over the floor)
+    if (!g || g[1] - g[0] < 0.55) {
+      g = widest(s, bot);
+      z0 = 2.9;
+      hmax = 1.05;
+    }
+    if (!g || g[1] - g[0] < 0.55) return;
+    const dw = Math.min(1.25, g[1] - g[0] - 0.1),
+      cx = (g[0] + g[1]) / 2;
+    out.push({ x0: cx - dw / 2, x1: cx + dw / 2, z0, z1: z0 + Math.min(hmax, dw + 0.2), span: i, high: z0 > 2.5 });
+  });
+  return out;
+}
+// draw items for a bank's dividers: 0.5 ft lengths keyed by their own depth (x + y)
+function cageWireItems(k, items) {
+  const K = WV.K[k.id];
+  if (!K || !K.divs) return;
+  const n = Math.max(1, Math.ceil(k.d / 0.5)),
+    sl = k.d / n;
+  for (const xd of K.divs)
+    for (let i = 0; i < n; i++) {
+      const ya = k.y + i * sl,
+        yb = k.y + (i + 1) * sl;
+      items.push({ k: xd + (ya + yb) / 2, f: () => cageWire(xd, ya, yb, k.y + k.d) });
+    }
+}
+
+
+// Original upstream file: source/src/world/context.js (blob 996a1a14e12f9d4acf0cf5acc8aadced5651eb44)
+// world/context.js
+// Farm world. Reads each pen's microclimate and each animal's daily stress from the model, plus the
+// hourly posture helpers (hotNow, coldNow).
+// ---- Contents (top-level functions, in file order; kept by tools/code_contents.py) ----
+//   layoutKey - One string for everything that changes the drawn layout (each building's id, type, place, size
+//         and fixtures, and the cage settings); the layout is worked out again only when it changes.
+//   buildCtx - Works out every building's drawn layout once per layout change, into WV.K by building id: the
+//         model's microclimate and density for it, hutch cages, coop nests, roost frames, troughs a ...
+//   barLen - A perch setting longer than the first roost frame holds gets a second roost in the coop's free
+//         floor space, with the same Penn State rules: 2 x 2 in bars 24 in above the floor and at l ...
+//   roostMore - Places a second roost frame for perch that does not fit on the first one (phase 38): marks the
+//         coop floor that must stay clear, then picks bar lines on a 0.1 ft grid.
+//   penRation - Each feeder and waterer is drawn filled at the morning chore (sunrise) with the pen's modelled
+//         feed and water for the day, shared evenly between the feeders, and it drains as the animals eat.
+//   eatenShare - Share of the day's ration eaten by this hour: hens eat through the daylight hours, rabbits
+//         eat twice as fast at night as by day, chicks evenly round the clock.
+//   fillLeft - share of today's ration left in this pen's feeders and waterers at the hour shown (1 = just
+//         filled)
+//   doorBetween - The door point on the shared wall of building a and an attached building b (the middle of
+//         the wall they share).
+//   buildVis - Works out each animal's visual state for today from the model (WV.vis): its pen's microclimate,
+//         feed and water intake, and the heat and cold limits that change its pose.
+//   hourTemp - The pen's temperature at the hour shown.
+//   hotNow - True when the animal's pen is above its heat limit at the hour shown.
+//   coldNow - True when the animal feels the cold (cold limit setting) at the hour shown.
+//   buildRoute - Works out the farmer's chore route: each occupied building with its approach point, the feed
+//         and water stores, and the day's chore time from labor().
+//   approach - The point just outside building c (front or side, whichever is nearer to x, y) where the farmer
+//         stands to do its chores.
+//   broodGear - Sizes the brooder's troughs and waterers from the chicks in it (Missouri Extension G8351,
+//         tables above) and places them (phase 33, crowded layout phase 36 in broodPack).
+//   broodPack - phase 36: a crowded brooder (more troughs and waterers than its two short walls hold).
+//   broodEnds - Sets the brooder's feeder and water points (the first trough and waterer), used where older
+//         code wants one of each.
+// ---- end of contents ----
+
+// One string for everything that changes the drawn layout (each building's id, type, place, size and
+// fixtures, and the cage settings); the layout is worked out again only when it changes.
+function layoutKey() {
+  return S.comps
+    .map(c =>
+      [
+        c.id,
+        c.type,
+        c.x,
+        c.y,
+        c.w,
+        c.d,
+        c.radius,
+        c.lights,
+        c.lightHours,
+        c.indoor,
+        c.lampWatts,
+        c.on,
+        c.hoppers,
+        c.drinkers,
+        c.nests,
+        c.perchFt,
+        c.feederIn,
+        c.waterIn
+      ].join(',')
+    )
+    .join('|') + '|cage:' + P.rb_cage + ',' + P.rb_grp_max; // phase 28: the drawn cages follow these settings
+}
+// Works out every building's drawn layout once per layout change, into WV.K by building id: the model's
+// microclimate and density for it, hutch cages, coop nests, roost frames, troughs and waterers, brooder gear
+// and the doors to attached runs. Read by drawing and by the animals' choices.
+function buildCtx() {
+  WV.K = {};
+  const runs = pens('run');
+  for (const c of S.comps) {
+    const k = {
+      c,
+      m: (S.today.M && S.today.M[c.id]) || micro(c, envNow()),
+      dens: TYPES[c.type].pen ? density(c.id, S.today.L || loads()) : 0
+    };
+    if (c.type === 'hutch') {
+      // phase 28: the bank is drawn as separate cages (world/cages.js): the setting's hoppers and bottles
+      // go in the growers' group cages, each single cage gets its own, nest boxes sit in the doe's cage
+      k.hopN = Math.max(0, Math.round(hutchFix(c, 'hoppers')));
+      k.drinkN = Math.max(0, Math.round(hutchFix(c, 'drinkers')));
+      k.rabN = S.animals.filter(a => a.enc === c.id).length;
+      cagePlan(c, k);
+    }
+    if (c.type === 'coop') {
+      const n = nestsFor(c),
+        fit = Math.max(1, Math.floor((c.w - 0.4) / 1.15));
+      k.nestN = n;
+      k.nests = [];
+      // Penn State (Poultry Production, layers): "at least one 12-inch-by-12-inch nest for every four
+      // hens ... Place nests 24 inches above the floor and away from the roosts." Phase 27: the nest
+      // row sits on a stand 24 in (2.0 ft) above the coop floor, with legs that floor birds walk round
+      // (visual only; it was 11 in up and hung in the air before).
+      const fz0 = floorZ(c);
+      for (let i = 0; i < Math.min(n, fit); i++)
+        k.nests.push({ x: c.x + 0.25 + i * 1.15, y: c.y + 0.1, w: 1.05, d: 1.0, z: fz0 + 2.0 });
+      k.legs = [];
+      if (k.nests.length) {
+        const n0 = k.nests[0],
+          nL = k.nests[k.nests.length - 1],
+          fy = n0.y + n0.d - 0.17;
+        // front legs at both ends of the row and between every second box (2 by 2 in posts)
+        const xs = [n0.x];
+        for (let i = 2; i < k.nests.length; i += 2) xs.push(k.nests[i].x - 0.05);
+        xs.push(nL.x + nL.w - 0.17);
+        for (const lx of xs) k.legs.push({ x: lx, y: fy, w: 0.17, d: 0.17, top: n0.z - 0.15, kind: 'nest' });
+      }
+      // Perch: the coop's perch length setting, drawn as a roost frame. Penn State: "Place 2-inch-by-
+      // 2-inch boards spaced 12 inches apart and 24 inches above the floor. Provide 6 linear inches of
+      // perch space per bird." Merck: the lowest perch 18 to 36 in off the ground. Phase 27: every bar
+      // 24 in up, 12 in apart, 2 x 2 in, on a frame whose legs are solid to birds on the floor (before:
+      // a ladder at 26, 20 and 15 in, 11 in apart, legs walked through). The frame stands clear of the
+      // nest boxes and of the trough. Bars that do not fit are counted in perchDrawnFt (shortfall).
+      const y0 = c.y + 1.9,
+        L = Math.max(1, c.d - 2.3),
+        want = Math.max(0, coopFix(c, 'perchFt')),
+        maxBars = Math.max(1, Math.floor((c.w * 0.42) / 1.0)),
+        nb = Math.min(maxBars, Math.max(1, Math.ceil(want / L - 1e-9)));
+      k.perches = [];
+      let left = want;
+      for (let b = 0; b < nb; b++) {
+        const len = Math.max(0.5, Math.min(L, left));
+        left -= len;
+        k.perches.push({ x: c.x + 0.7 + b * 1.0, y0, y1: y0 + len, z: fz0 + 2.0 });
+      }
+      for (const p of k.perches)
+        for (const ly of [p.y0, p.y1 - 0.17])
+          k.legs.push({ x: p.x - 0.085, y: ly, w: 0.17, d: 0.17, top: p.z, kind: 'perch' });
+      k.perch = k.perches[0];
+      k.perchFt = want;
+      k.perchDrawnFt = k.perches.reduce((s, p) => s + (p.y1 - p.y0), 0);
+      k.roostFrames = [{ ax: 'y', bars: k.perches.slice() }];
+      // Feeder: Penn State gives 3 in of feeder space per bird with a trough filled one-third to one-half
+      // full and its lip at the birds' back height. Both sides of a trough count, so a trough is half the
+      // feeder space long; long troughs are split so each fits the coop (visual only).
+      const fIn = Math.max(1, coopFix(c, 'feederIn')),
+        wIn = Math.max(1, coopFix(c, 'waterIn')),
+        maxT = Math.max(1.0, c.w * 0.45),
+        nt = Math.max(1, Math.ceil(fIn / 24 / maxT - 1e-9)),
+        tl = fIn / 24 / nt;
+      k.troughs = [];
+      for (let i = 0; i < nt; i++)
+        k.troughs.push({ x: c.x + c.w * 0.55 - tl / 2, y: c.y + c.d * 0.55 - 0.2 + i * 0.75, w: tl, d: 0.4 });
+      // Waterer: round founts whose lip adds up to the waterer space (Penn State 1 in per bird);
+      // a fount's lip is its circumference, at most 3 ft round each (visual only).
+      const nf = Math.max(1, Math.ceil(wIn / 36 - 1e-9));
+      k.founts = [];
+      for (let i = 0; i < nf; i++)
+        k.founts.push({
+          x: c.x + c.w * 0.82 - i * 0.9,
+          y: c.y + c.d * 0.75,
+          r: wIn / nf / Math.PI / 12 / 2
+        });
+      // phase 38: perch the first frame cannot hold goes on a second roost in the free floor space
+      if (want - k.perchDrawnFt > 0.25) roostMore(c, k, want - k.perchDrawnFt, fz0, runs);
+      k.feederIn = fIn;
+      k.waterIn = wIn;
+      k.feeder = [k.troughs[0].x + tl / 2, k.troughs[0].y + 0.2];
+      k.water = [k.founts[0].x, k.founts[0].y];
+      k.runs = runs.filter(r => touches(c, r)).map(r => ({ r, door: doorBetween(c, r) }));
+    }
+    if (c.type === 'run') {
+      k.attached = pens('coop').some(cp => touches(cp, c));
+      k.water = [c.x + c.w - 0.8, c.y + 0.8];
+    }
+    if (c.type === 'brooder') {
+      k.lamp = [c.x + c.w / 2, c.y + c.d / 2];
+      const ch = S.animals.filter(a => a.enc === c.id);
+      broodGear(c, k, ch);
+      k.duty = ch.length ? lampDuty(c, k.m.tmin, ch) : 0;
+      k.n = ch.length;
+      if (ch.length) {
+        const need = chickNeed(Math.min(...ch.map(a => a.age)));
+        k.need = need;
+        k.t = brooderTemp(c, k.m, need);
+      }
+    }
+    WV.K[c.id] = k;
+  }
+}
+// ---------- second roost (phase 38, visual only) ----------
+// A perch setting longer than the first roost frame holds gets a second roost in the coop's free floor
+// space, with the same Penn State rules: 2 x 2 in bars 24 in above the floor and at least 12 in apart.
+// Penn State also says to keep nests away from the roosts, so bars stay 1 ft clear of the nest stand;
+// they also stay clear of the first frame, the troughs and founts (where birds stand to eat and drink),
+// the walls and the way in from each pop door. The bars may run along either side of the coop; the
+// direction that holds more perch wins. A 1-D best-pick over grid lines (0.1 ft) chooses the bars.
+// Bars shorter than 1.5 ft are not used. What still does not fit stays in the panel note.
+function barLen(b) {
+  return b.ax === 'x' ? b.x1 - b.x0 : b.y1 - b.y0;
+}
+// Places a second roost frame for perch that does not fit on the first one (phase 38): marks the coop floor
+// that must stay clear, then picks bar lines on a 0.1 ft grid. Rules in the comment above.
+function roostMore(c, k, need, fz0, runs) {
+  const s = 0.1,
+    nx = Math.floor(c.w / s + 1e-9),
+    ny = Math.floor(c.d / s + 1e-9),
+    bl = new Uint8Array(nx * ny),
+    rects = [];
+  const add = (x0, y0, x1, y1) => rects.push([x0 - c.x, y0 - c.y, x1 - c.x, y1 - c.y]);
+  if (k.nests.length) {
+    const n0 = k.nests[0],
+      nL = k.nests[k.nests.length - 1];
+    add(n0.x - 1.0, n0.y - 1.0, nL.x + nL.w + 1.0, n0.y + n0.d + 1.0);
+  }
+  for (const b of k.perches) add(b.x - 0.95, b.y0 - 0.5, b.x + 0.95, b.y1 + 0.5);
+  for (const t of k.troughs) add(t.x - 0.6, t.y - 0.6, t.x + t.w + 0.6, t.y + t.d + 0.6);
+  for (const f of k.founts) add(f.x - f.r - 0.6, f.y - f.r - 0.6, f.x + f.r + 0.6, f.y + f.r + 0.6);
+  for (const r of runs || []) {
+    if (!touches(c, r)) continue;
+    const dr = doorBetween(c, r);
+    if (!dr) continue;
+    // the way in: 2 ft deep from the wall, 1.6 ft wide
+    const [dx, dy] = dr,
+      L = 2.0,
+      W = 0.8;
+    if (Math.abs(dx - c.x) < 0.01) add(dx, dy - W, dx + L, dy + W);
+    else if (Math.abs(dx - c.x - c.w) < 0.01) add(dx - L, dy - W, dx, dy + W);
+    else if (Math.abs(dy - c.y) < 0.01) add(dx - W, dy, dx + W, dy + L);
+    else add(dx - W, dy - L, dx + W, dy);
+  }
+  const m = 0.5;
+  for (let i = 0; i < nx; i++)
+    for (let j = 0; j < ny; j++) {
+      const px = (i + 0.5) * s,
+        py = (j + 0.5) * s;
+      let b = px < m || px > c.w - m || py < m || py > c.d - m;
+      for (let r = 0; !b && r < rects.length; r++) {
+        const q = rects[r];
+        if (px > q[0] - 0.1 && px < q[2] + 0.1 && py > q[1] - 0.1 && py < q[3] + 0.1) b = true; // 0.1 ft clear of each
+      }
+      bl[i * ny + j] = b ? 1 : 0;
+    }
+  const minL = 1.5,
+    gap = Math.round(1.0 / s);
+  // free runs on each grid line: ax 'y' lines are columns (bars run along y), 'x' lines are rows
+  const plan = ax => {
+    const nl = ax === 'y' ? nx : ny,
+      na = ax === 'y' ? ny : nx,
+      lines = [];
+    for (let l = 0; l < nl; l++) {
+      const segs = [];
+      let st = -1;
+      for (let a = 0; a <= na; a++) {
+        const free = a < na && !(ax === 'y' ? bl[l * ny + a] : bl[a * ny + l]);
+        if (free && st < 0) st = a;
+        if (!free && st >= 0) {
+          if ((a - st) * s >= minL - 1e-9) segs.push([st * s, a * s]);
+          st = -1;
+        }
+      }
+      lines.push({ l, segs, len: segs.reduce((t, g) => t + g[1] - g[0], 0) });
+    }
+    // best total length with picked lines at least 'gap' apart
+    const best = new Float64Array(nl + 1),
+      pick = new Int8Array(nl + 1);
+    for (let l = 1; l <= nl; l++) {
+      const skip = best[l - 1],
+        take = lines[l - 1].len + (l - gap >= 0 ? best[Math.max(0, l - gap)] : 0);
+      if (lines[l - 1].len > 0 && take > skip + 1e-9) {
+        best[l] = take;
+        pick[l] = 1;
+      } else best[l] = skip;
+    }
+    const chosen = [];
+    for (let l = nl; l >= 1; ) {
+      if (pick[l]) {
+        chosen.unshift(lines[l - 1]);
+        l -= gap;
+      } else l--;
+    }
+    return { ax, total: best[nl], chosen };
+  };
+  const py = plan('y'),
+    px = plan('x'),
+    P = px.total > py.total + 1e-9 ? px : py;
+  if (P.total <= 0) return;
+  let left = need;
+  const extra = [];
+  for (const ln of P.chosen) {
+    for (const sg of ln.segs) {
+      if (left <= 0.25) break;
+      const len = Math.max(0.5, Math.min(sg[1] - sg[0], left)),
+        a0 = sg[0] + (sg[1] - sg[0] - len) / 2;
+      left -= len;
+      const at = (ln.l + 0.5) * s;
+      extra.push(
+        P.ax === 'y'
+          ? { x: c.x + at, y0: c.y + a0, y1: c.y + a0 + len, z: fz0 + 2.0, line: ln.l, more: 1 }
+          : { ax: 'x', y: c.y + at, x0: c.x + a0, x1: c.x + a0 + len, z: fz0 + 2.0, line: ln.l, more: 1 }
+      );
+    }
+    if (left <= 0.25) break;
+  }
+  if (!extra.length) return;
+  // frames: neighbouring bars exactly 12 in apart that overlap by 0.6 ft or more share side rails
+  let fr = null;
+  for (const b of extra) {
+    const a0 = b.ax === 'x' ? b.x0 : b.y0,
+      a1 = b.ax === 'x' ? b.x1 : b.y1;
+    if (fr && b.line - fr.lastLine === gap && Math.min(fr.a1, a1) - Math.max(fr.a0, a0) >= 0.6) {
+      fr.bars.push(b);
+      fr.a0 = Math.max(fr.a0, a0);
+      fr.a1 = Math.min(fr.a1, a1);
+    } else {
+      fr = { ax: P.ax, bars: [b], a0, a1 };
+      k.roostFrames.push(fr);
+    }
+    fr.lastLine = b.line;
+  }
+  for (const b of extra) {
+    k.perches.push(b);
+    if (b.ax === 'x')
+      for (const lx of [b.x0, b.x1 - 0.17]) k.legs.push({ x: lx, y: b.y - 0.085, w: 0.17, d: 0.17, top: b.z, kind: 'perch', more: 1 });
+    else for (const ly of [b.y0, b.y1 - 0.17]) k.legs.push({ x: b.x - 0.085, y: ly, w: 0.17, d: 0.17, top: b.z, kind: 'perch', more: 1 });
+  }
+  k.perchDrawnFt = k.perches.reduce((t, b) => t + barLen(b), 0);
+  k.roostN = k.roostFrames.length;
+}
+// ---------- feeder and waterer fill levels (visual only) ----------
+// Each feeder and waterer is drawn filled at the morning chore (sunrise) with the pen's modelled feed and
+// water for the day, shared evenly between the feeders, and it drains as the animals eat. The level shows
+// the share of today's modelled intake still to be eaten at the hour shown. The model gives only daily
+// totals, so the timing within the day is an illustration: hens eat in daylight; rabbits eat at any hour
+// but much more in the dark (FAO, The Rabbit, ch. 4), drawn here as twice the rate of a daylight hour;
+// chicks under the lamp eat around the clock. When a day's ration is eaten the feeder shows empty until
+// the next morning's chore.
+function penRation(c) {
+  const K = WV.K[c.id];
+  if (!K) return { feed: 0, water: 0, n: 0 };
+  if (K.ration && K.rationOf === WV.vis) return K.ration;
+  let feed = 0,
+    water = 0,
+    n = 0;
+  for (const a of S.animals)
+    if (a.enc === c.id) {
+      const v = WV.vis && WV.vis.get(a.id);
+      if (v && v.it) {
+        feed += v.it.feed || 0;
+        water += v.it.water || 0;
+        n++;
+      }
+    }
+  K.ration = { feed, water, n };
+  K.rationOf = WV.vis;
+  return K.ration;
+}
+// Share of the day's ration eaten by this hour: hens eat through the daylight hours, rabbits eat twice as fast
+// at night as by day, chicks evenly round the clock. Picture only.
+function eatenShare(kind, hour, rise, set) {
+  const D = Math.max(0.5, set - rise),
+    t = (((hour - rise) % 24) + 24) % 24;
+  if (kind === 'hen') return Math.min(1, t / D);
+  if (kind === 'rabbit') {
+    const W = D + 2 * (24 - D);
+    return (Math.min(t, D) + 2 * Math.max(0, t - D)) / W;
+  }
+  return t / 24;
+}
+// share of today's ration left in this pen's feeders and waterers at the hour shown (1 = just filled)
+function fillLeft(c) {
+  const s = WV.sun || sunInfo(),
+    r = penRation(c),
+    kind = c.type === 'hutch' ? 'rabbit' : c.type === 'coop' ? 'hen' : 'chick';
+  const left = r.n ? 1 - eatenShare(kind, WV.hour, s.rise, s.set) : 1;
+  const K = WV.K[c.id];
+  if (K) {
+    K.fillLeft = left;
+    K.fillKind = kind;
+  }
+  return left;
+}
+// The door point on the shared wall of building a and an attached building b (the middle of the wall they
+// share).
+function doorBetween(a, b) {
+  const ox0 = Math.max(a.x, b.x),
+    ox1 = Math.min(a.x + a.w, b.x + b.w),
+    oy0 = Math.max(a.y, b.y),
+    oy1 = Math.min(a.y + a.d, b.y + b.d);
+  if (ox1 - ox0 >= oy1 - oy0) return [(ox0 + ox1) / 2, b.y >= a.y + a.d - 1.01 ? a.y + a.d : a.y];
+  return [b.x >= a.x + a.w - 1.01 ? a.x + a.w : a.x, (oy0 + oy1) / 2];
+}
+// Works out each animal's visual state for today from the model (WV.vis): its pen's microclimate, feed and
+// water intake, and the heat and cold limits that change its pose.
+function buildVis() {
+  const env = envNow(),
+    amb = { tmax: env.tmax, tmin: env.tmin, light: env.day, shade: 0, cool: 0, heated: false };
+  WV.vis = new Map();
+  for (const a of S.animals) {
+    const m = a.enc && S.today.M && S.today.M[a.enc] ? S.today.M[a.enc] : amb;
+    const v = { m, it: intake(a, m) };
+    if (a.sp === 'chicken' && a.st === 'chick') {
+      const pen = a.enc && compById(a.enc);
+      v.need = chickNeed(a.age);
+      v.t = pen && pen.type === 'brooder' ? brooderTemp(pen, m, v.need) : m.tmin;
+      v.cold = v.t < v.need - 3;
+    }
+    v.heat = m.tmax > (a.sp === 'rabbit' ? P.rb_heat : P.ck_heat);
+    v.coldS = m.tmin < P.hl_cold_lim;
+    v.thr = a.sp === 'rabbit' ? P.rb_heat : P.ck_heat;
+    WV.vis.set(a.id, v);
+  }
+}
+// The pen's temperature at the hour shown. Daily stress (v.heat, v.coldS) is the model's; the
+// posture at this hour (panting, flopping out, fluffing up) follows the hourly curve.
+function hourTemp(m) {
+  return tempAtHour(m.tmin, m.tmax, WV.hour, riseOf(envNow().day));
+}
+// True when the animal's pen is above its heat limit at the hour shown.
+function hotNow(v) {
+  return !!(v && v.heat && hourTemp(v.m) > v.thr);
+}
+// True when the animal feels the cold (cold limit setting) at the hour shown.
+function coldNow(v) {
+  return !!(v && v.coldS && hourTemp(v.m) < P.hl_cold_lim);
+}
+// Works out the farmer's chore route: each occupied building with its approach point, the feed and water
+// stores, and the day's chore time from labor().
+function buildRoute() {
+  const feed = pens('feed')[0],
+    water = pens('water')[0],
+    stops = [];
+  for (const c of S.comps) {
+    if (!['hutch', 'coop', 'brooder', 'incubator'].includes(c.type)) continue;
+    if (
+      !S.animals.some(a => a.enc === c.id) &&
+      !(c.type === 'incubator' && S.eggsInc.some(e => e.inc === c.id))
+    )
+      continue;
+    const p = ctr(c);
+    stops.push({ c, p, df: feed ? dist(p, ctr(feed)) : 60, dw: water ? dist(p, ctr(water)) : 60 });
+  }
+  const nodes = [];
+  for (const s of stops) {
+    nodes.push({ c: s.c, kind: 'pen' });
+    if (feed) {
+      nodes.push({ c: feed, kind: 'feed' });
+      nodes.push({ c: s.c, kind: 'pen' });
+    }
+    if (water) {
+      nodes.push({ c: water, kind: 'water' });
+      nodes.push({ c: s.c, kind: 'pen' });
+    }
+  }
+  WV.route = { stops, feed, water, nodes, lab: labor() };
+  if (!WV.farmer)
+    WV.farmer = {
+      x: feed ? feed.x + feed.w / 2 : 4,
+      y: feed ? feed.y + feed.d + 0.8 : 4,
+      i: 0,
+      wait: 0,
+      carry: null,
+      ph: 0,
+      face: 1
+    };
+  if (WV.farmer.i >= nodes.length) WV.farmer.i = 0;
+}
+// The point just outside building c (front or side, whichever is nearer to x, y) where the farmer stands to do
+// its chores.
+function approach(c, x, y) {
+  const a = [c.x + c.w / 2, c.y + c.d + 0.9],
+    b = [c.x + c.w + 0.9, c.y + c.d / 2];
+  if (TYPES[c.type].round) return [c.x + 1.8, c.y + 1.8];
+  return Math.hypot(a[0] - x, a[1] - y) < Math.hypot(b[0] - x, b[1] - y) ? a : b;
+}
+// phase 33: the brooder's feeders and waterers, sized from the chicks inside it (drawing only; the
+// model's feed and water do not depend on it). MU Extension G8351 (Small Flock Series: Brooding and
+// Growing Chicks) gives, per 100 chicks: feeder space 0-4 wk 12 linear ft ("or two 3-foot feeders",
+// so both sides of a trough count), 4-8 wk 20 ft, 8-12 wk 30 ft, 12 wk+ 40 ft; waterers 0-1 wk six
+// 1-quart jars, 1-4 wk two 2-gallon, 4 wk+ two 5-gallon. Choices: each chick counts in the band of
+// its own age, waterer counts round up, troughs are at least 1 ft long, and troughs and waterers stand
+// along the two short walls with a chick's room (0.3 ft) round them; what does not fit is left off
+// the picture and the card says so.
+const BROOD_FEED = [
+  [28, 0.12],
+  [56, 0.2],
+  [84, 0.3],
+  [1e9, 0.4]
+];
+// BROOD_FEED rows: [age below (days), ft of trough per chick]. BROOD_WAT rows: chicks younger than upTo days, per =
+// waterers per chick (MU), r = drawn radius (ft), H = drawn height (ft), name = the size shown on the card.
+const BROOD_WAT = [
+  { upTo: 7, per: 0.06, r: 0.24, H: 0.42, name: '1-quart jar' },
+  { upTo: 28, per: 0.02, r: 0.4, H: 0.75, name: '2-gallon' },
+  { upTo: 1e9, per: 0.02, r: 0.55, H: 1.0, name: '5-gallon' }
+];
+// Sizes the brooder's troughs and waterers from the chicks in it (Missouri Extension G8351, tables above) and
+// places them (phase 33, crowded layout phase 36 in broodPack).
+function broodGear(c, k, ch) {
+  let lin = 0;
+  const nb = [0, 0, 0];
+  for (const a of ch) {
+    lin += BROOD_FEED.find(b => a.age < b[0])[1];
+    nb[BROOD_WAT.findIndex(b => a.age < b.upTo)]++;
+  }
+  // waterers: MU's units per chick of each age band, added up (e.g. 6 quart jars per 100 chicks in
+  // their first week is 0.06 jar per chick); quart jars for the chicks under a week, and for the rest
+  // the 2-gallon or 5-gallon size of whichever band needs more. One chick-size trough and one quart
+  // jar stand ready in an empty brooder.
+  const fw = [],
+    f1 = nb[1] * BROOD_WAT[1].per,
+    f2 = nb[2] * BROOD_WAT[2].per,
+    big = f2 >= f1 ? BROOD_WAT[2] : BROOD_WAT[1];
+  for (let j = 0; j < Math.ceil(f1 + f2 - 1e-9); j++) fw.push(big);
+  for (let j = 0; j < Math.ceil(nb[0] * BROOD_WAT[0].per - 1e-9); j++) fw.push(BROOD_WAT[0]);
+  if (!fw.length) fw.push(BROOD_WAT[0]);
+  // the rows run along the two short walls, the walls farthest from the lamp in the middle that the
+  // chicks huddle under: troughs along one, waterers along the other, each spilling into the other
+  // row when its own is full, so the layout stays put from day to day
+  const m = 0.3,
+    gap = 0.4,
+    along = c.w >= c.d ? 'y' : 'x',
+    rowLen = Math.max(0.5, (along === 'y' ? c.d : c.w) - 2 * m),
+    tl = Math.max(1, lin / 2),
+    pieces = Math.max(1, Math.ceil(tl / rowLen - 1e-9)),
+    items = [];
+  for (let i = 0; i < pieces; i++) items.push({ t: 1, w: tl / pieces, d: 0.35 });
+  for (const b of fw) items.push({ t: 0, w: 2 * b.r, d: 2 * b.r, b });
+  const rows = [
+      { used: 0, it: [] },
+      { used: 0, it: [] }
+    ],
+    cut = [];
+  items.sort((p, q) => q.t - p.t || q.w - p.w);
+  const fit = (r, it) => {
+    const add = (r.it.length ? gap : 0) + it.w;
+    if (r.used + add > rowLen + 1e-9) return false;
+    r.used += add;
+    r.it.push(it);
+    return true;
+  };
+  for (const it of items) {
+    const own = it.t ? 0 : 1;
+    if (!fit(rows[own], it) && !fit(rows[1 - own], it)) cut.push(it);
+  }
+  k.btr = [];
+  k.bfo = [];
+  // phase 36: when the two short walls cannot hold it all (a crowded brooder), go round all four walls
+  if (cut.length) return broodPack(c, k, ch, fw, tl, lin, along);
+  // in each row the waterers go to its ends (the corners), alternately, and troughs are centred
+  // between them; u runs along the row, v across it from the wall
+  const lo = along === 'y' ? c.y : c.x,
+    hi = along === 'y' ? c.y + c.d : c.x + c.w;
+  rows.forEach((r, ri) => {
+    const W = r.it.filter(it => !it.t),
+      T = r.it.filter(it => it.t),
+      vOf = it => (along === 'y' ? (ri === 0 ? c.x + m : c.x + c.w - m - it.d) : ri === 0 ? c.y + c.d - m - it.d : c.y + m),
+      put = (it, u) => {
+        const v = vOf(it);
+        if (it.t) k.btr.push(along === 'y' ? { x: v, y: u, w: it.d, d: it.w } : { x: u, y: v, w: it.w, d: it.d });
+        else {
+          const cu = u + it.w / 2,
+            cv = v + it.d / 2;
+          k.bfo.push({ x: along === 'y' ? cv : cu, y: along === 'y' ? cu : cv, r: it.b.r, H: it.b.H, name: it.b.name });
+        }
+      };
+    let ul = lo + m,
+      ur = hi - m;
+    W.forEach((it, i) => {
+      if (i % 2 === 0) put(it, ul), (ul += it.w + gap);
+      else (ur -= it.w), put(it, ur), (ur -= gap);
+    });
+    const tw = T.reduce((s2, it) => s2 + it.w, 0) + gap * Math.max(0, T.length - 1);
+    let u = (ul + ur) / 2 - tw / 2;
+    for (const it of T) put(it, u), (u += it.w + gap);
+  });
+  const cutIn = cut.filter(it => it.t).reduce((s, it) => s + it.w * 24, 0);
+  k.gear = {
+    n: ch.length,
+    needIn: lin * 12,
+    drawnIn: k.btr.reduce((s, t) => s + Math.max(t.w, t.d) * 24, 0),
+    cutIn,
+    cutW: cut.filter(it => !it.t).map(it => it.b.name),
+    founts: k.bfo.map(f => f.name)
+  };
+  broodEnds(c, k);
+}
+// phase 36: a crowded brooder (more troughs and waterers than its two short walls hold). The troughs
+// and waterers go round all four walls instead, against the wall with a chick's room (0.3 ft) and
+// 0.4 ft between them as before, water first: the biggest waterer, then the first trough, then the
+// other waterers (corners first), then the rest of the trough length in pieces of at least 0.5 ft
+// wherever a stretch of wall is free. None may reach into the lamp spot: MU Extension G8351 gives
+// each chick about 6 or 7 square inches of space under the brooder, so a circle of 7 sq in per chick
+// is kept clear under the lamp (and MU warns against splashing water on the lamp). What still does
+// not fit is left off the picture and the card says so. Order, piece length and wall order are
+// choices (illustration); the model's feed, water and crowding do not depend on any of it.
+function broodPack(c, k, ch, fw, tl, lin, along) {
+  const m = 0.3,
+    gap = 0.4,
+    st = 0.05,
+    minL = 0.5,
+    lx = k.lamp ? k.lamp[0] : c.x + c.w / 2,
+    ly = k.lamp ? k.lamp[1] : c.y + c.d / 2,
+    lampIn = ch.length * 7,
+    R = Math.sqrt(lampIn / 144 / Math.PI),
+    P = [];
+  // walls: A (troughs) and B (waterers) are the short walls used before, then the two long walls
+  const wall = (ax, side) => {
+    const lo = ax === 'y' ? c.y : c.x,
+      hi = ax === 'y' ? c.y + c.d : c.x + c.w;
+    return {
+      lo: lo + m,
+      hi: hi - m,
+      rect: (u, len, dep) =>
+        ax === 'y'
+          ? { x: side ? c.x + c.w - m - dep : c.x + m, y: u, w: dep, d: len }
+          : { x: u, y: side ? c.y + c.d - m - dep : c.y + m, w: len, d: dep }
+    };
+  };
+  const A = along === 'y' ? wall('y', 0) : wall('x', 1),
+    B = along === 'y' ? wall('y', 1) : wall('x', 0),
+    L1 = along === 'y' ? wall('x', 0) : wall('y', 0),
+    L2 = along === 'y' ? wall('x', 1) : wall('y', 1);
+  const ok = (r, noLamp) => {
+    if (r.x < c.x + m - 1e-9 || r.y < c.y + m - 1e-9 || r.x + r.w > c.x + c.w - m + 1e-9 || r.y + r.d > c.y + c.d - m + 1e-9) return false;
+    const dx = Math.max(r.x - lx, 0, lx - r.x - r.w),
+      dy = Math.max(r.y - ly, 0, ly - r.y - r.d);
+    if (!noLamp && Math.hypot(dx, dy) < R - 1e-9) return false;
+    for (const q of P)
+      if (r.x < q.x + q.w + gap - 1e-9 && q.x < r.x + r.w + gap - 1e-9 && r.y < q.y + q.d + gap - 1e-9 && q.y < r.y + r.d + gap - 1e-9)
+        return false;
+    return true;
+  };
+  // a waterer: the free spot on the first wall that has one, nearest a corner first
+  const putW = (b, walls, noLamp) => {
+    const s = 2 * b.r;
+    for (const W of walls) {
+      const us = [];
+      for (let u = W.lo; u + s <= W.hi + 1e-9; u += st) us.push(u);
+      us.sort((p, q) => Math.min(p - W.lo, W.hi - s - p) - Math.min(q - W.lo, W.hi - s - q));
+      for (const u of us) {
+        const r = W.rect(u, s, s);
+        if (ok(r, noLamp)) {
+          P.push(r);
+          k.bfo.push({ x: r.x + b.r, y: r.y + b.r, r: b.r, H: b.H, name: b.name });
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  // trough pieces: along each wall in turn, the longest free stretch from each free start, up to the
+  // length still wanted
+  let rem = tl;
+  const putT = (walls, once, noLamp) => {
+    for (const W of walls) {
+      // no piece shorter than its own depth (0.35 ft): a leftover that short is left off ('no room')
+      for (let u = W.lo; u + Math.min(minL, rem) <= W.hi + 1e-9 && rem >= 0.35 - 1e-9; u += st) {
+        const l0 = Math.min(minL, rem);
+        if (!ok(W.rect(u, l0, 0.35), noLamp)) continue;
+        let len = l0;
+        while (len + st <= rem + 1e-9 && ok(W.rect(u, len + st, 0.35), noLamp)) len += st;
+        if (rem - len < st) len = rem;
+        const r = W.rect(u, len, 0.35);
+        if (!ok(r, noLamp)) continue;
+        P.push(r);
+        r.len = len;
+        k.btr.push(r);
+        rem -= len;
+        u += len;
+        if (once) return;
+      }
+    }
+  };
+  const ws = fw.slice().sort((p, q) => q.r - p.r),
+    cutW = [];
+  // the chicks always get one waterer and one trough: if the lamp spot leaves no room for them, they
+  // stand in a corner anyway (lampHit)
+  let lampHit = 0;
+  if (!putW(ws[0], [B, A, L1, L2])) {
+    if (putW(ws[0], [B, A, L1, L2], true)) lampHit++;
+    else cutW.push(ws[0]);
+  }
+  const t1 = k.btr.length;
+  putT([A, L1, L2, B], true);
+  if (k.btr.length === t1) {
+    putT([A, L1, L2, B], true, true);
+    if (k.btr.length > t1) lampHit++;
+  }
+  for (const b of ws.slice(1)) if (!putW(b, [B, A, L1, L2])) cutW.push(b);
+  putT([A, L1, L2, B], false);
+  k.gear = {
+    n: ch.length,
+    needIn: lin * 12,
+    drawnIn: k.btr.reduce((s, t) => s + t.len * 24, 0),
+    cutIn: Math.max(0, rem) * 24,
+    cutW: cutW.map(b => b.name),
+    founts: k.bfo.map(f => f.name),
+    packed: 1,
+    lampIn,
+    lampR: R,
+    lampHit
+  };
+  broodEnds(c, k);
+}
+// Sets the brooder's feeder and water points (the first trough and waterer), used where older code wants one
+// of each.
+function broodEnds(c, k) {
+  // the first trough and waterer stand for the old single feeder and drinker
+  const t0 = k.btr[0],
+    f0 = k.bfo[0];
+  k.feeder = t0 ? [t0.x + t0.w / 2, t0.y + t0.d / 2] : [c.x + 0.5, c.y + c.d - 0.5];
+  k.water = f0 ? [f0.x, f0.y] : [c.x + c.w - 0.5, c.y + c.d - 0.5];
+}
+
+
+// Original upstream file: source/src/world/agents.js (blob 196433487d8fff01dba492b015043d58fd72db6b)
+// world/agents.js
+// Farm world. One sprite per real animal; where it walks and what it does at the hour shown, driven by
+// the model's numbers.
+// ---- Contents (top-level functions, in file order; kept by tools/code_contents.py) ----
+//   rndIn - A random point inside building c, at least ins ft (default 0.45) from its walls.
+//   kindOf - Which of the four animal groups the world moves: rab (grown rabbits), kit, bird (grown chickens)
+//         or chick.
+//   gatePt - The farm gate, where bought animals walk in and sold ones walk out.
+//   spawn - Adds animal a to the world (WV.agents): in its pen, or walking in from the gate or from a building
+//         when from is given.
+//   edgePt - The point on building c's wall nearest to x, y.
+//   routeTo - Sends animal g to building id: out through its own door, along the ground and in, setting its
+//         new home.
+//   speedOf - Walking speed in ft a second: by kind, slower when unwell, faster when leaving the farm.
+//   goIn - Adds to g's path the walk to point pt (height z) inside building zoneId: through its door first
+//         when the path does not already end inside it (with no door to it, the animal is routed ho ...
+//   reachPt - a spot the body can actually stand on (phase 24): at least its radius from the wire, walls and
+//         fences, and, on the floor, outside the feeders, waterers and hopper lips it collides with ...
+//   pick - Picks one key of ws at random, each with the chance of its weight (negative weights count as 0).
+//   shadeOf - a resting spot in a tree's shade inside the run, if the tree's shade reaches the run (hot
+//         hours).
+//   shadeIn - A random point inside run o in the tree's shade at this hour when one can be found, else any
+//         point in the run.
+//   nearMate - a resting spot beside a pen-mate that is standing still on the floor (cold hours: they huddle)
+//   clearPt - phase 30: of a few candidate spots, the one with the most room: farthest from the pen-mates on
+//         the same level in the same cage, counting where a moving mate is heading.
+//   clearAt - phase 43: the same as clearPt, but each candidate is first moved to where the animal can really
+//         stand (reachPt, which goIn applies afterwards anyway).
+//   floorRoom - phase 45: room at a floor point (x, y) of pen zc, against the pen-mates standing on the floor:
+//         each counts at the last floor-level point it is walking to (a hen heading for the roost c ...
+//   kitPile - phase 30: where an out-of-the-nest kit lies down.
+//   dustOk - Dust bathing needs soft, dry material (Merck): not while rain or snow falls, not on snow or wet
+//         ground.
+//   mateDoing - Dust bathing and preening are synchronous social behaviours (Alabama Extension): a hen is
+//         likelier to start when a pen-mate in the same pen is already doing it.
+//   crowWindow - Roosters start crowing about 2 hours before dawn by their own clock (Shimmura and Yoshimura
+//         2013).
+//   furLevel - Fur in a doe's nest: none until 3 days before kindling, then more each day; kept as a blanket
+//         over the kits while they nurse (FAO: she pulls fur from her abdomen before kindling).
+//   chickDustF - Chicks dust-bathe too, starting at 1 to 2 weeks old (Merck Veterinary Manual, "Behavior of
+//         Poultry").
+//   broodRoomy - Crowded birds lack the room to dust-bathe (Merck); the brooder is crowded when its chicks
+//         need more floor than it has at the floor-per-chick setting (the same rule the model's spa ...
+//   dustSpotOf - Dust bathing is social and birds do it together, often touching (Merck): beside a pen-mate
+//         that is already dust-bathing when there is one, else a free spot in the litter away from the lamp.
+//   chickDusting - How strongly a chick is drawn to a bath: 12x when pen-mates are already at it (social), but
+//         none once a third of the brooder's chicks (at least 2) are, so the whole brood does not p ...
+//   dustMate - Places where a chick can join a dust bath already going in its brooder (6 round a bathing
+//         chick, phase 50), or one free litter spot when nobody is bathing.
+//   think - Chooses what animal g does next when it has nothing left to do: a task (eat, drink, rest, roost,
+//         lay, dust bath, wander ...) picked from the hour, the weather, its feed and water left to ...
+//   updAgent - Moves animal g on by dt seconds: plays out leaving the farm (death or sale), walks its path,
+//         counts down its task, and calls think() when it is done.
+//   sizeFt - Body length in ft as drawn: rabbits from weight (cube root of the share of adult weight), chicks
+//         0.45, grown chickens growing to 1.1 by laying age.
+//   fxText - Shows a short floating text at a farm point (for example "+1 egg"); at most 60 at once.
+//   later - Runs fn when the world clock reaches hour h at the live speeds, else after d seconds (see
+//         loop.js).
+// ---- end of contents ----
+// ---------- agents (one per real animal) ----------
+const RAB = ['#efeae2', '#8b6a4e', '#3b3734', '#c9a27c', '#9c9c9c', '#efeae2'],
+  HEN = ['#8a3f17', '#f3efe4', '#2a2a2a', '#c9a062', '#8a3f17'];
+// A random point inside building c, at least ins ft (default 0.45) from its walls.
+function rndIn(c, ins) {
+  ins = ins == null ? 0.45 : ins;
+  return [c.x + ins + vr() * Math.max(0.01, c.w - 2 * ins), c.y + ins + vr() * Math.max(0.01, c.d - 2 * ins)];
+}
+// Which of the four animal groups the world moves: rab (grown rabbits), kit, bird (grown chickens) or chick.
+function kindOf(a) {
+  return a.sp === 'rabbit' ? (a.st === 'kit' ? 'kit' : 'rab') : a.st === 'chick' ? 'chick' : 'bird';
+}
+// The farm gate, where bought animals walk in and sold ones walk out.
+function gatePt() {
+  return [60, PLOT.h + 0.2];
+}
+// Adds animal a to the world (WV.agents): in its pen, or walking in from the gate or from a building when from
+// is given.
+function spawn(a, from) {
+  const home = a.enc && compById(a.enc);
+  const g = {
+    id: a.id,
+    ref: a,
+    home: a.enc,
+    zone: a.enc,
+    x: 0,
+    y: 0,
+    z: 0,
+    path: [],
+    act: 'idle',
+    timer: vrr(0.2, 2),
+    face: vr() < 0.5 ? 1 : -1,
+    ph: vr() * 6,
+    eggs: a.eggs,
+    alpha: 1,
+    leaving: null,
+    task: null,
+    layQ: [],
+    col: (((a.id * 2654435761) >>> 0) % 997) / 997,
+    hidden: false
+  };
+  if (home) {
+    const p = rndIn(cageBox(g, home));
+    g.x = p[0];
+    g.y = p[1];
+    g.z = floorZ(home);
+  } else {
+    g.x = PLOT.w * 0.5 + vrr(-6, 6);
+    g.y = PLOT.h * 0.55 + vrr(-4, 4);
+    g.zone = null;
+  }
+  if (from) {
+    g.x = from[0];
+    g.y = from[1];
+    g.z = from[2] || 0;
+    g.zone = null;
+    routeTo(g, a.enc);
+  }
+  WV.agents.set(a.id, g);
+  return g;
+}
+// The point on building c's wall nearest to x, y.
+function edgePt(c, x, y) {
+  const px = clamp(x, c.x, c.x + c.w),
+    py = clamp(y, c.y, c.y + c.d),
+    dl = px - c.x,
+    dr = c.x + c.w - px,
+    dt = py - c.y,
+    db = c.y + c.d - py,
+    m = Math.min(dl, dr, dt, db);
+  if (m === db) return [px, c.y + c.d + 0.6];
+  if (m === dr) return [c.x + c.w + 0.6, py];
+  if (m === dl) return [c.x - 0.6, py];
+  return [px, c.y - 0.6];
+}
+// Sends animal g to building id: out through its own door, along the ground and in, setting its new home.
+function routeTo(g, id) {
+  const tgt = id && compById(id),
+    cur = g.zone && compById(g.zone);
+  g.path = [];
+  g.task = null;
+  g.home = id;
+  if (cur && (!tgt || cur.id !== tgt.id)) {
+    const e = edgePt(cur, tgt ? tgt.x + tgt.w / 2 : g.x, tgt ? tgt.y + tgt.d / 2 : g.y);
+    g.path.push({ x: e[0], y: e[1], z: 0, zone: null });
+  }
+  if (tgt) {
+    const e = edgePt(tgt, g.x, g.y);
+    g.path.push({ x: e[0], y: e[1], z: 0, zone: null });
+    const p = rndIn(tgt);
+    g.path.push({ x: p[0], y: p[1], z: floorZ(tgt), zone: id });
+  } else
+    g.path.push({
+      x: clamp(g.x + vrr(-4, 4), 2, PLOT.w - 2),
+      y: clamp(g.y + vrr(-4, 4), 2, PLOT.h - 2),
+      z: 0,
+      zone: null
+    });
+}
+// Walking speed in ft a second: by kind, slower when unwell, faster when leaving the farm.
+function speedOf(g) {
+  const a = g.ref,
+    k = kindOf(a),
+    b = k === 'rab' ? 2.2 : k === 'kit' ? 0.9 : k === 'bird' ? 1.5 : 1.0;
+  return b * (0.35 + 0.65 * clamp(a.health / 100, 0, 1)) * (g.leaving ? 1.3 : 1);
+}
+// move(g, dt) is in world/physics.js (steering, hops and jumps under gravity)
+
+// Adds to g's path the walk to point pt (height z) inside building zoneId: through its door first when the
+// path does not already end inside it (with no door to it, the animal is routed home instead); the end
+// point is moved to where the body can stand (reachPt).
+function goIn(g, zoneId, pt, z) {
+  const zc = compById(zoneId);
+  if (!zc) return;
+  // phase 47: the zone the path already ends in (its last door hop), not only the one the animal stands
+  // in. A hen in the run sent to a coop trough got two goIn calls, so her path went pop door, trough,
+  // pop door again, trough: she walked in, turned back out to the door and came in a second time. A
+  // second place in the same zone now follows on from the first without another door hop.
+  let endZ = g.zone;
+  for (const n of g.path) if ('zone' in n) endZ = n.zone;
+  if (endZ !== zoneId) {
+    const home = compById(g.home),
+      K = home && WV.K[home.id];
+    let door = null;
+    if (K && K.runs) {
+      const cand = K.runs.find(o => o.r.id === zoneId || o.r.id === g.zone);
+      if (cand) door = cand.door;
+    }
+    if (door) g.path.push({ x: door[0], y: door[1], z: 0.2, zone: zoneId });
+    else {
+      routeTo(g, g.home);
+      return;
+    }
+  }
+  const zz = z != null ? z : floorZ(zc),
+    q = reachPt(g, zc, pt, Math.abs(zz - floorZ(zc)) < 0.3);
+  g.path.push({ x: q[0], y: q[1], z: zz });
+}
+// a spot the body can actually stand on (phase 24): at least its radius from the wire, walls and fences,
+// and, on the floor, outside the feeders, waterers and hopper lips it collides with (nest boxes are
+// left alone: kits and nesting does go inside). Before this, chicks aimed inside the brooder feeder and
+// hens 0.25 ft from a trough, closer than their own body, so they stalled 1.2 s and gave up.
+function reachPt(g, zc0, pt, floor) {
+  // phase 28: in a hutch bank the spot stays inside the rabbit's own cage (zc is that cage's floor)
+  const zc = cageBox(g, zc0),
+    r = bodyR(g) + 0.02,
+    ix = Math.min(Math.max(0.3, r), zc.w / 2),
+    iy = Math.min(Math.max(0.3, r), zc.d / 2);
+  let x = clamp(pt[0], zc.x + ix, zc.x + zc.w - ix),
+    y = clamp(pt[1], zc.y + iy, zc.y + zc.d - iy);
+  if (floor)
+    for (let pass = 0; pass < 2; pass++)
+      for (const b of obstaclesOf(zc0)) {
+        const px = clamp(x, b.x, b.x + b.w),
+          py = clamp(y, b.y, b.y + b.d),
+          d = Math.hypot(x - px, y - py);
+        // a spot inside a nest box is meant to be inside, but only for kits and a doe going in to pull
+        // fur (phase 30: other rabbits' random spots landed in the box, which they may not enter, and
+        // they gave up on them: 126 'nestbox' give-ups in the comfort replays)
+        if (d >= r || (b.nest && d < 1e-6 && (kindOf(g.ref) === 'kit' || g.wantNest))) continue;
+        if (d > 1e-6) {
+          x = px + ((x - px) / d) * r;
+          y = py + ((y - py) / d) * r;
+        } else {
+          // inside the box: out by the nearest side that stays in the pen
+          const opts = [
+            [b.x - r, y, x - b.x],
+            [b.x + b.w + r, y, b.x + b.w - x],
+            [x, b.y - r, y - b.y],
+            [x, b.y + b.d + r, b.y + b.d - y]
+          ].filter(o => o[0] >= zc.x + ix && o[0] <= zc.x + zc.w - ix && o[1] >= zc.y + iy && o[1] <= zc.y + zc.d - iy);
+          if (opts.length) {
+            opts.sort((a, b2) => a[2] - b2[2]);
+            x = opts[0][0];
+            y = opts[0][1];
+          }
+        }
+        x = clamp(x, zc.x + ix, zc.x + zc.w - ix);
+        y = clamp(y, zc.y + iy, zc.y + zc.d - iy);
+      }
+  return [x, y];
+}
+// Picks one key of ws at random, each with the chance of its weight (negative weights count as 0).
+function pick(ws) {
+  let s = 0;
+  for (const k in ws) s += Math.max(0, ws[k]);
+  let r = vr() * s;
+  for (const k in ws) {
+    r -= Math.max(0, ws[k]);
+    if (r <= 0) return k;
+  }
+  return Object.keys(ws)[0];
+}
+// a resting spot in a tree's shade inside the run, if the tree's shade reaches the run (hot hours).
+// The shade is the disc drawn under the tree (radius = the tree's shade radius, as in micro()).
+// Phase 24: the old test compared centre distances, so a shade disc over one corner of a run was
+// missed, and every bird aimed at the one point nearest the trunk; now a tree counts when its disc
+// touches the run, and each bird picks its own spot in the inner 70% of the disc where it can.
+function shadeOf(o) {
+  let best = null,
+    bd = 1e9;
+  for (const t of pens('tree')) {
+    const tc = ctr(t),
+      px = clamp(tc[0], o.x, o.x + o.w),
+      py = clamp(tc[1], o.y, o.y + o.d),
+      d = Math.hypot(tc[0] - px, tc[1] - py);
+    if (d < t.radius && d < bd) (bd = d), (best = t);
+  }
+  return best;
+}
+// A random point inside run o in the tree's shade at this hour when one can be found, else any point in the
+// run.
+function shadeIn(o) {
+  const tr = shadeOf(o);
+  if (!tr) return rndIn(o);
+  const tc = ctr(tr);
+  for (const f of [0.7, 0.95])
+    for (let i = 0; i < 10; i++) {
+      const p = rndIn(o);
+      if (Math.hypot(p[0] - tc[0], p[1] - tc[1]) < tr.radius * f) return p;
+    }
+  return [clamp(tc[0], o.x + 0.5, o.x + o.w - 0.5) + vrr(-1, 1), clamp(tc[1], o.y + 0.5, o.y + o.d - 0.5) + vrr(-1, 1)];
+}
+// a resting spot beside a pen-mate that is standing still on the floor (cold hours: they huddle)
+function nearMate(g, zc) {
+  const L = [];
+  for (const o of WV.agents.values())
+    if (o !== g && o.zone === zc.id && !o.path.length && !o.leaving && !o.hidden && !o.jump && Math.abs(o.z - floorZ(zc)) < 0.3)
+      if (cageBox(o, zc) === cageBox(g, zc)) L.push(o); // phase 28: not through a cage divider
+  if (!L.length) return rndIn(cageBox(g, zc));
+  // phase 24: lie down against a pen-mate that is itself lying down, so the pair stays together
+  // (the comfort test found a cold rabbit often walked to a mate that then walked off)
+  const R = L.filter(o => o.act === 'rest' || o.act === 'flop' || o.act === 'huddle' || o.act === 'roost'),
+    LL = R.length ? R : L;
+  const o = LL[Math.floor(vr() * LL.length)],
+    an = vr() * Math.PI * 2,
+    r = (sizeFt(o.ref) + sizeFt(g.ref)) * 0.4;
+  return [o.x + Math.cos(an) * r, o.y + Math.sin(an) * r];
+}
+// phase 30: of a few candidate spots, the one with the most room: farthest from the pen-mates on the
+// same level in the same cage, counting where a moving mate is heading. Kits and chicks aimed at
+// spots a mate already filled and gave up on them (comfort replays: 836 kit and 662 chick give-ups
+// of 2,002). Visual only; the model never sees it.
+function clearPt(g, zc, cands) {
+  clearPt.room = 3;
+  if (cands.length < 2) return cands[0];
+  const box = cageBox(g, zc),
+    L = [];
+  for (const o of WV.agents.values()) {
+    if (o === g || o.zone !== zc.id || o.hidden || o.leaving || Math.abs(o.z - g.z) > 0.4) continue;
+    if (box !== zc && cageBox(o, zc) !== box) continue;
+    const t = o.path.length ? o.path[o.path.length - 1] : o;
+    L.push([t.x, t.y, (sizeFt(o.ref) + sizeFt(g.ref)) * 0.38]);
+  }
+  let best = cands[0],
+    bs = -1e9;
+  for (const p of cands) {
+    let m = 3;
+    for (const q of L) m = Math.min(m, Math.hypot(p[0] - q[0], p[1] - q[1]) - q[2]);
+    if (m > bs) (bs = m), (best = p);
+  }
+  clearPt.room = bs; // phase 32: how much room the chosen place has (below 0: it is taken)
+  return best;
+}
+// phase 43: the same as clearPt, but each candidate is first moved to where the animal can really
+// stand (reachPt, which goIn applies afterwards anyway). A kit judged the room at a point beside its
+// mother or on a random spot, then goIn pushed it off the cage wall, the nest box or the hopper onto a
+// point a littermate already held, and it gave up (phase 43 diagnostic: 45 of the 63 kit 'mate' give-ups
+// while idling or resting came at points reachPt had moved, against 0 of 32 for rabbits at hoppers).
+// Phase 42 did the same for brooder chicks at troughs and waterers. No dice, so the random sequence
+// is only shifted by the animals' different choices. Visual only; the model never sees it.
+function clearAt(g, zc, cands) {
+  return clearPt(g, zc, cands.map(p => reachPt(g, zc, p, true)));
+}
+// phase 45: take-off points for the roost, [across the bar, along the bar] in ft from her place on it,
+// the old point first. Both sides of the bar, a little either way along it; my choice, visual only.
+const ROOST_FROM = [
+  [0.25, 0],
+  [-0.25, 0],
+  [0.55, 0.3],
+  [0.55, -0.3],
+  [-0.55, 0.3],
+  [-0.55, -0.3]
+];
+// phase 45: room at a floor point (x, y) of pen zc, against the pen-mates standing on the floor: each
+// counts at the last floor-level point it is walking to (a hen heading for the roost counts at her
+// take-off point, not at her place up on the bar), else where it stands. Below 0: taken. Same spacing
+// rule as clearPt and separate(): (size + size) * 0.38 ft.
+function floorRoom(g, zc, x, y) {
+  const fz = floorZ(zc);
+  let m = 3;
+  for (const o of WV.agents.values()) {
+    if (o === g || o.zone !== zc.id || o.hidden || o.leaving || o.jump || Math.abs(o.z - fz) > 0.4) continue;
+    let t = o;
+    for (let i = o.path.length - 1; i >= 0; i--)
+      if (!('zone' in o.path[i]) && Math.abs((o.path[i].z != null ? o.path[i].z : fz) - fz) < 0.4) {
+        t = o.path[i];
+        break;
+      }
+    m = Math.min(m, Math.hypot(x - t.x, y - t.y) - (sizeFt(o.ref) + sizeFt(g.ref)) * 0.38);
+  }
+  return m;
+}
+// phase 30: where an out-of-the-nest kit lies down. FAO (x5082, thermoregulation): young rabbits that
+// cannot yet curl up limit heat loss by huddling with the litter, moving apart when it is warm and
+// huddling back when it cools. At 10 C (50 F) and below it lies against a resting littermate; the gap
+// widens step by step up to 25 C (77 F), and above that it lies on a spot with room (also when hot).
+// The two temperatures are FAO's for adults curling up and stretching out; using them for kits, and
+// the straight-line widening between them, are choices.
+function kitPile(g, home, tF) {
+  const a = g.ref,
+    cb = cageBox(g, home),
+    free = () => clearAt(g, home, [rndIn(cb, 0.3), rndIn(cb, 0.3), rndIn(cb, 0.3)]);
+  if (tF > 77 || g.hot) return free();
+  const L = [];
+  for (const o of WV.agents.values())
+    if (o !== g && o.zone === home.id && o.ref.st === 'kit' && o.ref.mother === a.mother && !o.path.length && !o.jump)
+      if (o.act === 'huddle' || o.act === 'rest') L.push(o);
+  if (!L.length) return free();
+  const o = L[Math.floor(vr() * L.length)],
+    r = (sizeFt(o.ref) + sizeFt(a)) * (0.36 + 0.44 * Math.min(1, Math.max(0, (tF - 50) / 27))),
+    c = [];
+  for (let i = 0; i < 4; i++) {
+    const an = vr() * Math.PI * 2;
+    c.push([o.x + Math.cos(an) * r, o.y + Math.sin(an) * r]);
+  }
+  return clearAt(g, home, c);
+}
+// ---------- comfort behaviour and dawn crowing (phase 23, visual only) ----------
+// Dust bathing needs soft, dry material (Merck): not while rain or snow falls, not on snow or wet ground.
+function dustOk() {
+  const w = typeof wxNow === 'function' ? wxNow() : null;
+  return !w || (!(w.falling > 0) && !(w.depth > 0.3) && !(w.wetG > 0.3));
+}
+// Dust bathing and preening are synchronous social behaviours (Alabama Extension): a hen is likelier
+// to start when a pen-mate in the same pen is already doing it.
+function mateDoing(g, act) {
+  for (const o of WV.agents.values()) if (o !== g && o.zone === g.zone && o.act === act && !o.hidden) return true;
+  return false;
+}
+// Roosters start crowing about 2 hours before dawn by their own clock (Shimmura and Yoshimura 2013).
+// The window here runs from 2 hours before sunrise to 1 hour after; how often is an illustration.
+function crowWindow() {
+  const sn = WV.sun;
+  if (!sn) return false;
+  const d = WV.hour - sn.rise;
+  return d > -2 && d < 1;
+}
+// Fur in a doe's nest: none until 3 days before kindling, then more each day; kept as a blanket over
+// the kits while they nurse (FAO: she pulls fur from her abdomen before kindling). Timing is an illustration.
+function furLevel(a) {
+  if (!a) return 0;
+  if (a.preg != null && a.gestLen) {
+    const left = a.gestLen - a.preg;
+    return left > 3 ? 0 : clamp((4 - left) / 4, 0, 1);
+  }
+  if (a.kindle != null && S.day - a.kindle < P.rb_wean) return 1;
+  return 0;
+}
+// ---------- chick dust bathing in the brooder (phase 26, visual only) ----------
+// Chicks dust-bathe too, starting at 1 to 2 weeks old (Merck Veterinary Manual, "Behavior of Poultry").
+// The brooder has no run, so they do it in its litter (wood shavings count as soft, dry material, Merck).
+// The urge rises from none at 7 days to full at 14 days; that straight ramp is an illustration.
+function chickDustF(a) {
+  return clamp(((a && a.age) - 7) / 7, 0, 1);
+}
+// Crowded birds lack the room to dust-bathe (Merck); the brooder is crowded when its chicks need more
+// floor than it has at the floor-per-chick setting (the same rule the model's space load uses).
+function broodRoomy(home, K) {
+  return !home || !K || (K.n || 0) * P.ck_brood_sqft <= home.w * home.d + 1e-9;
+}
+// Dust bathing is social and birds do it together, often touching (Merck): beside a pen-mate that is
+// already dust-bathing when there is one, else a free spot in the litter away from the lamp.
+// A chick counts as at it while it dust-bathes or while it is on its way to a bath (its task says so).
+function dustSpotOf(o) {
+  if (o.act === 'dust' && !o.moving) return [o.x, o.y];
+  if (o.task && o.task.act === 'dust' && o.path.length) {
+    const q = o.path[o.path.length - 1];
+    return [q.x, q.y];
+  }
+  return null;
+}
+// How strongly a chick is drawn to a bath: 12x when pen-mates are already at it (social), but none
+// once a third of the brooder's chicks (at least 2) are, so the whole brood does not pile in at once.
+// The 12x and the one-third cap are an illustration.
+function chickDusting(g) {
+  let at = 0,
+    n = 0;
+  for (const o of WV.agents.values())
+    if (o !== g && o.zone === g.zone && !o.hidden && o.ref.st === 'chick') {
+      n++;
+      if (dustSpotOf(o)) at++;
+    }
+  if (at >= Math.max(2, Math.ceil((n + 1) / 3))) return 0;
+  return at ? 12 : 1;
+}
+// Places where a chick can join a dust bath already going in its brooder (6 round a bathing chick, phase 50),
+// or one free litter spot when nobody is bathing.
+function dustMate(g, zc, K) {
+  const L = [];
+  for (const o of WV.agents.values())
+    if (o !== g && o.zone === zc.id && !o.hidden) {
+      const q = dustSpotOf(o);
+      if (q) L.push([o, q]);
+    }
+  if (L.length) {
+    // phase 50: six places round the bather, a sixth of a turn apart from the one random angle (no new
+    // dice); think() takes the one with most room where the chick will really stand (clearAt). Before,
+    // the one random place often lay on another bather of the group or was moved by reachPt onto one,
+    // and the chick gave up there (phase 50 diagnostic: 68 of 71 dust give-ups came when joining, the
+    // nearest chick was the joined bather in only 6). Six places is my choice.
+    const [o, q] = L[Math.floor(vr() * L.length)],
+      an = vr() * Math.PI * 2,
+      r = (sizeFt(o.ref) + sizeFt(g.ref)) * 0.45;
+    return [0, 1, 2, 3, 4, 5].map(i => [q[0] + Math.cos(an + (i * Math.PI) / 3) * r, q[1] + Math.sin(an + (i * Math.PI) / 3) * r]);
+  }
+  let p = rndIn(zc, 0.3);
+  if (K && K.lamp) {
+    // the chicks under the lamp are resting; a bath is scraped out a little way from them
+    for (let i = 0; i < 3 && Math.hypot(p[0] - K.lamp[0], p[1] - K.lamp[1]) < 0.7; i++) p = rndIn(zc, 0.3);
+  }
+  return [p];
+}
+// Chooses what animal g does next when it has nothing left to do: a task (eat, drink, rest, roost, lay, dust
+// bath, wander ...) picked from the hour, the weather, its feed and water left today and its pen, and the path
+// to walk there. Visual only: reads the model, never changes it.
+function think(g) {
+  // ==== Common set-up for every kind ====
+  // Its pen and the pen's fixtures (K), the model's numbers for it (v: feed and water left, pen highs and
+  // lows), health 0..1, night, hot and cold. Clears the old task and path. With no pen it ambles nearby.
+  const a = g.ref,
+    home = g.home && compById(g.home),
+    K = home && WV.K[home.id],
+    v = WV.vis.get(a.id) || { it: { feed: 0, water: 0 }, m: { tmax: 60, tmin: 40 } },
+    h = clamp(a.health / 100, 0, 1),
+    night = WV.sun && WV.sun.night,
+    hot = hotNow(v),
+    chill = coldNow(v),
+    k = kindOf(a);
+  g.hot = hot; // hot animals keep more space between them (physics.js)
+  g.chill = chill;
+  g.wantNest = 0;
+  g.task = null;
+  g.path = [];
+  if (!home) {
+    g.path = [{ x: clamp(g.x + vrr(-3, 3), 2, PLOT.w - 2), y: clamp(g.y + vrr(-3, 3), 2, PLOT.h - 2), z: 0 }];
+    g.task = { act: 'idle', dur: vrr(1, 3) };
+    return;
+  }
+  const jit = (p, r) => [p[0] + vrr(-r, r), p[1] + vrr(-r, r)];
+  // ==== Kits (baby rabbits) ====
+  // Under 18 days old they huddle in the nest box. Older kits rest (nest box or the litter pile), stay by
+  // their mother, eat, drink or explore their cage; apart from resting they wait a second when every
+  // place is taken (goOr).
+  if (k === 'kit') {
+    const mg = a.mother && WV.agents.get(a.mother),
+      nest = K && K.nestOf && K.nestOf[a.mother],
+      cb = cageBox(g, home),
+      tF = hourTemp(v.m),
+      inNest = () => [nest.x + 0.15 + vr() * (nest.w - 0.3), nest.y + 0.15 + vr() * (nest.d - 0.3)];
+    if (a.age < 18 && nest) {
+      goIn(g, home.id, inNest());
+      g.task = { act: 'huddle', dur: vrr(3, 7) };
+      return;
+    }
+    // phase 30: out of the nest. FAO (x5082): from the third week the young begin to move about, take
+    // a little drinking water and, within a few days, more solid feed and water than milk. They rest in
+    // the nest box while it is still there (until weaning, world/cages.js) or with their littermates,
+    // and otherwise stay near their mother. The weights and nest-box shares are illustrations.
+    const solid = a.age >= 21 ? Math.min(1, (a.age - 20) / 10) : 0,
+      wk = {
+        rest: 1.0 + (night ? 0.8 : 0) + (chill ? 0.5 : 0),
+        mother: mg && mg.zone === g.zone ? 0.9 : 0,
+        eat: 0.7 * solid,
+        drink: a.age >= 21 ? 0.3 : 0,
+        explore: 0.45 * h
+      },
+      c = pick(wk),
+      [hop, bot] = rabFix(g, home, K),
+      // phase 43: when every place it looked at is taken even where it would stand (clearAt), the kit
+      // stays where it is and looks again a second later, as a chick waits its turn at a full trough
+      // (phase 32/42), instead of walking onto a littermate and giving up there. Resting by the litter
+      // is left out: kits lie touching there on purpose (kitPile). The task's dice are drawn either way.
+      goOr = (p, t) => {
+        if (clearPt.room < 0) g.task = { act: 'idle', dur: 1, waiting: 1 };
+        else {
+          goIn(g, home.id, p);
+          g.task = t;
+        }
+      };
+    if (c === 'rest') {
+      // the nest box (fur-lined, warm) draws them less as it warms: 60% of rests at 50 F and below,
+      // 20% at 77 F, none above or when hot (an illustration of FAO's move-apart-when-warm)
+      const pNest = tF > 77 || g.hot ? 0 : 0.6 - 0.4 * Math.min(1, Math.max(0, (tF - 50) / 27));
+      goIn(g, home.id, nest && vr() < pNest ? clearAt(g, home, [inNest(), inNest()]) : kitPile(g, home, tF));
+      g.task = { act: 'huddle', dur: vrr(4, 9) };
+    } else if (c === 'mother') {
+      // beside her, not under her: a ring at the two bodies' spacing, on the side with most room
+      const r = (sizeFt(mg.ref) + sizeFt(a)) * 0.45,
+        mt = mg.path.length ? mg.path[mg.path.length - 1] : mg,
+        cs = [];
+      for (let i = 0; i < 5; i++) {
+        const an = vr() * Math.PI * 2;
+        cs.push([mt.x + Math.cos(an) * r, mt.y + Math.sin(an) * r]);
+      }
+      goOr(clearAt(g, home, cs), { act: vr() < 0.35 ? 'rest' : 'idle', dur: vrr(1.5, 4) });
+    } else if (c === 'eat') {
+      goOr(clearAt(g, home, [jit([hop[0], hop[1] - 0.3], 0.3), jit([hop[0], hop[1] - 0.3], 0.3), jit([hop[0], hop[1] - 0.3], 0.3)]), { act: 'eat', dur: vrr(1.5, 3.5) });
+    } else if (c === 'drink') {
+      goOr(clearAt(g, home, [jit([bot[0], bot[1] - 0.3], 0.2), jit([bot[0], bot[1] - 0.3], 0.2)]), { act: 'drink', dur: vrr(1, 2) });
+    } else {
+      goOr(clearAt(g, home, [rndIn(cb, 0.3), rndIn(cb, 0.3), rndIn(cb, 0.3)]), { act: 'idle', dur: vrr(0.6, 2) });
+    }
+    return;
+  }
+  // ==== Grown and growing rabbits ====
+  // Eat, drink, rest, roam, groom, stretch or (a doe with a nest box) go to the nest, all inside its own
+  // cage of the hutch bank. A fight in its grower group sends it to a random spot, and a crowded grower
+  // hopper often makes it wait a little way off.
+  if (k === 'rab') {
+    const base = P.rb_feed_m / 16,
+      w = {
+        eat: 1.0 * Math.max(0.3, v.it.feed / base),
+        drink: (0.7 * v.it.water) / 0.12,
+        rest: 0.7 + 2.2 * (1 - h) + (hot ? 1.6 : 0) + (chill ? 0.8 : 0),
+        roam: (a.st === 'grower' ? 1.7 : 1.1) * h * (K.dens > 1 ? 0.5 : 1),
+        groom: 0.4,
+        stretch: K.dens > 1 ? 0 : 0.12 * h
+      };
+    const nest = K.nestOf && K.nestOf[a.id];
+    if (nest) w.nest = a.preg != null ? 1.3 + 2 * furLevel(a) : 0.9;
+    const c = pick(w);
+    const rg = rgOf(a);
+    const cb = cageBox(g, home); // phase 28: its own cage in the bank (world/cages.js)
+    if (rg && rg.fight && vr() < 0.35) {
+      goIn(g, home.id, rndIn(cb));
+      g.task = { act: 'idle', dur: vrr(0.2, 0.6) };
+      return;
+    }
+    // each rabbit uses a hopper and bottle on its own cage's front wire (spread by id, no dice)
+    const [hop, bot] = rabFix(g, home, K);
+    if (c === 'eat' && rg && rg.crowded && vr() < 0.6) {
+      const an = vr() * Math.PI * 2;
+      goIn(g, home.id, [
+        clamp(hop[0] + Math.cos(an) * 1.2, cb.x + 0.3, cb.x + cb.w - 0.3),
+        clamp(hop[1] - 0.4 + Math.sin(an) * 0.6, cb.y + 0.3, cb.y + cb.d - 0.3)
+      ]);
+      g.task = { act: 'idle', dur: vrr(2, 4), waiting: 1 };
+    } else if (c === 'eat') {
+      // phase 49: growers sharing a cage all walked to the one point in front of its single hopper and
+      // gave up on it when a cage-mate was already there (phase 49 diagnostic: 26 of 30 adult-rabbit
+      // feeding give-ups had the nearest mate at the same hopper; 25 were growers, three to a cage). Now
+      // it also looks at a place either side of the hopper, its head still at the lip, judges each where
+      // it will really stand (clearAt) and waits a second where it is when all three are taken. A rabbit
+      // alone in its cage takes the old point (clearPt keeps the first when nothing is near). The two side
+      // places and the wait are my choices; visual only, the model never sees it.
+      const p = clearAt(g, home, [jit([hop[0], hop[1] - 0.4], 0.2), [hop[0] - 0.38, hop[1] - 0.38], [hop[0] + 0.38, hop[1] - 0.38]]);
+      if (clearPt.room < 0) g.task = { act: 'idle', dur: 1, waiting: 1 };
+      else {
+        goIn(g, home.id, p);
+        g.task = { act: 'eat', dur: vrr(2.5, 5) };
+      }
+    } else if (c === 'drink') {
+      // phase 49: the same at the drinker tube: straight in front of it or a little to either side
+      const p = clearAt(g, home, [jit([bot[0], bot[1] - 0.35], 0.15), [bot[0] - 0.3, bot[1] - 0.3], [bot[0] + 0.3, bot[1] - 0.3]]);
+      if (clearPt.room < 0) g.task = { act: 'idle', dur: 1, waiting: 1 };
+      else {
+        goIn(g, home.id, p);
+        g.task = { act: 'drink', dur: vrr(1.5, 3) };
+      }
+    } else if (c === 'nest' && a.preg != null && furLevel(a) > 0) {
+      // in the last days she sits in the box pulling fur from her belly to line it
+      g.wantNest = 1;
+      goIn(g, home.id, [nest.x + nest.w / 2, nest.y + nest.d * 0.55]);
+      g.task = { act: 'pullfur', dur: vrr(4, 8) };
+    } else if (c === 'nest') {
+      goIn(g, home.id, [nest.x + nest.w / 2, nest.y + nest.d + 0.3]);
+      g.task = { act: 'nest', dur: vrr(3, 6) };
+    } else if (c === 'rest' && chill) {
+      goIn(g, home.id, nearMate(g, home)); // cold: lies against a cage-mate on purpose
+      g.task = { act: hot ? 'flop' : 'rest', dur: vrr(4, 9) };
+    } else if (c === 'rest') {
+      // phase 49: of two spots in the cage, the one with more room where it will really stand; when both
+      // are taken it lies down where it is (rest and flop gave up 10 to 14 times a replay on taken spots)
+      const p = clearAt(g, home, [rndIn(cb), rndIn(cb)]);
+      if (clearPt.room >= 0) goIn(g, home.id, p);
+      g.task = { act: hot ? 'flop' : 'rest', dur: vrr(4, 9) };
+    } else if (c === 'groom') g.task = { act: 'groom', dur: vrr(3, 7), part: vr() < 0.55 ? 0 : 1 };
+    else if (c === 'stretch') g.task = { act: 'stretch', dur: vrr(1.2, 2.2) };
+    else {
+      // phase 49: roaming the same way; when both spots are taken it stays where it is
+      const p = clearAt(g, home, [rndIn(cb), rndIn(cb)]);
+      if (clearPt.room >= 0) goIn(g, home.id, p);
+      g.task = { act: 'idle', dur: vrr(0.4, 1.5) };
+    }
+    return;
+  }
+  // ==== Chicks ====
+  // In a brooder: huddle under the lamp when cold or at night, else eat, drink, roam, rest or dust-bathe
+  // at a place with room, waiting their turn when it is taken. Chicks in any other pen just idle there.
+  if (k === 'chick') {
+    if (home.type === 'brooder') {
+      const l = K.lamp,
+        cold = v.cold || night;
+      if (cold) {
+        const rr = v.cold ? 0.35 : 0.7;
+        goIn(g, home.id, jit(l, rr));
+        g.task = { act: 'huddle', dur: vrr(3, 6) };
+        return;
+      }
+      const wc = { eat: 1, drink: 0.7, roam: 1.2, rest: 0.6 },
+        df = chickDustF(a);
+      // phase 26: dust baths in the litter from 1 to 2 weeks old, not when the brooder is crowded or
+      // the chick is too hot; joining pen-mates already at it is likelier (weights are an illustration)
+      if (df > 0 && !hot && broodRoomy(home, K)) wc.dust = 0.15 * df * h * chickDusting(g);
+      const c = pick(wc);
+      // a place round the feeder or drinker (they stand at its rim, not on it); reachPt keeps it clear
+      // phase 30: of three places round the rim, the one with most room (clearPt)
+      // phase 33: the rim is along either side of a trough or round a waterer, of the troughs and
+      // waterers broodGear sized from the chick count; each place keeps the point it faces (o)
+      const rimAt = (kind) => {
+        const cs = [];
+        for (let i = 0; i < 3; i++) {
+          if (kind === 'eat') {
+            // phase 36: a longer trough piece takes more chicks (one draw, so one trough picks as before)
+            let rr = vr() * K.btr.reduce((s2, q) => s2 + Math.max(q.w, q.d), 0),
+              t = K.btr[K.btr.length - 1];
+            for (const q of K.btr) {
+              rr -= Math.max(q.w, q.d);
+              if (rr < 0) {
+                t = q;
+                break;
+              }
+            }
+            const long = t.w >= t.d,
+              u = vr(),
+              side = vr() < 0.5;
+            if (long) {
+              const px = t.x + 0.08 + u * Math.max(0, t.w - 0.16);
+              cs.push({ p: [px, side ? t.y - 0.17 : t.y + t.d + 0.17], o: [px, t.y + t.d / 2] });
+            } else {
+              const py = t.y + 0.08 + u * Math.max(0, t.d - 0.16);
+              cs.push({ p: [side ? t.x - 0.17 : t.x + t.w + 0.17, py], o: [t.x + t.w / 2, py] });
+            }
+          } else {
+            const f = K.bfo[Math.floor(vr() * K.bfo.length)],
+              an = vr() * Math.PI * 2;
+            cs.push({ p: [f.x + Math.cos(an) * (f.r + 0.17), f.y + Math.sin(an) * (f.r + 0.17)], o: [f.x, f.y] });
+          }
+        }
+        // phase 42: each place is first moved to where the chick can really stand (reachPt, the same
+        // move goIn makes), so the room is judged where it will stand; before, a place behind a trough
+        // against the wall or on top of another trough was judged where it was drawn, the chick was sent
+        // somewhere else, found it taken and gave up (130 feeder and 38 waterer give-ups in why.py)
+        for (const q of cs) q.p = reachPt(g, home, q.p, true);
+        const p = clearPt(g, home, cs.map(q => q.p));
+        return cs.find(q => q.p === p);
+      };
+      // phase 32: when even the roomiest of the places is taken, it waits its turn a little way off
+      // (a chick's length further out) instead of pushing in; it picks again a moment later
+      const turn = (kind, act, dur) => {
+        const q = rimAt(kind),
+          p = q.p,
+          o = q.o;
+        if (clearPt.room < 0) {
+          // phase 42: of three waiting spots a chick's length out (straight out and 0.6 rad either side),
+          // the one with most room (the angles are a choice)
+          const an = Math.atan2(p[1] - o[1], p[0] - o[0]),
+            ws = [0, 0.6, -0.6].map(da => reachPt(g, home, [p[0] + Math.cos(an + da) * 0.35, p[1] + Math.sin(an + da) * 0.35], true));
+          const wp = clearPt(g, home, ws);
+          // phase 46: when every waiting spot is taken too, it waits where it stands. Before, it walked
+          // to the least-crowded taken spot and gave up there (78 to 93 waiting give-ups a replay)
+          if (clearPt.room >= 0 || g.zone !== home.id) goIn(g, home.id, wp);
+          g.task = { act: 'idle', dur: vrr(0.6, 1.4), waiting: 1 };
+        } else {
+          goIn(g, home.id, p);
+          g.task = { act, dur };
+        }
+      };
+      if (c === 'eat' && K.btr && K.btr.length) {
+        turn('eat', 'peck', vrr(1.5, 3));
+      } else if (c === 'drink' && K.bfo && K.bfo.length) {
+        turn('drink', 'drink', vrr(1, 2));
+      } else if (c === 'dust') {
+        // phase 50: when every place round the bather it joins is taken, it waits a second where it stands
+        // (as at a full trough) and picks again; still walks when it is not in its brooder yet
+        const ds = dustMate(g, home, K),
+          dp = clearAt(g, home, ds);
+        if (ds.length > 1 && clearPt.room < 0 && g.zone === home.id) {
+          g.task = { act: 'idle', dur: 1, waiting: 1, dust: 1 };
+        } else {
+          goIn(g, home.id, dp);
+          g.task = { act: 'dust', dur: vrr(4, 9) };
+        }
+      } else if (c === 'rest') {
+        goIn(g, home.id, jit(l, 0.6));
+        g.task = { act: 'huddle', dur: vrr(2, 5) };
+      } else {
+        // phase 46: the two places are judged where the chick will really stand (clearAt, as kits and hens
+        // do since phases 43 and 44); when both are taken it stays where it is this turn. Before, about half
+        // of its roaming give-ups came at a place reachPt had moved, and the rest at a place already taken
+        const rp = clearAt(g, home, [rndIn(home, 0.3), rndIn(home, 0.3)]);
+        if (clearPt.room >= 0 || g.zone !== home.id) goIn(g, home.id, rp);
+        g.task = { act: 'idle', dur: vrr(0.3, 1) };
+      }
+      return;
+    }
+    goIn(g, home.id, rndIn(home));
+    g.task = { act: 'idle', dur: vrr(1, 3) };
+    return;
+  }
+  // ==== Grown and growing chickens ====
+  // In this order: not in a coop (idle), laying, a rooster crowing before dawn, roosting at night, coming
+  // in from the rain, then a daytime choice: forage, eat, drink, dust-bathe, watch the rain, preen,
+  // stretch, flap, rest or roam.
+  if (home.type !== 'coop') {
+    goIn(g, home.id, rndIn(home));
+    g.task = { act: 'idle', dur: vrr(1, 3) };
+    return;
+  }
+  // ---- laying: a hen with an egg due walks to the front of a nest box and steps in (daytime) ----
+  if (g.layQ.length && !night && K.nests.length) {
+    const n = K.nests[Math.floor(vr() * K.nests.length)];
+    goIn(g, home.id, [n.x + n.w / 2, n.y + n.d + 0.2]);
+    g.path.push({ x: n.x + n.w / 2, y: n.y + n.d / 2, z: n.z });
+    g.task = { act: 'lay', dur: vrr(2.2, 3.5), nest: n };
+    return;
+  }
+  const ac = accessOf(a);
+  // ---- a rooster may crow where he stands in the 2 hours before dawn (35% of his choices) ----
+  if (a.st === 'rooster' && crowWindow() && vr() < 0.35) {
+    // crows where he stands, on the perch before dawn
+    g.task = { act: 'crow', dur: vrr(1.6, 2.6) };
+    return;
+  }
+  // ---- night: floor sleepers lie down, the rest go to their place on the roost frame ----
+  if (night) {
+    // phase 47: a hen coming in from the run at dusk walks through the pop door straight to her floor
+    // spot or take-off point (goIn adds the door). Before, she first walked to a random spot in the coop
+    // and then, through a second door hop, back to the pop door and in again.
+    const p = K.perch;
+    if (ac && ac.floor) {
+      goIn(g, home.id, [home.x + home.w * vrr(0.35, 0.9), home.y + home.d * vrr(0.55, 0.9)]);
+      g.task = { act: 'rest', dur: vrr(5, 9), floor: 1 };
+      return;
+    }
+    // roost frame: each bar holds (bar length / perch per bird) birds, filled from the first bar on
+    const bars = K.perches && K.perches.length ? K.perches : [p],
+      per = bars.map(b => Math.max(1, Math.floor((barLen(b) * 12) / Math.max(0.1, P.ck_perch)))),
+      allSlots = per.reduce((s2, v2) => s2 + v2, 0);
+    let idx = (ac ? ac.perchIdx : (g.col * 997) | 0) % allSlots,
+      bi = 0;
+    while (bi < bars.length - 1 && idx >= per[bi]) idx -= per[bi++];
+    const bar = bars[bi],
+      sp = barLen(bar) / per[bi];
+    if (g.zone === home.id) {
+      // phase 45: where she jumps up from. Each hen used to walk to one point 0.25 ft beside her own
+      // place on the bar, but the places are only (perch per bird) apart, 0.5 to 0.6 ft on the default
+      // coop, while two hens standing on the floor need 0.57 to 0.84 ft (separate()'s spacing), so at
+      // dusk the hens heading for neighbouring places blocked each other there (phase 45 diagnostic:
+      // every roost give-up in the replays, 12 to 16 each, came at that floor point with another
+      // roost-bound hen beside it). Now she looks at six take-off points on both sides of the bar near
+      // her place, each judged where she can really stand (reachPt), and takes the roomiest against the
+      // coop-mates on the floor and the floor points they are heading for, keeping the old point while it
+      // has room. When all six are taken she waits a second and looks again (at most twice, then she goes
+      // anyway). The jump up is at most 0.63 ft. Her place on the bar is unchanged. No dice; visual only.
+      const sx = bar.ax === 'x' ? bar.x0 + (idx + 0.5) * sp : bar.x,
+        sy = bar.ax === 'x' ? bar.y : bar.y0 + (idx + 0.5) * sp;
+      let best = null,
+        bs = -1e9,
+        br = -1e9;
+      for (const o of ROOST_FROM) {
+        const ox = bar.ax === 'x' ? o[1] : o[0],
+          oy = bar.ax === 'x' ? o[0] : o[1],
+          q = reachPt(g, home, [sx + ox, sy + oy], true),
+          rm = floorRoom(g, home, q[0], q[1]),
+          s = Math.min(rm, 0.2) - 0.2 * Math.hypot(ox, oy);
+        if (s > bs) (bs = s), (best = q), (br = rm);
+      }
+      if (br < 0 && (g.roostWaits || 0) < 2) {
+        g.roostWaits = (g.roostWaits || 0) + 1;
+        g.task = { act: 'idle', dur: 1, waiting: 1 };
+        return;
+      }
+      g.roostWaits = 0;
+      g.path.push({ x: best[0], y: best[1], z: floorZ(home) });
+      g.path.push(bar.ax === 'x' ? { x: sx + vrr(-0.03, 0.03), y: bar.y, z: bar.z } : { x: bar.x, y: sy + vrr(-0.03, 0.03), z: bar.z });
+      g.task = { act: 'roost', dur: vrr(5, 9) };
+      return;
+    }
+    if (bar.ax === 'x') {
+      // phase 38: a bar of the second roost that runs along x
+      const px = bar.x0 + (idx + 0.5) * sp;
+      goIn(g, home.id, [px, bar.y + 0.25]);
+      g.path.push({ x: px + vrr(-0.03, 0.03), y: bar.y, z: bar.z });
+    } else {
+      const py = bar.y0 + (idx + 0.5) * sp;
+      goIn(g, home.id, [bar.x + 0.25, py]);
+      g.path.push({ x: bar.x, y: py + vrr(-0.03, 0.03), z: bar.z });
+    }
+    g.task = { act: 'roost', dur: vrr(5, 9) };
+    return;
+  }
+  // ---- rain or snow: a bird out in the run comes back in and shakes off ----
+  // rain or snow falling (phase 25, visual only): hens use an outdoor range most at moderate
+  // temperatures with low humidity, no drizzle and no strong wind (Deutsch et al. 2024, "Space use of
+  // free-range laying hens on two outdoor ranges with different amounts of vegetation cover"), so a
+  // bird out in the run comes back under the coop roof, and shakes the water off when it gets in.
+  // In light rain (under 0.04 in an hour) a few still step out for a short forage; in heavier rain or
+  // snow none do. The 0.12 share is an illustration.
+  const fall = wxFallNow(),
+    runs = K.runs || [];
+  if (fall && g.zone !== home.id) {
+    const zc = compById(g.zone);
+    if (zc && zc.type === 'run') {
+      goIn(g, home.id, rndIn(home, 0.8));
+      g.task = { act: 'shake', dur: vrr(0.7, 1.2) };
+      return;
+    }
+  }
+  // ---- daytime choice: weights from feed and water left, health, heat, rain and crowding ----
+  const w = {
+    eat: Math.max(0.3, v.it.feed / P.ck_feed),
+    drink: 0.7 * (hot ? 1.6 : 1),
+    roam: 0.8 * h,
+    rest: 0.4 + 2 * (1 - h) + (hot ? 1.2 : 0)
+  };
+  if (runs.length) w.forage = 1.8 * h * (fall ? (fall.snow || fall.rate >= 0.04 ? 0 : 0.12) : 1);
+  // some hens stand just inside the pop door looking out while it rains; this and how often are an
+  // illustration
+  if (fall && runs.length) w.watch = 0.3;
+  // comfort behaviour (Alabama Extension, Merck): preening, stretching, wing flapping and dust bathing;
+  // crowded birds lack the room to flap or dust-bathe (Merck). Weights are an illustration.
+  const roomy = !(ac && ac.crowded);
+  w.preen = 0.35 * (mateDoing(g, 'preen') ? 2.5 : 1);
+  w.stretch = 0.08;
+  if (roomy) w.flap = 0.06;
+  if (roomy && !hot && dustOk()) w.dust = 0.3 * h * (mateDoing(g, 'dust') ? 4 : 1);
+  const c = pick(w);
+  if (c === 'forage') {
+    const o = runs[Math.floor(vr() * runs.length)].r;
+    const p = hot ? shadeIn(o) : rndIn(o);
+    goIn(g, o.id, p);
+    g.task = { act: hot ? 'pant' : 'peck', dur: vrr(2, 6) };
+    if (fall) g.rainCut = 1; // went out in light rain on purpose: no turning back at the door
+  } else if (c === 'eat' || c === 'drink') {
+    // a spot along a trough side or round a fount (troughs and founts from the coop's settings)
+    let at = c === 'eat' ? K.feeder : K.water,
+      judged = false;
+    if (c === 'eat' && K.troughs && K.troughs.length) {
+      const t = K.troughs[a.id % K.troughs.length];
+      at = [t.x + t.w * vr(), a.id % 2 ? t.y - 0.25 : t.y + t.d + 0.25];
+    } else if (c === 'drink' && K.founts && K.founts.length) {
+      const f = K.founts[a.id % K.founts.length],
+        an2 = vr() * Math.PI * 2;
+      at = [f.x + Math.cos(an2) * (f.r + 0.25), f.y + Math.sin(an2) * (f.r + 0.25)];
+    }
+    // phase 44: a hen already in the coop and not crowded looks at three places (the one above, one
+    // more along its own trough side or round its own fount, and one at the next trough side or fount),
+    // each moved first to where she can really stand (clearAt: reachPt then clearPt), and takes the one
+    // with most room. Before, she was sent to one place, reachPt pushed her off the trough onto a point
+    // a flock-mate held, and she gave up there (phase 43 diagnostic: 12 of 16 'mate' give-ups at coop
+    // troughs came at points reachPt had moved). When every place is taken she waits a second where she
+    // is, as kits (phase 43) and brooder chicks (phase 32) do. Birds coming in from the run keep the old
+    // single place (their pen-mates on the coop floor are on another level until they get in).
+    // The three-place search is a choice. Visual only; the model never sees it.
+    if (g.zone === home.id && !(ac && ac.crowded) && ((c === 'eat' && K.troughs && K.troughs.length) || (c === 'drink' && K.founts && K.founts.length))) {
+      const cs = [jit(at, c === 'eat' ? 0.1 : 0.08)];
+      if (c === 'eat') {
+        const n = K.troughs.length,
+          t1 = K.troughs[a.id % n],
+          sd1 = a.id % 2,
+          t2 = K.troughs[(a.id + (n > 1 ? 1 : 0)) % n],
+          sd2 = n > 1 ? sd1 : 1 - sd1;
+        cs.push(jit([t1.x + t1.w * vr(), sd1 ? t1.y - 0.25 : t1.y + t1.d + 0.25], 0.1));
+        cs.push(jit([t2.x + t2.w * vr(), sd2 ? t2.y - 0.25 : t2.y + t2.d + 0.25], 0.1));
+      } else {
+        const n = K.founts.length,
+          f1 = K.founts[a.id % n],
+          f2 = K.founts[(a.id + 1) % n];
+        for (const f of [f1, f2]) {
+          const an3 = vr() * Math.PI * 2;
+          cs.push(jit([f.x + Math.cos(an3) * (f.r + 0.25), f.y + Math.sin(an3) * (f.r + 0.25)], 0.08));
+        }
+      }
+      at = clearAt(g, home, cs);
+      judged = true;
+      if (clearPt.room < 0) {
+        g.task = { act: 'idle', dur: 1, waiting: 1 };
+        return;
+      }
+    }
+    // phase 47: a hen in the run gets one path, pop door then her place (goIn adds the door); the old
+    // extra goIn here sent her to the trough, back out to the door and to the trough again.
+    if (judged) {
+      goIn(g, home.id, at);
+      g.task = c === 'eat' ? { act: 'peck', dur: vrr(2, 4) } : { act: 'drink', dur: vrr(1, 2.5) };
+    } else if (ac && ac.crowded) {
+      const an = vr() * Math.PI * 2;
+      goIn(g, home.id, [
+        clamp(at[0] + Math.cos(an) * 1.5, home.x + 0.4, home.x + home.w - 0.4),
+        clamp(at[1] + Math.sin(an) * 1.5, home.y + 0.4, home.y + home.d - 0.4)
+      ]);
+      g.task = { act: 'idle', dur: vrr(2, 4), waiting: 1 };
+    } else if (c === 'eat') {
+      goIn(g, home.id, jit(at, K.troughs ? 0.1 : 0.45));
+      g.task = { act: 'peck', dur: vrr(2, 4) };
+    } else {
+      goIn(g, home.id, jit(at, K.founts ? 0.08 : 0.3));
+      g.task = { act: 'drink', dur: vrr(1, 2.5) };
+    }
+  } else if (c === 'dust') {
+    // in the run's soil when there is one, else in the coop litter
+    const zc = runs.length ? runs[Math.floor(vr() * runs.length)].r : home;
+    goIn(g, zc.id, rndIn(zc));
+    g.task = { act: 'dust', dur: vrr(6, 12) };
+  } else if (c === 'watch') {
+    const o = runs[Math.floor(vr() * runs.length)],
+      d = o.door,
+      cc = [home.x + home.w / 2, home.y + home.d / 2],
+      dl = Math.hypot(cc[0] - d[0], cc[1] - d[1]) || 1;
+    goIn(g, home.id, [d[0] + ((cc[0] - d[0]) / dl) * 1.1 + vrr(-0.4, 0.4), d[1] + ((cc[1] - d[1]) / dl) * 1.1 + vrr(-0.4, 0.4)]);
+    g.task = { act: 'idle', dur: vrr(3, 7) };
+  } else if (c === 'preen') g.task = { act: 'preen', dur: vrr(3, 6) };
+  else if (c === 'stretch') g.task = { act: 'stretch', dur: vrr(1.2, 2) };
+  else if (c === 'flap') g.task = { act: 'flap', dur: vrr(0.8, 1.4) };
+  else if (c === 'rest') {
+    const zc = compById(g.zone) || home;
+    goIn(g, zc.id, hot && zc.type === 'run' ? shadeIn(zc) : chill ? nearMate(g, zc) : rndIn(zc));
+    g.task = { act: hot ? 'pant' : 'rest', dur: vrr(3, 7) };
+  } else {
+    const zc = compById(g.zone) || home;
+    goIn(g, zc.id, rndIn(zc));
+    g.task = { act: 'idle', dur: vrr(0.5, 2) };
+  }
+}
+// Moves animal g on by dt seconds: plays out leaving the farm (death or sale), walks its path, counts down its
+// task, and calls think() when it is done. A finished laying sitting puts the egg in the nest or sends it to
+// the incubator.
+function updAgent(g, dt) {
+  if (g.hidden) return;
+  // ---- leaving the farm: dying (fades from 1.2 s, gone at 3.2 s), fading out, or walking out of the gate ----
+  if (g.leaving) {
+    const L = g.leaving;
+    if (L.kind === 'die') {
+      L.t = (L.t || 0) + dt;
+      g.act = 'dead';
+      g.alpha = clamp(1 - (L.t - 1.2) / 2, 0, 1);
+      if (L.t > 3.2) WV.agents.delete(g.id);
+      return;
+    }
+    if (L.kind === 'fade') {
+      L.t = (L.t || 0) + dt;
+      g.alpha = clamp(1 - L.t / 0.6, 0, 1);
+      if (L.t > 0.6) WV.agents.delete(g.id);
+      return;
+    }
+    if (L.kind === 'gate') {
+      if (!move(g, dt)) {
+        g.alpha -= dt * 1.5;
+        if (g.alpha <= 0) WV.agents.delete(g.id);
+      }
+      return;
+    }
+    return;
+  }
+  // rain or snow starting while a bird is out in the run (phase 25): it stops what it is doing and,
+  // after its own short pause (0.2 to 1.5 s, by id, no dice), thinks again and heads in. Not while it
+  // is jumping, passing the pop door or still stepping down from it to the ground.
+  if (g.ref.sp !== 'rabbit' && g.zone && !g.jump && kindOf(g.ref) === 'bird') {
+    const zc = compById(g.zone);
+    if (zc && zc.type === 'run') {
+      if (!wxFallNow()) g.rainCut = 0;
+      else if (!g.rainCut && !(g.path.length && 'zone' in g.path[0]) && Math.abs(g.z - floorZ(zc)) < 0.04) {
+        g.rainCut = 1;
+        g.path = [];
+        g.task = null;
+        g.act = 'idle';
+        g.timer = 0.2 + g.col * 1.3;
+        g.moving = false;
+        g.vx = g.vy = 0;
+        return;
+      }
+    }
+  }
+  // ---- walking: follow the path (move() in world/physics.js) ----
+  if (g.path.length) {
+    g.moving = true;
+    move(g, dt);
+    return;
+  }
+  g.moving = false;
+  g.vx = g.vy = 0;
+  if (g.hz) hopStep(g, dt, false); // finish the hop in the air before standing still
+  // ---- arrived: start the task that was waiting at the end of the path ----
+  if (g.task) {
+    g.act = g.task.act;
+    g.timer = g.task.dur;
+    g.curNest = g.task.nest;
+    g.task = null;
+    return;
+  }
+  // ---- doing the task: count it down; when it ends, lay the egg (laying) and choose the next (think) ----
+  g.timer -= dt;
+  if (g.timer > 0) return;
+  if (g.act === 'lay' && g.layQ.length) {
+    const dest = g.layQ.shift(),
+      n = g.curNest,
+      home = compById(g.home);
+    if (n && home) {
+      if (dest === 'inc') {
+        const inc = pens('incubator').find(c => +c.on) || pens('incubator')[0];
+        if (inc) {
+          WV.fly.push({
+            a: [n.x + n.w / 2, n.y + n.d / 2, n.z + 0.3],
+            b: [inc.x + 1, inc.y + 1, 3.4],
+            t: 0,
+            dur: 1.4
+          });
+          fxText(n.x, n.y, 2.6, 'egg set to hatch', '#f6e7b0');
+        }
+      } else {
+        WV.nest[home.id] = (WV.nest[home.id] || 0) + 1;
+        fxText(n.x + 0.5, n.y, 2.4, '+1 egg', '#fff4c2');
+      }
+    }
+  }
+  think(g);
+}
+// separate() is in world/physics.js (circle-vs-circle, circle-vs-wall and circle-vs-box)
+
+// Body length in ft as drawn: rabbits from weight (cube root of the share of adult weight), chicks 0.45,
+// grown chickens growing to 1.1 by laying age.
+function sizeFt(a) {
+  return a.sp === 'rabbit'
+    ? 1.35 * Math.cbrt(Math.max(0.12, a.wt) / P.rb_adult_wt)
+    : a.st === 'chick'
+      ? 0.45
+      : 1.1 * (0.45 + 0.55 * clamp(a.age / P.ck_lay_age, 0, 1));
+}
+// Shows a short floating text at a farm point (for example "+1 egg"); at most 60 at once.
+function fxText(x, y, z, text, col) {
+  WV.fx.push({ x, y, z, text, col: col || '#fff', t: 0, life: 2.6 });
+  if (WV.fx.length > 60) WV.fx.shift();
+}
+// Runs fn when the world clock reaches hour h at the live speeds, else after d seconds (see loop.js).
+function later(h, d, fn) {
+  let t = WV.t + d,
+    timed = false;
+  if (WV.live && CLOCK.running) {
+    const sp = clockRate();
+    let dh = h - WV.hour;
+    if (dh < 0) dh = 0;
+    t = WV.t + dh / 24 / sp;
+    timed = true;
+  }
+  WV.queue.push({ t, fn, timed });
+}
+
+
+// Original upstream file: source/src/world/physics.js (blob 69170e9be24ba97004d281cbce7cca3fe02e6f80)
+// world/physics.js
+// Farm world (visual only). Movement physics for the sprites: a fixed 1/60 s step, steering with an
+// acceleration limit, rabbit hops and level changes (hutch floor, perch, nest box) under gravity,
+// circle-vs-wall collisions with cage wire, coop walls and run fences, circle-vs-box collisions with
+// feeders, waterers and nest boxes, and circle-vs-circle collisions between animals.
+// Like the rest of the world it reads the model and never writes it, and it uses the world's own dice
+// (vr()), so a replay from the same seed moves every animal the same way and no simulated number can
+// change. Gravity is the real 32.2 ft/s²; hop times are illustrative (visual only).
+// ---- Contents (top-level functions, in file order; kept by tools/code_contents.py) ----
+//   bodyR - collision radius, ft: the body half-width seen from above (never under the old 0.15 ft inset)
+//   obstaclesOf - floor-level boxes an animal walks around, per pen (feeders, waterers, nest boxes on the
+//         floor)
+//   startJump - gravity arc from (x, y, z) to the node's level; lands at most 1.4 ft along the way
+//   jumpStep - Moves a jumping animal on by h seconds along its arc: straight across, up and down under
+//         gravity (PHYS.G).
+//   arrive - Called when animal g reaches path point n: takes the point's zone (a door hop) and height, drops
+//         it from the path and clears the stuck, squeeze and move-over counters.
+//   hopStep - rabbits move in hops: airborne T s, then on the ground 0.35 T s; height from gravity
+//   giveUpWhy - why a spot was given up (diagnostic only; counts in PHYS.why and PHYS.whyAct, never steers
+//         anything)
+//   shiftSpot - phase 32: the spot it was walking to is taken (a pen-mate stands on it or in the last foot of
+//         the way), so it moves over to the nearest open spot beside it, as an animal at a crowded ...
+//   move - one step along the path: steer, hop, jump between levels, give up on a spot that is blocked
+//   pushOutBox - push a circle out of a box; returns the push normal or null
+//   bounce - Bounces animal g off a wall with inward normal nx, ny and springiness e; returns how fast it hit
+//         (0 when moving away).
+//   onFloor - animals on the pen's floor (not mid-jump, not up on a perch or in a raised nest box)
+//   atDoor - walking to a door or gate and within 1 ft of it
+//   pressIn - phase 48: lying touching on purpose.
+//   separate - keep animals apart and inside their pen; a hit shows as a bump in the space lens
+//   physStep - one fixed step of every sprite
+//   physFrame - run as many fixed steps as the frame's time covers; leftover time carries to the next frame
+//   physReplay - test handle: rebuild every sprite from the model with the world's dice at a fixed seed, run n
+//         fixed steps, and return a fingerprint of where every animal is (same seed and n give the ...
+// ---- end of contents ----
+const PHYS = {
+  dt: 1 / 60, // fixed visual timestep, s
+  maxSteps: 6, // most steps one frame may run (a 0.1 s frame needs 6)
+  acc: 0, // frame time (s) not yet used up by a fixed step, carried to the next frame
+  G: 32.2, // gravity, ft/s²
+  accel: 5, // steering: reach full walking speed in 1/5 s
+  restWall: 0.15, // bounce off wire, walls and fences (fraction of speed kept)
+  restPair: 0.1, // bounce between animals
+  steps: 0, // fixed steps run so far (counter)
+  wallHits: 0, // hits on walls, wire and fences (counter)
+  pairHits: 0, // animal-on-animal bumps faster than 0.4 ft/s (counter)
+  jumps: 0, // jumps started (counter)
+  hops: 0, // rabbit hops (counter)
+  giveUps: 0, // spots given up on because a pen-mate, feeder or wall blocked them
+  shifts: 0, // phase 32: taken spots swapped for an open one beside them
+  why: {}, // give-ups by cause (phase 24 diagnostic): mate, fixture, wall, transit, long, other
+  whyAct: {}, // give-ups by animal kind and the act it was walking to
+  ms: 0 // ms the last physFrame took
+};
+// collision radius, ft: the body half-width seen from above (never under the old 0.15 ft inset)
+function bodyR(g) {
+  return clamp(sizeFt(g.ref) * 0.3, 0.15, 0.45);
+}
+// floor-level boxes an animal walks around, per pen (feeders, waterers, nest boxes on the floor)
+function obstaclesOf(c) {
+  const K = WV.K[c.id];
+  if (!K) return [];
+  if (K.obs && K.obsKey === WV.layoutKey) return K.obs;
+  const o = [];
+  if (c.type === 'coop' && K.feeder) {
+    for (const t of K.troughs || []) o.push({ x: t.x, y: t.y, w: t.w, d: t.d });
+    for (const f of K.founts || []) o.push({ x: f.x - f.r, y: f.y - f.r, w: 2 * f.r, d: 2 * f.r });
+  }
+  // phase 27: the legs of the nest-box stand and the roost frame (birds walk under the boxes and bars,
+  // which are 24 in up, but not through their posts)
+  if (c.type === 'coop') for (const l of K.legs || []) o.push({ x: l.x, y: l.y, w: l.w, d: l.d, leg: 1 });
+  if (c.type === 'brooder' && K.btr) {
+    // phase 33: troughs and waterers sized from the chick count (broodGear)
+    for (const t of K.btr) o.push({ x: t.x, y: t.y, w: t.w, d: t.d });
+    for (const f of K.bfo) o.push({ x: f.x - f.r, y: f.y - f.r, w: 2 * f.r, d: 2 * f.r });
+  }
+  if (c.type === 'hutch') {
+    // each hopper's lip pokes through the front wire into the cage; bottles only put a nipple through
+    for (const h of (K.hops || []).concat(K.ownHops || [])) o.push({ x: h[0] - 0.21, y: c.y + c.d - 0.22, w: 0.42, d: 0.22 });
+    for (const n of K.nests || []) o.push({ x: n.x, y: n.y, w: n.w, d: n.d, nest: 1 });
+  }
+  K.obs = o;
+  K.obsKey = WV.layoutKey;
+  return o;
+}
+// gravity arc from (x, y, z) to the node's level; lands at most 1.4 ft along the way
+function startJump(g, n) {
+  const dx = n.x - g.x,
+    dy = n.y - g.y,
+    dd = Math.hypot(dx, dy),
+    f = dd > 1.4 ? 1.4 / dd : 1,
+    z0 = g.z,
+    z1 = n.z,
+    apex = Math.max(z0, z1) + 0.35,
+    vz = Math.sqrt(2 * PHYS.G * (apex - z0)),
+    T = vz / PHYS.G + Math.sqrt((2 * (apex - z1)) / PHYS.G);
+  g.jump = { x0: g.x, y0: g.y, z0, x1: g.x + dx * f, y1: g.y + dy * f, z1, vz, T, t: 0, full: f === 1 };
+  g.vx = g.vy = 0;
+  g.hz = 0;
+  PHYS.jumps++;
+  if (Math.abs(dx) > 0.01) g.face = dx - dy > 0 ? 1 : -1;
+}
+// Moves a jumping animal on by h seconds along its arc: straight across, up and down under gravity (PHYS.G).
+function jumpStep(g, h) {
+  const J = g.jump;
+  J.t = Math.min(J.T, J.t + h);
+  const u = J.t / J.T;
+  g.x = J.x0 + (J.x1 - J.x0) * u;
+  g.y = J.y0 + (J.y1 - J.y0) * u;
+  g.z = J.z0 + J.vz * J.t - 0.5 * PHYS.G * J.t * J.t;
+  g.ph = Math.PI * u;
+  if (J.t >= J.T) {
+    g.z = J.z1;
+    g.jump = null;
+    if (J.full) arrive(g, g.path[0]);
+  }
+  return true;
+}
+// Called when animal g reaches path point n: takes the point's zone (a door hop) and height, drops it from the
+// path and clears the stuck, squeeze and move-over counters.
+function arrive(g, n) {
+  if (!n) return;
+  if ('zone' in n) g.zone = n.zone;
+  if (n.z != null) g.z = n.z;
+  g.path.shift();
+  g.best = null;
+  g.stuck = 0;
+  g.squeeze = 0;
+  g.shifts = 0;
+}
+// rabbits move in hops: airborne T s, then on the ground 0.35 T s; height from gravity
+function hopStep(g, h, moving) {
+  const k = kindOf(g.ref);
+  if (k !== 'rab' && k !== 'kit') return 1;
+  const Ta = (k === 'kit' ? 0.16 : 0.22) + 0.08 * clamp(sizeFt(g.ref) / 1.35, 0, 1.4),
+    Tg = 0.35 * Ta;
+  if (g.hopT == null) g.hopT = Ta; // start on the ground
+  if (!moving && g.hopT >= Ta) {
+    g.hz = 0;
+    return 1;
+  }
+  if (g.hopT === Ta && moving) PHYS.hops++;
+  g.hopT += h;
+  if (g.hopT >= Ta + Tg) {
+    g.hopT = moving ? 0 : Ta;
+    if (moving) PHYS.hops++;
+  }
+  if (g.hopT < Ta) {
+    const t = g.hopT,
+      vz = (PHYS.G * Ta) / 2;
+    g.hz = Math.max(0, vz * t - 0.5 * PHYS.G * t * t);
+    g.ph = Math.PI * (t / Ta);
+    return 1.15; // ground covered mostly in the air
+  }
+  g.hz = 0;
+  return 0.55;
+}
+// why a spot was given up (diagnostic only; counts in PHYS.why and PHYS.whyAct, never steers anything)
+function giveUpWhy(g, n, transit) {
+  let why = 'other';
+  const c = compById(g.zone),
+    r = bodyR(g);
+  if (transit) why = 'transit';
+  else if (g.stuck > 4) why = 'long';
+  else if (c) {
+    if (n.x < c.x + r - 0.05 || n.x > c.x + c.w - r + 0.05 || n.y < c.y + r - 0.05 || n.y > c.y + c.d - r + 0.05)
+      why = 'wall';
+    else if (onFloor(g, c))
+      for (const b of obstaclesOf(c)) {
+        if (b.nest && (g.ref.st === 'kit' || g.wantNest || g.act === 'nest' || g.act === 'pullfur' || g.act === 'huddle')) continue;
+        const px = clamp(n.x, b.x, b.x + b.w),
+          py = clamp(n.y, b.y, b.y + b.d);
+        if (Math.hypot(n.x - px, n.y - py) < r - 0.05) {
+          why = b.nest ? 'nestbox' : 'fixture';
+          break;
+        }
+      }
+    if (why === 'other')
+      for (const o of WV.agents.values()) {
+        if (o === g || o.zone !== g.zone || o.hidden || o.leaving || Math.abs(o.z - g.z) > 0.4) continue;
+        const m = (sizeFt(o.ref) + sizeFt(g.ref)) * 0.38 * (o.hot || g.hot ? 1.25 : 1);
+        if (Math.hypot(o.x - n.x, o.y - n.y) < m + 0.1 || Math.hypot(o.x - g.x, o.y - g.y) < m + 0.1) {
+          why = 'mate';
+          break;
+        }
+      }
+  }
+  PHYS.why[why] = (PHYS.why[why] || 0) + 1;
+  const key = kindOf(g.ref) + ':' + (g.task ? g.task.act : g.act || '?') + ':' + why;
+  PHYS.whyAct[key] = (PHYS.whyAct[key] || 0) + 1;
+  return why;
+}
+// phase 32: the spot it was walking to is taken (a pen-mate stands on it or in the last foot of the
+// way), so it moves over to the nearest open spot beside it, as an animal at a crowded feeder or under
+// a crowded lamp shuffles along to a gap. Candidates sit on rings round the spot at a half, one, one and
+// a half and two body spacings (for eating and drinking at most one, so it stays at the rim); each is
+// kept off the wire and fixtures by reachPt, and the one with most room, less a little for distance
+// from the spot, wins if it really is clear. No dice (the angles start from the side it comes from),
+// so the world's random sequence is untouched by the search itself. Visual only; the model never sees it.
+function shiftSpot(g, n) {
+  const c = compById(g.zone);
+  if (!c || !onFloor(g, c) || (n.z != null && Math.abs(n.z - floorZ(c)) > 0.3)) return false;
+  const box = c.type === 'hutch' ? cageBox(g, c) : c,
+    sg = sizeFt(g.ref),
+    L = [];
+  for (const o of WV.agents.values()) {
+    if (o === g || o.zone !== g.zone || o.hidden || o.leaving || o.jump || Math.abs(o.z - g.z) > 0.4) continue;
+    if (pressIn(o)) continue; // they lie touching (separate() lets them); phase 48: or are pressing in to
+    if (box !== c && cageBox(o, c) !== box) continue;
+    const m = (sizeFt(o.ref) + sg) * 0.38 * (o.hot || g.hot ? 1.25 : 1);
+    L.push([o.x, o.y, m]);
+    const t = o.path.length ? o.path[o.path.length - 1] : null;
+    if (t && !('zone' in t)) L.push([t.x, t.y, m]);
+  }
+  const room = (x, y) => {
+    let m = 9;
+    for (const q of L) m = Math.min(m, Math.hypot(x - q[0], y - q[1]) - q[2]);
+    return m;
+  };
+  // phase 46: a kit under 18 days stays in its nest box (FAO x5082; agents.js sends it nowhere else), so a
+  // place it shifts to must be in the box too. Before, a shift could leave it lying just outside the box
+  const Kh = WV.K[g.home],
+    nb = g.ref.st === 'kit' && g.ref.age < 18 && Kh && Kh.nestOf ? Kh.nestOf[g.ref.mother] : null,
+    inNb = q => !nb || (q[0] >= nb.x + 0.1 && q[0] <= nb.x + nb.w - 0.1 && q[1] >= nb.y + 0.1 && q[1] <= nb.y + nb.d - 0.1);
+  const act = g.task ? g.task.act : '',
+    rings = act === 'eat' || act === 'peck' || act === 'drink' ? [0.5, 1] : [0.5, 1, 1.5, 2],
+    sp = sg * 0.76,
+    a0 = Math.atan2(g.y - n.y, g.x - n.x);
+  let best = null,
+    bs = -1e9;
+  for (const f of rings)
+    for (let i = 0; i < 8; i++) {
+      const an = a0 + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * (Math.PI / 4),
+        q = reachPt(g, c, [n.x + Math.cos(an) * f * sp, n.y + Math.sin(an) * f * sp], true),
+        dq = Math.hypot(q[0] - n.x, q[1] - n.y),
+        rm = room(q[0], q[1]),
+        s = Math.min(rm, 0.15) - 0.35 * dq;
+      // beside the spot: reachPt may push a place off a fixture, but not further than two spacings
+      if (rm > 0.03 && dq <= 2 * sp && s > bs && inNb(q)) (bs = s), (best = q);
+    }
+  if (!best) return false;
+  n.x = best[0];
+  n.y = best[1];
+  return true;
+}
+// one step along the path: steer, hop, jump between levels, give up on a spot that is blocked
+function move(g, h) {
+  const n = g.path[0];
+  if (!n) return false;
+  if (g.vx == null) g.vx = g.vy = 0;
+  if (g.jump) return jumpStep(g, h);
+  const sp = speedOf(g),
+    dx = n.x - g.x,
+    dy = n.y - g.y,
+    dd = Math.hypot(dx, dy),
+    nz = n.z != null ? n.z : g.z,
+    dz = nz - g.z,
+    last = g.path.length === 1,
+    transit = 'zone' in n;
+  // a change of level: jump down at once, jump up when within 1.5 ft
+  if (dz < -0.25 || (dz > 0.25 && dd < 1.5)) {
+    startJump(g, n);
+    return jumpStep(g, h);
+  }
+  if (dd < 0.06 || (last && dd < 0.12)) {
+    if (dz > 0.25) startJump(g, n);
+    else arrive(g, n);
+    return true;
+  }
+  // blocked (a pen-mate, a feeder or the wire is in the way): no progress for 1.2 s near the spot
+  if (g.best == null || dd < g.best - 0.02) {
+    g.best = dd;
+    g.stuck = 0;
+  } else g.stuck = (g.stuck || 0) + h;
+  // farther than 1.2 ft from the spot (or heading for a door): after 1.2 s it squeezes between the
+  // others (half the spacing) instead of stopping short; it gives up only after 4 s (phase 24)
+  if (g.stuck > 1.2 && (dd >= 1.2 || transit)) g.squeeze = 1;
+  // phase 32: near a taken spot it first moves over to an open one beside it (at most twice per spot)
+  if (g.stuck > 1.2 && dd < 1.2 && !transit && last && (g.shifts || 0) < 2 && shiftSpot(g, n)) {
+    g.shifts = (g.shifts || 0) + 1;
+    PHYS.shifts++;
+    g.best = null;
+    g.stuck = 0;
+    return true;
+  }
+  if ((g.stuck > 1.2 && dd < 1.2 && !transit) || g.stuck > 4) {
+    if (transit) {
+      g.x = n.x;
+      g.y = n.y;
+    }
+    PHYS.giveUps++;
+    const why = giveUpWhy(g, n, transit);
+    // phase 32: no gap at the feeder or drinker: it stands and waits its turn instead of pecking or
+    // drinking at nothing, and thinks again a second later
+    // (only in a building with feeders: pecking in the run is foraging, not a place at a feeder)
+    const zc = compById(g.zone);
+    if (why === 'mate' && last && g.task && zc && zc.type !== 'run' && (g.task.act === 'eat' || g.task.act === 'peck' || g.task.act === 'drink'))
+      g.task = { act: 'idle', dur: 1, waiting: 1 };
+    if (dz > 0.25) startJump(g, n);
+    else arrive(g, n);
+    g.vx = g.vy = 0;
+    return true;
+  }
+  // steer: full speed toward the point, slowing over the last 0.6 ft; acceleration is limited
+  const want = last ? Math.min(sp, (sp * dd) / 0.6 + 0.15) : sp,
+    amax = PHYS.accel * sp * h;
+  let ax = (dx / dd) * want - g.vx,
+    ay = (dy / dd) * want - g.vy;
+  const am = Math.hypot(ax, ay);
+  if (am > amax) {
+    ax *= amax / am;
+    ay *= amax / am;
+  }
+  g.vx += ax;
+  g.vy += ay;
+  const gait = hopStep(g, h, true),
+    stx = g.vx * h * gait,
+    sty = g.vy * h * gait,
+    st = Math.hypot(stx, sty);
+  g.x += stx;
+  g.y += sty;
+  if (Math.abs(dz) > 1e-4) g.z += dz * Math.min(1, st / Math.max(dd, 1e-3));
+  if (Math.abs(g.vx - g.vy) > 0.05) g.face = g.vx - g.vy > 0 ? 1 : -1;
+  const k = kindOf(g.ref);
+  if (k !== 'rab' && k !== 'kit') g.ph += st * 3.4;
+  return true;
+}
+// push a circle out of a box; returns the push normal or null
+function pushOutBox(g, r, b) {
+  const px = clamp(g.x, b.x, b.x + b.w),
+    py = clamp(g.y, b.y, b.y + b.d);
+  let nx = g.x - px,
+    ny = g.y - py,
+    d = Math.hypot(nx, ny);
+  if (d >= r) return null;
+  if (d < 1e-6) {
+    // centre inside the box: leave by the nearest side
+    const L = g.x - b.x,
+      R = b.x + b.w - g.x,
+      T = g.y - b.y,
+      B = b.y + b.d - g.y,
+      m = Math.min(L, R, T, B);
+    if (m === L) (nx = -1), (ny = 0), (d = -L);
+    else if (m === R) (nx = 1), (ny = 0), (d = -R);
+    else if (m === T) (nx = 0), (ny = -1), (d = -T);
+    else (nx = 0), (ny = 1), (d = -B);
+  } else {
+    nx /= d;
+    ny /= d;
+  }
+  g.x += nx * (r - d);
+  g.y += ny * (r - d);
+  return [nx, ny];
+}
+// Bounces animal g off a wall with inward normal nx, ny and springiness e; returns how fast it hit (0 when
+// moving away).
+function bounce(g, nx, ny, e) {
+  const vn = (g.vx || 0) * nx + (g.vy || 0) * ny;
+  if (vn >= 0) return 0;
+  g.vx -= (1 + e) * vn * nx;
+  g.vy -= (1 + e) * vn * ny;
+  return -vn;
+}
+// animals on the pen's floor (not mid-jump, not up on a perch or in a raised nest box)
+function onFloor(g, c) {
+  return !g.jump && Math.abs(g.z - floorZ(c)) < 0.3;
+}
+// walking to a door or gate and within 1 ft of it
+function atDoor(g) {
+  const n = g.path[0];
+  return !!n && 'zone' in n && Math.abs(n.x - g.x) < 1 && Math.abs(n.y - g.y) < 1;
+}
+// phase 48: lying touching on purpose. An animal resting on the roost or huddling was already let lie
+// against its pen-mates (separate() skips it). Now one walking in to huddle counts too once it is on the
+// last leg and within 1.2 ft of its place, the window in which move() would otherwise give up: it presses
+// in among the others the way chicks crowd together near the heat when they are cold (MU G8351). Before,
+// two chicks heading for the lamp still pushed each other apart because neither was huddling yet, and
+// one gave up (phase 48 diagnostic: the nearest chick at 46 of 101 lamp give-ups was another chick
+// walking in to huddle, and every one came on the last leg). The 1.2 ft is move()'s window, not sourced.
+function pressIn(g) {
+  if (g.act === 'roost' || g.act === 'huddle') return true;
+  if (!g.task || g.task.act !== 'huddle' || g.path.length !== 1) return false;
+  const n = g.path[0];
+  return !('zone' in n) && Math.hypot(n.x - g.x, n.y - g.y) < 1.2;
+}
+// keep animals apart and inside their pen; a hit shows as a bump in the space lens
+function separate() {
+  const by = {};
+  for (const g of WV.agents.values()) {
+    if (g.hidden || g.leaving || g.off || g.jump) continue;
+    const z = g.zone || '_';
+    (by[z] = by[z] || []).push(g);
+  }
+  for (const z in by) {
+    const L = by[z],
+      cz = compById(z),
+      caged = cz && cz.type === 'hutch';
+    for (let i = 0; i < L.length; i++) {
+      const p = L[i];
+      if (pressIn(p)) continue;
+      for (let j = i + 1; j < L.length; j++) {
+        const q = L[j];
+        if (pressIn(q) || Math.abs(p.z - q.z) > 0.4) continue;
+        // two animals passing the same pop door or gate squeeze by single file instead of
+        // blocking it for each other (before phase 24 they stalled there and were moved through)
+        if (atDoor(p) && atDoor(q)) continue;
+        // phase 28: rabbits in neighbouring cages of a hutch bank have wire between them
+        if (caged && cageBox(p, cz) !== cageBox(q, cz)) continue;
+        const dx = q.x - p.x,
+          dy = q.y - p.y,
+          m = (sizeFt(p.ref) + sizeFt(q.ref)) * 0.38 * (p.hot || q.hot ? 1.25 : 1) * (p.squeeze || q.squeeze ? 0.5 : 1);
+        if (Math.abs(dx) >= m || Math.abs(dy) >= m) continue;
+        const d = Math.hypot(dx, dy);
+        if (d >= m || d < 1e-4) continue;
+        // heavier animals move less (mass ~ size cubed)
+        const mp = Math.pow(sizeFt(p.ref), 3),
+          mq = Math.pow(sizeFt(q.ref), 3),
+          wp = mq / (mp + mq),
+          wq = mp / (mp + mq),
+          nx = dx / d,
+          ny = dy / d,
+          o = (m - d) * 0.4;
+        p.x -= nx * o * wp;
+        p.y -= ny * o * wp;
+        q.x += nx * o * wq;
+        q.y += ny * o * wq;
+        const vn = ((q.vx || 0) - (p.vx || 0)) * nx + ((q.vy || 0) - (p.vy || 0)) * ny;
+        if (vn < 0) {
+          const jn = -(1 + PHYS.restPair) * vn,
+            ip = 1 / mp,
+            iq = 1 / mq,
+            J = jn / (ip + iq);
+          p.vx = (p.vx || 0) - J * ip * nx;
+          p.vy = (p.vy || 0) - J * ip * ny;
+          q.vx = (q.vx || 0) + J * iq * nx;
+          q.vy = (q.vy || 0) + J * iq * ny;
+          if (-vn > 0.4) PHYS.pairHits++;
+        }
+        p.bump = q.bump = WV.t;
+      }
+    }
+    const c = compById(z);
+    if (!c) continue;
+    const obs = obstaclesOf(c);
+    for (const g of L) {
+      const transit = g.path.length && 'zone' in g.path[0];
+      // phase 28: on the way to a door the posts and fixtures still block (a hen walked through a nest
+      // post on her way across the coop); only the last foot through the doorway is left free
+      if (transit && atDoor(g)) continue;
+      const r = bodyR(g);
+      if (onFloor(g, c)) {
+        for (const b of obs) {
+          if (b.nest && (g.ref.st === 'kit' || g.wantNest || g.act === 'nest' || g.act === 'pullfur' || g.act === 'huddle')) continue;
+          const nn = pushOutBox(g, r, b);
+          if (nn) bounce(g, nn[0], nn[1], PHYS.restWall);
+        }
+      }
+      if (transit) continue; // passing a door or gate: no wall
+      // cage wire, coop walls and run fences: the pen's rectangle, less the body radius. Phase 28: in a
+      // hutch bank, the rabbit's own cage (the dividers are wire it cannot pass)
+      const cb = caged ? cageBox(g, c) : c,
+        x0 = cb.x + r,
+        x1 = cb.x + cb.w - r,
+        y0 = cb.y + r,
+        y1 = cb.y + cb.d - r;
+      let hit = 0;
+      if (x0 > x1) g.x = cb.x + cb.w / 2;
+      else if (g.x < x0) (g.x = x0), (hit = Math.max(hit, bounce(g, 1, 0, PHYS.restWall)));
+      else if (g.x > x1) (g.x = x1), (hit = Math.max(hit, bounce(g, -1, 0, PHYS.restWall)));
+      if (y0 > y1) g.y = cb.y + cb.d / 2;
+      else if (g.y < y0) (g.y = y0), (hit = Math.max(hit, bounce(g, 0, 1, PHYS.restWall)));
+      else if (g.y > y1) (g.y = y1), (hit = Math.max(hit, bounce(g, 0, -1, PHYS.restWall)));
+      if (hit > 0.3) {
+        PHYS.wallHits++;
+        g.bump = WV.t;
+      }
+    }
+  }
+}
+// one fixed step of every sprite
+function physStep(h) {
+  for (const g of WV.agents.values()) if (!g.off) updAgent(g, h);
+  separate();
+  PHYS.steps++;
+}
+// run as many fixed steps as the frame's time covers; leftover time carries to the next frame
+function physFrame(dt) {
+  const t0 = performance.now();
+  PHYS.acc += dt;
+  let n = 0;
+  while (PHYS.acc >= PHYS.dt && n < PHYS.maxSteps) {
+    physStep(PHYS.dt);
+    PHYS.acc -= PHYS.dt;
+    n++;
+  }
+  if (n === PHYS.maxSteps) PHYS.acc = 0;
+  PHYS.ms = performance.now() - t0;
+  return n;
+}
+// test handle: rebuild every sprite from the model with the world's dice at a fixed seed, run n fixed
+// steps, and return a fingerprint of where every animal is (same seed and n give the same answer)
+function physReplay(n, seed) {
+  vSeed = seed || 20261104;
+  WV.lastS = null;
+  PHYS.acc = 0;
+  WV.t = 0;
+  worldSync();
+  const c0 = { w: PHYS.wallHits, p: PHYS.pairHits, j: PHYS.jumps, h: PHYS.hops, u: PHYS.giveUps, s: PHYS.shifts };
+  for (let i = 0; i < n; i++) physStep(PHYS.dt);
+  let hsh = 0,
+    out = 0,
+    maxSpd = 0;
+  const ids = [...WV.agents.keys()].sort((a, b) => a - b);
+  for (const id of ids) {
+    const g = WV.agents.get(id),
+      s = Math.round(g.x * 1000) + ',' + Math.round(g.y * 1000) + ',' + Math.round(g.z * 1000);
+    for (let i = 0; i < s.length; i++) hsh = (Math.imul(hsh, 31) + s.charCodeAt(i)) | 0;
+    maxSpd = Math.max(maxSpd, Math.hypot(g.vx || 0, g.vy || 0));
+    const c = g.zone && compById(g.zone);
+    if (c && !g.leaving && !(g.path.length && 'zone' in g.path[0]) && !g.jump)
+      if (g.x < c.x - 0.1 || g.x > c.x + c.w + 0.1 || g.y < c.y - 0.1 || g.y > c.y + c.d + 0.1) out++;
+  }
+  return {
+    hash: hsh,
+    n: ids.length,
+    out,
+    maxSpd,
+    wallHits: PHYS.wallHits - c0.w,
+    pairHits: PHYS.pairHits - c0.p,
+    jumps: PHYS.jumps - c0.j,
+    hops: PHYS.hops - c0.h,
+    giveUps: PHYS.giveUps - c0.u,
+    shifts: PHYS.shifts - c0.s
+  };
+}
+
+
+// Original upstream file: source/src/world/sync.js (blob 5bd867f1775791710005dfcc133e7f03fc913e5b)
+// world/sync.js
+// Farm world. worldSync() compares the sprites with the model's animals after every change and adds,
+// moves or removes them.
+// ---------- reconcile the world with the model after every change ----------
+function worldSync() {
+  if (!WV.ctx || !S || !S.today) return;
+  const reset = WV.lastS !== S || S.day < WV.lastDay;
+  if (reset) {
+    WV.agents.clear();
+    WV.fx = [];
+    WV.fly = [];
+    WV.nest = {};
+    WV.queue = [];
+    WV.lastS = S;
+    WV.lastDay = S.day;
+    WV.farmer = null;
+  }
+  const days = S.day - WV.lastDay,
+    lk = layoutKey();
+  // pens that moved carry their animals with them
+  for (const c of S.comps) {
+    const o = WV.pos[c.id];
+    if (o && (o[0] !== c.x || o[1] !== c.y)) {
+      const dx = c.x - o[0],
+        dy = c.y - o[1];
+      for (const g of WV.agents.values())
+        if (g.zone === c.id) {
+          g.x += dx;
+          g.y += dy;
+          g.path.forEach(n => {
+            if (!('zone' in n) || n.zone === c.id) {
+              n.x += dx;
+              n.y += dy;
+            }
+          });
+        }
+    }
+    WV.pos[c.id] = [c.x, c.y];
+  }
+  if (reset || days || lk !== WV.layoutKey || WV.lastToday !== S.today) {
+    buildCtx();
+    buildVis();
+    buildRoute();
+    WV.layoutKey = lk;
+    WV.lastToday = S.today;
+  }
+  const fast = !reset && (days > 1 || (CLOCK.running && clockRate() > 4.5));
+  const ind = !reset && !fast && days === 1;
+  const present = new Set(),
+    births = new Map();
+  const d = S.today.d;
+  let setLeft = ind && d ? d.eggsSet : 0;
+  for (const a of S.animals) {
+    present.add(a.id);
+    let g = WV.agents.get(a.id);
+    if (!g) {
+      if (reset || fast || (days === 0 && !a.mother && a.age > 1 && WV.agents.size === 0)) {
+        spawn(a);
+        continue;
+      }
+      if (a.sp === 'rabbit' && a.mother != null && a.age <= 1) {
+        const mg = WV.agents.get(a.mother);
+        g = spawn(a);
+        if (mg) {
+          const n = WV.K[a.enc] && WV.K[a.enc].nestOf && WV.K[a.enc].nestOf[a.mother];
+          g.x = n ? n.x + 0.3 + vr() * (n.w - 0.6) : mg.x;
+          g.y = n ? n.y + 0.3 + vr() * (n.d - 0.6) : mg.y;
+          g.z = mg.z;
+        }
+        if (ind) {
+          g.hidden = true;
+          births.set(a.mother, (births.get(a.mother) || []).concat([g]));
+        }
+        continue;
+      }
+      if (a.sp === 'chicken' && a.age <= 1 && !a.mother) {
+        const inc = pens('incubator')[0];
+        g = spawn(a, inc ? [inc.x + 1, inc.y + 1, 3.4] : null);
+        if (ind && inc) {
+          g.hidden = true;
+          later(vrr(7, 14), vrr(0.2, 1.5), () => {
+            g.hidden = false;
+            fxText(inc.x, inc.y, 4, 'chick hatched', '#ffe27a');
+          });
+        }
+        continue;
+      }
+      if (days === 0 && !fast) {
+        spawn(a, gatePt());
+        fxText(60, PLOT.h, 1, 'new animal arrives', '#cfe8ff');
+        continue;
+      }
+      spawn(a);
+      continue;
+    }
+    g.ref = a;
+    if (g.home !== a.enc && !g.leaving) {
+      if (fast) {
+        const c = a.enc && compById(a.enc);
+        g.home = a.enc;
+        g.zone = a.enc;
+        g.path = [];
+        if (c) {
+          const p = rndIn(c);
+          g.x = p[0];
+          g.y = p[1];
+          g.z = floorZ(c);
+        }
+      } else routeTo(g, a.enc);
+    }
+    if (a.sp === 'chicken' && a.eggs > g.eggs) {
+      if (ind) {
+        for (let i = 0; i < a.eggs - g.eggs; i++) {
+          const dest = setLeft > 0 ? (setLeft--, 'inc') : 'nest';
+          const gg = g;
+          later(vrr(WV.sun ? WV.sun.rise + 0.5 : 7, WV.sun ? WV.sun.rise + 5 : 12), vrr(0, 2.5), () => {
+            gg.layQ.push(dest);
+          });
+        }
+      }
+      g.eggs = a.eggs;
+    }
+  }
+  for (const [mid, list] of births) {
+    const mg = WV.agents.get(mid);
+    later(vrr(1, 6), vrr(0.2, 1.5), () => {
+      list.forEach(g => (g.hidden = false));
+      if (mg) fxText(mg.x, mg.y, mg.z + 1.4, '+' + list.length + ' kits born', '#ffd1dc');
+    });
+  }
+  for (const [id, g] of WV.agents) {
+    if (present.has(id) || g.leaving) continue;
+    depart(g, reset || fast);
+  }
+  if (fast) {
+    for (const row of S.hist.filter(r => r.day > WV.lastDay && r.day <= S.day))
+      for (const k of ['eggs', 'births', 'hatched', 'deaths', 'fryersSold'])
+        WV.agg[k] = (WV.agg[k] || 0) + (row[k] || 0);
+    const coop = pens('coop')[0];
+    if (coop && d)
+      WV.nest[coop.id] = Math.min(d.eggsSold || 0, ((WV.K[coop.id] && WV.K[coop.id].nests.length) || 4) * 3);
+  }
+  WV.lastDay = S.day;
+}
+// Starts animal g leaving the world: quick ones just fade; sold or retired animals wait for mid-morning, then
+// walk out of their pen to the gate; others (deaths) play out as set below.
+function depart(g, quick) {
+  const a = g.ref;
+  if (quick) {
+    g.leaving = { kind: 'fade' };
+    return;
+  }
+  if (a.sold || a.retired) {
+    g.leaving = { kind: 'wait' };
+    later(vrr(9, 11), vrr(0, 1), () => {
+      g.leaving = { kind: 'gate' };
+      const gp = gatePt();
+      g.path = [];
+      const cur = g.zone && compById(g.zone);
+      if (cur) {
+        const e = edgePt(cur, gp[0], gp[1]);
+        g.path.push({ x: e[0], y: e[1], z: 0, zone: null });
+      }
+      g.path.push({ x: gp[0], y: gp[1] - 0.5, z: 0, zone: null }, { x: gp[0], y: gp[1] + 3, z: 0 });
+      fxText(
+        g.x,
+        g.y,
+        g.z + 1.4,
+        a.retired
+          ? 'retired'
+          : a.sp === 'rabbit'
+            ? 'fryer sold 
+})();
+ + (a.wt * P.pr_fryer).toFixed(2)
+            : 'bird sold 
+})();
+ + (+P.pr_bird).toFixed(2),
+        '#c8f7c5'
+      );
+    });
+    return;
+  }
+  g.leaving = { kind: 'wait' };
+  const cause = a.deathCause || (a.stress ? a.stress + ' stress' : 'background risk');
+  later(vrr(0, 8), vrr(0, 1.2), () => {
+    g.leaving = { kind: 'die' };
+    g.path = [];
+    fxText(g.x, g.y, g.z + 1.2, 'died: ' + cause, '#ffb4a8');
+  });
+}
+
+// ---------- farmer walks the chore route the labor formula prices ----------
+function updFarmer(dt) {
+  const F = WV.farmer,
+    R = WV.route;
+  if (!F || !R) return;
+  const sp = Math.max(0.5, P.lb_mph) * 1.46667;
+  F.moving = false;
+  if (!R.nodes.length || (WV.sun && WV.sun.night)) {
+    const tgt = R.feed ? approach(R.feed, F.x, F.y) : [4, 4];
+    goF(F, tgt, sp, dt);
+    F.carry = null;
+    return;
+  }
+  if (F.wait > 0) {
+    F.wait -= dt;
+    return;
+  }
+  const n = R.nodes[F.i % R.nodes.length],
+    tgt = F.tgt || (F.tgt = approach(n.c, F.x, F.y));
+  if (goF(F, tgt, sp, dt)) return;
+  F.tgt = null;
+  F.i = (F.i + 1) % R.nodes.length;
+  F.wait = n.kind === 'pen' ? 1.4 : 0.9;
+  if (n.kind === 'feed') F.carry = 'feed';
+  else if (n.kind === 'water') F.carry = 'water';
+  else {
+    F.carry = null;
+    if (n.c.type === 'coop' && WV.nest[n.c.id]) {
+      fxText(n.c.x + n.c.w / 2, n.c.y + n.c.d, 3, WV.nest[n.c.id] + ' eggs collected to sell', '#fff4c2');
+      WV.nest[n.c.id] = 0;
+    }
+  }
+}
+// Walks the farmer F toward point t at speed sp for dt seconds; false once there.
+function goF(F, t, sp, dt) {
+  const dx = t[0] - F.x,
+    dy = t[1] - F.y,
+    d = Math.hypot(dx, dy);
+  if (d < 0.05) return false;
+  const st = Math.min(d, sp * dt);
+  F.x += (dx / d) * st;
+  F.y += (dy / d) * st;
+  F.ph += dt * 7;
+  F.moving = true;
+  if (Math.abs(dx - dy) > 0.01) F.face = dx - dy > 0 ? 1 : -1;
+  return true;
+}
+
+/* END original native farm visual source. */
+
+
+/* Homestead-only adapter. Visual world state is separate from the biological RNG
+ * and must never write to S, P, ledgers or model results.
+ * Source: farm-sim/source/src/world/{base,cages,context,agents,physics,sync}.js
+ */
+const nativeVisual=(function(){
+  let booted=false;
+  function setHour(hour){
+    if(!Number.isFinite(hour)||hour<0||hour>=24)throw new RangeError("Native Farm hour must be in [0,24)");
+    WV.hour=hour;
+    CLOCK.frac=hour/24;
+    WV.sun=sunInfo();
+  }
+  function init(seed=20261104,hour=9){
+    if(!Number.isSafeInteger(seed))throw new TypeError("Native visual seed must be an integer");
+    vSeed=(seed>>>0)||20261104;
+    WV.ctx={}; // non-drawing sentinel: original worldSync checks canvas readiness
+    WV.agents.clear();
+    WV.fx=[];WV.fly=[];WV.air=[];WV.nest={};WV.queue=[];
+    WV.vis=new Map();WV.pos={};WV.K={};WV.route=null;WV.farmer=null;
+    WV.lastS=null;WV.lastDay=-1;WV.lastToday=null;WV.layoutKey="";
+    WV.t=0;WV.agg={};WV.aggT=0;WV.live=true;
+    CLOCK.running=false;CLOCK.speed=4;CLOCK.owed=0;
+    PHYS.acc=0;PHYS.steps=0;PHYS.wallHits=0;PHYS.pairHits=0;
+    PHYS.hops=0;PHYS.jumps=0;PHYS.shifts=0;PHYS.giveUps=0;
+    setHour(hour);
+    booted=true;
+    worldSync();
+    return stats();
+  }
+  function sync(hour=9){
+    if(!booted)init(20261104,hour);
+    setHour(hour);
+    worldSync();
+    return WV;
+  }
+  function frame(dt,playing,hour=9){
+    if(!Number.isFinite(dt)||dt<0)throw new RangeError("Invalid native Farm frame seconds");
+    sync(hour);
+    CLOCK.running=Boolean(playing);
+    if(!playing||dt===0)return stats();
+    // Match original world/loop.js frame caps, event queue and 90-agent display cap.
+    const step=Math.min(0.1,dt);
+    WV.t+=step;
+    const q=WV.queue;
+    for(let i=q.length-1;i>=0;i--){
+      if(q[i].t<=WV.t||!WV.live){const e=q.splice(i,1)[0];e.fn();}
+    }
+    const cnt={};
+    for(const g of WV.agents.values()){
+      if(g.hidden||g.leaving){g.off=false;continue;}
+      const z=g.zone||"_";
+      cnt[z]=(cnt[z]||0)+1;
+      g.off=cnt[z]>90;
+    }
+    physFrame(step); // original 1/60-second physics and original updAgent/think
+    updFarmer(step);
+    return stats();
+  }
+  function stats(){
+    return {initialized:booted,agentCount:WV.agents.size,day:WV.lastDay,
+      visualSteps:PHYS.steps,wallHits:PHYS.wallHits,pairHits:PHYS.pairHits,
+      hops:PHYS.hops,jumps:PHYS.jumps,visualOnly:true};
+  }
+  return Object.freeze({init,sync,frame,world:()=>WV,stats});
+})();
+
+return Object.freeze({reset,advanceDay,snapshot,setParameter,nativeVisual});
 })();
