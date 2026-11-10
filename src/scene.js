@@ -808,9 +808,11 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   barn.add(box(2.24,.055,.48,m.darkWood,2.9,.79,6.0));
   for(const x of [1.87,3.93])barn.add(box(.16,.65,.20,m.wood,x,.33,6.0));
   const animalArea=group("farm","Pasture, hutches and livestock",30,5);
-  // South entrance remains open precisely where the coop ramp crosses the fence.
-  // The surrounding rails do not intersect the ramp or form an invisible gate.
-  const fenceLines=[[[19,-2],[28.35,-2]],[[31.65,-2],[44,-2]],
+  // The coop ramp projects toward positive Z and ends inside this enclosure.
+  // Keep the opposite (negative-Z) boundary continuous: the former opening at
+  // x=28.35..31.65, z=-2 was not connected to the ramp and looked like a gate
+  // to nowhere. This fence is illustrative, not a native Farm collision wall.
+  const fenceLines=[[[19,-2],[44,-2]],
     [[44,-2],[47,20]],[[47,20],[18,20]],[[18,20],[19,-2]]];
   function woodFence(a,b){
     const dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz),num=Math.ceil(len/2.2);
@@ -825,11 +827,6 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     }
   }
   fenceLines.forEach(([a,b])=>woodFence(a,b));
-  for(const gx of [28.35,31.65]){
-    const y=terrainY(gx,-2);
-    const post=cyl(.14,.16,1.83,m.darkWood,gx,y+.9,-2,9);
-    post.name="Coop gate opening marker";scene.add(post);
-  }
   // Move the hutches wholly within the fence (west edge is near x=18–19).
   const hutches=group("farm","Rabbit hutches",24.5,11);
   // Reuse Farm's raised wire-floor hutches, outside feeders/water bottles,
