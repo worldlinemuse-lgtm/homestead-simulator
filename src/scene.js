@@ -1382,7 +1382,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       elevationDeg:elevation*180/Math.PI,azimuthDeg:azimuth*180/Math.PI,
       directIntensity:direct.intensity};
   }
-  let nativeAnimalPoses=null;
+  let nativeAnimalPoses=null,nativeGeneration=null;
   let visualSunState=null;
   let previous=performance.now();
   function animate(now){
@@ -1394,6 +1394,15 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     // Advance the ORIGINAL visual-only Farm controller at its fixed 1/60 s step.
     // World agent IDs and physics positions are never fabricated by this renderer.
     if(data?.farmWorld&&farmVisual){
+      const generation=farmVisual.stats().generation;
+      if(nativeGeneration!==generation){
+        nativeGeneration=generation;nativeAnimalPoses=null;
+        for(const rig of agents.children){
+          rig.userData.nativePoseInitialized=false;
+          rig.userData.nativePoseChanged=false;
+          rig.userData.travelM=0;
+        }
+      }
       farmVisual.frame(dt,playing,data.clock.hourOfDay);
       const sample=nativeFarmWorldPoses(data.farmWorld,data.farmWorldOriginM);
       const next=new Map();
