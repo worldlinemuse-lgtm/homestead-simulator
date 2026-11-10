@@ -21,6 +21,10 @@ function setup(mode){
         if(mode==='infinity-production')state.produced=Infinity;
         if(mode==='decrease-production')state.produced=-1;
         if(mode==='null-result')return null;
+        if(mode==='nan-timestep')return {dt:NaN};
+        if(mode==='zero-timestep')return {dt:0};
+        if(mode==='oversized-timestep')return {dt:dt+1};
+        if(mode==='infinite-timestep')return {dt:Infinity};
         return {dt};
       }
     }
@@ -30,7 +34,7 @@ function setup(mode){
   return new context.HomesteadCoordinator.Coordinator({pumpElectricalW:0});
 }
 
-for(const mode of ['nan-production','infinity-production','decrease-production','null-result']){
+for(const mode of ['nan-production','infinity-production','decrease-production','null-result','nan-timestep','zero-timestep','oversized-timestep','infinite-timestep']){
   test('water solver rejects '+mode,()=>{
     const sim=setup(mode);
     assert.throws(()=>sim.stepHour(),/Water solver returned/);
