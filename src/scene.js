@@ -1660,7 +1660,13 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       visualSun:visualSunState?{...visualSunState}:null,
       nativeEnclosureLayout:{count:nativeEnclosureCount,footprints:nativeEnclosureFootprints,renderedMeshes:nativeEnclosures.children.length, 
         // Derive rail/post centers from actual rendered meshes, not source metadata. 
-        meshCenters:nativeEnclosures.children.map(o=>({x:o.position.x,y:o.position.y,z:o.position.z}))},
+        meshCenters:nativeEnclosures.children.map(o=>({x:o.position.x,y:o.position.y,z:o.position.z})),
+        // Actual world-space AABBs include post radii and rotated rail thickness.
+        meshBounds:nativeEnclosures.children.map(o=>{
+          const b=new THREE.Box3().setFromObject(o);
+          return {min:{x:b.min.x,y:b.min.y,z:b.min.z},
+            max:{x:b.max.x,y:b.max.y,z:b.max.z}};
+        })},
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
       tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport(),
       structureAudit:{houseFacade:facadeProbe(homestead,houseFront,6,3),
