@@ -1472,10 +1472,10 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         // The native controller owns horizontal motion and rabbit elevation.
         // Chicken roots follow the shared terrain: do not float the whole bird
         // 0.35 native feet above the ground (native coop floor is illustrative).
+        const nativeGround=terrainY(nativePose.position.x,nativePose.position.z);
         a.position.set(nativePose.position.x,
-          chicken?terrainY(nativePose.position.x,nativePose.position.z):
-            terrainY(nativePose.position.x,nativePose.position.z)+
-              Math.max(0,nativePose.position.y-0.625),
+          !playing||chicken?nativeGround:
+            nativeGround+Math.max(0,nativePose.position.y-0.625),
           nativePose.position.z);
         if(distance>1e-5)a.rotation.y=Math.atan2(dx,dz);
         s.nativePoseChanged=false;
