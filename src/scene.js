@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import {nativeFarmWorldPoses,nativeFarmComponentFootprint,FEET_TO_METRES} from "./upstream/farm-world/pose-adapter.mjs";
 import {frameDeltaSeconds,smoothAlpha,gaitPose,chickenFootPhase,chickenSwingLift,
   CHICKEN_STANCE_FRACTION} from "./visual-motion.mjs";
 
@@ -8,7 +9,7 @@ import {frameDeltaSeconds,smoothAlpha,gaitPose,chickenFootPhase,chickenSwingLift
  * All animation highlighting comes exclusively from the coordinator snapshot.
  * The original physics and biological models are untouched by this renderer.
  */
-export function makeScene(canvas,onSelect=()=>{}){
+export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:"high-performance"});
   // Adapt Farm Simulator world/perf.js's visual-only Auto quality policy.
   // Device DPR is an upper bound, not a promise of smooth rendering.
@@ -722,8 +723,12 @@ export function makeScene(canvas,onSelect=()=>{}){
     target.add(screen);housingScreenCount++;
     return screen;
   }
-  const barn=group("farm","Henhouse",30,-10);
-  foundationFor(barn,30,-10,9.25,8.5);
+  const barn=group("farm","Henhouse",33,7.2);
+  foundationFor(barn,33,7.2,9.25,8.5);
+  // Place the illustrated building's east wall alongside the native 8 ft coop
+  // and attached run footprint (Farm original x40/y10 and x48/y10 in feet).
+  // It is still a scale illustration, not a claim that its interior fixtures
+  // or bird-door openings exactly match the original compact Farm enclosure.
   // Continuous siding is textured wood; trim gives the coop construction-scale detail.
   barn.add(box(9.35,.32,8.8,m.stone,0,.16,0));
   
@@ -889,7 +894,7 @@ export function makeScene(canvas,onSelect=()=>{}){
   trough.add(cyl(.95,.95,.88,m.steel,0,.48,0,16));
   const troughWater=cyl(.84,.84,.05,m.water,0,.90,0,16);trough.add(troughWater);
   trough.add(cyl(.13,.13,2.0,m.pipe,-.2,1.08,0,10));
-  const garden=group("farm","Pasture forage patch",39,10);
+  const garden=group("farm","Pasture forage patch",41,17);
   for(let row=0;row<5;row++){
     const bed=box(1.4,.12,9.4,m.earth,row*1.65-3.25,.12,0);garden.add(bed);
     for(let i=0;i<9;i++){
@@ -905,6 +910,149 @@ export function makeScene(canvas,onSelect=()=>{}){
   // Visual animals use the real farm population: species/stage are model fields.
   // Their tiny idle motions are deliberately visual-only (never RNG for biology).
   const agents=new THREE.Group();scene.add(agents);
+  // Original farm-sim component footprint coordinates (feet) control the
+  // physical bounds of native agent collision. Show those exact footprints
+  // inside the same landscape, rather than inventing unrelated pen rectangles.
+  // Heights, rail diameter and construction are illustrative; footprint is not.
+  const nativeEnclosures=new THREE.Group();scene.add(nativeEnclosures);
+  // Original Farm world/base.js floorZ(hutch) = 2.05 ft. This is the
+  // visual-only support surface used by native rabbit agent poses, not a
+  // replacement for Farm collision or its biological state.
+  const NATIVE_HUTCH_FLOOR_M=2.05*FEET_TO_METRES;
+  const nativeHutchFloors=new THREE.Group();scene.add(nativeHutchFloors);
+  const nativeHutchSupports=new THREE.Group();scene.add(nativeHutchSupports);
+  const hutchFloorMat=mat(0x8d9b9d,{roughness:.69,metalness:.44,side:THREE.DoubleSide});
+  const hutchWireMat=new THREE.LineBasicMaterial({color:0xc0cecc,transparent:true,opacity:.8,depthWrite:false});
+  let nativeEnclosureKey="",nativeEnclosureCount=0,nativeEnclosureFootprints=[];
+  let nativeRailEndpointResidualM=0,nativeRailCount=0;
+  function syncNativeEnclosures(farm,origin){
+    // An absent or invalid placement origin must remove the old visual pens.
+    // Otherwise a scenario switch can leave obsolete collision-looking rails
+    // in the scene, even though no authoritative placement is available.
+    const validOrigin=origin&&["x","y","z"].every(k=>Number.isFinite(origin[k]));
+    const comps=validOrigin&&Array.isArray(farm?.components)
+      ?farm.components.filter(c=>["run","hutch"].includes(c.type)):[];
+    const key=JSON.stringify([validOrigin?origin:null,comps]);
+    if(key===nativeEnclosureKey)return;
+    nativeEnclosureKey=key;
+    nativeEnclosures.traverse(o=>{if(o.geometry)o.geometry.dispose();});
+    nativeEnclosures.clear();
+    nativeHutchFloors.traverse(o=>{if(o.geometry)o.geometry.dispose();});
+    nativeHutchFloors.clear();
+    nativeHutchSupports.traverse(o=>{if(o.geometry)o.geometry.dispose();});
+    nativeHutchSupports.clear();
+    nativeEnclosureCount=0;nativeEnclosureFootprints=[];
+    nativeRailEndpointResidualM=0;nativeRailCount=0;
+    if(!validOrigin)return;
+    for(const c of comps){
+      const footprint=nativeFarmComponentFootprint(c,origin);
+      if(!footprint)continue;
+      const {x0,x1,z0,z1}=footprint;
+      const raised=c.type==="hutch"?NATIVE_HUTCH_FLOOR_M:0;
+      const H=c.type==="run"?1.28:.87;
+      const corners=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]];
+      for(const [x,z] of corners){
+        const ground=terrainY(x,z),post=cyl(.045,.045,H+raised+.25,m.wood,x,
+          ground+(H+raised+.25)/2,z,7);
+        nativeEnclosures.add(post);
+      }
+      for(let i=0;i<4;i++){
+        const [ax,az]=corners[i],[bx,bz]=corners[(i+1)%4];
+        const dx=bx-ax,dz=bz-az,len=Math.hypot(dx,dz);
+        const N=Math.max(1,Math.ceil(len/1.1));
+        for(let q=0;q<N;q++){
+          const t0=q/N,t1=(q+1)/N;
+          const xa=ax+dx*t0,za=az+dz*t0,xb=ax+dx*t1,zb=az+dz*t1;
+          const cx=(xa+xb)/2,cz=(za+zb)/2;
+          for(const h of [.25,.65,H]){
+            // A flat midpoint-height rail can float above the uphill corner
+            // and cut through the downhill one. Fit the rail to the exact
+            // terrain-sampled endpoint elevations instead. Its X/Z endpoints
+            // still coincide with the original Farm component footprint.
+            const ya=terrainY(xa,za)+raised+h;
+            const yb=terrainY(xb,zb)+raised+h;
+            const railVector=V(xb-xa,yb-ya,zb-za);
+            const railLength=railVector.length();
+            const bar=box(railLength,.031,.036,m.steel,0,0,0);
+            bar.quaternion.setFromUnitVectors(V(1,0,0),railVector.normalize());
+            bar.position.set(cx,(ya+yb)/2,cz);
+            // Independently inspect the rotated geometry's actual endpoints.
+            const half=V(railLength/2,0,0).applyQuaternion(bar.quaternion);
+            const endpointA=bar.position.clone().sub(half);
+            const endpointB=bar.position.clone().add(half);
+            nativeRailEndpointResidualM=Math.max(nativeRailEndpointResidualM,
+              endpointA.distanceTo(V(xa,ya,za)),endpointB.distanceTo(V(xb,yb,zb)));
+            nativeRailCount++;
+            nativeEnclosures.add(bar);
+          }
+        }
+      }
+      nativeEnclosureCount++;
+      nativeEnclosureFootprints.push(footprint);
+      if(c.type==="hutch"){
+        // Raised hutch decks need visible load-bearing posts. Every post
+        // terminates on the same terrain sampler as the model-aligned deck.
+        // Supports are illustrative, never Farm collision obstacles.
+        for(const [px,pz] of [[x0+.09,z0+.09],[x1-.09,z0+.09],
+          [x1-.09,z1-.09],[x0+.09,z1-.09]]){
+          const bottom=terrainY(px,pz)-.04;
+          const top=terrainY(px,pz)+NATIVE_HUTCH_FLOOR_M;
+          const leg=box(.105,top-bottom,.105,m.wood,px,(bottom+top)/2,pz);
+          leg.name="Native raised hutch support "+String(c.id);
+          leg.userData={nativeComponentId:c.id,visualOnly:true,
+            groundY:terrainY(px,pz),baseY:bottom,topY:top};
+          nativeHutchSupports.add(leg);
+        }
+        // A real raised floor, following the SAME triangulated terrain sampler
+        // under the native rabbit rigs. Mesh and wire are illustrative; no
+        // model fixture levels or animal health outcomes are inferred.
+        const width=x1-x0,depth=z1-z0,cx=(x0+x1)/2,cz=(z0+z1)/2;
+        const nx=Math.max(1,Math.ceil(width/.4)),nz=Math.max(1,Math.ceil(depth/.4));
+        const floorGeometry=new THREE.PlaneGeometry(width-.08,depth-.08,nx,nz);
+        const vertices=floorGeometry.attributes.position;
+        for(let i=0;i<vertices.count;i++){
+          const x=cx+vertices.getX(i),z=cz-vertices.getY(i);
+          vertices.setZ(i,terrainY(x,z)+NATIVE_HUTCH_FLOOR_M);
+        }
+        floorGeometry.computeVertexNormals();
+        const deck=new THREE.Mesh(floorGeometry,hutchFloorMat);
+        deck.name="Native rabbit hutch raised floor "+String(c.id);
+        deck.userData={nativeComponentId:c.id,visualOnly:true};
+        deck.position.set(cx,0,cz);deck.rotation.x=-Math.PI/2;
+        deck.receiveShadow=true;deck.castShadow=false;
+        nativeHutchFloors.add(deck);
+        const segments=[];
+        const line=(xA,zA,xB,zB)=>{
+          segments.push(xA,terrainY(xA,zA)+NATIVE_HUTCH_FLOOR_M+.008,zA,
+            xB,terrainY(xB,zB)+NATIVE_HUTCH_FLOOR_M+.008,zB);
+        };
+        const xCount=Math.max(1,Math.ceil((width-.08)/.24));
+        const zCount=Math.max(1,Math.ceil((depth-.08)/.24));
+        for(let xi=0;xi<=xCount;xi++){
+          const x=x0+.04+(width-.08)*xi/xCount;
+          for(let zi=0;zi<zCount;zi++){
+            const za=z0+.04+(depth-.08)*zi/zCount;
+            const zb=z0+.04+(depth-.08)*(zi+1)/zCount;
+            line(x,za,x,zb);
+          }
+        }
+        for(let zi=0;zi<=zCount;zi++){
+          const z=z0+.04+(depth-.08)*zi/zCount;
+          for(let xi=0;xi<xCount;xi++){
+            const xa=x0+.04+(width-.08)*xi/xCount;
+            const xb=x0+.04+(width-.08)*(xi+1)/xCount;
+            line(xa,z,xb,z);
+          }
+        }
+        const wireGeometry=new THREE.BufferGeometry();
+        wireGeometry.setAttribute("position",new THREE.Float32BufferAttribute(segments,3));
+        const wire=new THREE.LineSegments(wireGeometry,hutchWireMat);
+        wire.name="Native hutch wire floor "+String(c.id);
+        wire.userData={nativeComponentId:c.id,visualOnly:true};
+        nativeHutchFloors.add(wire);
+      }
+    }
+  }
   // Visual vocabulary adapted from the user's Farm Simulator:
   // source/src/world/agents.js (RAB / HEN palettes and species movement) and
   // world/looks.js (life-stage distinctions) and world/physics.js (rabbit hopping).
@@ -926,18 +1074,6 @@ export function makeScene(canvas,onSelect=()=>{}){
   // Closed, bounded walking circuits in clear areas of the shared farmyard.
   // These are visual roaming plans only; biological location/foraging activity
   // is NOT present in the Farm model snapshot and is not inferred here.
-  function yardPath(species,id){
-    const chicken=species==="chicken";
-    const offset=(seeded(id*7.1)-.5)*.42;
-    const points=chicken?
-      [[32.9,1.3],[35.7,.65],[39.0,.75],[40.35,2.0],
-       [40.0,3.75],[36.6,4.0],[33.25,3.6],[32.4,2.2]]:
-      [[30.15,10.7],[31.4,10.25],[32.8,11.45],[33.05,13.7],
-       [32.55,16.4],[30.9,17.4],[29.75,16.0],[29.85,13.0]];
-    const curve=new THREE.CatmullRomCurve3(points.map(([x,z])=>
-      V(x+offset,0,z+offset*.18)),true,"centripetal",.28);
-    return {curve,length:curve.getLength()};
-  }
   function animal(a,index){
     const species=a.sp,id=Number(a.id)||index+1,chicken=species==="chicken";
     const o=new THREE.Group(),base=coat(species,id),darker=coat(species,id,true);
@@ -1010,15 +1146,14 @@ export function makeScene(canvas,onSelect=()=>{}){
       }
       head.add(ell(.09,.075,.09,m.pink,0,.005,.41));
     }
-    const path=yardPath(species,id);
-    const pathProgress=seeded(id*15.7+17);
-    const p=path.curve.getPointAt(pathProgress);
+    // Native Farm controller owns movement; spawn is a stationary display placeholder.
+    // Never synthesize a circular route while awaiting native world initialization.
+    const p=species==="chicken"?V(35+(index%4)*.6,0,2+(Math.floor(index/4)%3)*.6):
+      V(31+(index%4)*.45,0,13+(Math.floor(index/4)%3)*.45);
     o.userData={kind:species,id,plumageFeathers:chicken?13:0,
       phase:seeded(id*13+50)*Math.PI*2,
       head,torso,limbs,wings,ears,health:100,stage:a.st,age:Number(a.age)||0,
-      path:path.curve,pathLength:path.length,pathProgress,travelM:0,
-      // Distinct rates & route phases prevent identical synchronized motion.
-      walkSpeed:chicken?.44+seeded(id*9.31)*.14:.36+seeded(id*4.8)*.12,
+      travelM:0,
       footPhaseOffset:seeded(id*47.21),walking:false};
     o.position.copy(at(p.x,p.z));
     return o;
@@ -1178,7 +1313,7 @@ export function makeScene(canvas,onSelect=()=>{}){
     overview:{eye:V(16,59,91),look:V(0,1.5,-8)},
     energy:{eye:V(-29,21,17),look:V(-29,2,-9)},
     water:{eye:V(17,24,-1),look:V(0,2,-23)},
-    farm:{eye:V(41.8,3.4,10.2),look:V(36.3,.52,2.3)}
+    farm:{eye:V(46,4.6,14),look:V(39.5,.8,11.1)}
   };
   let view="overview",moving=false,trackedAnimalId=null;
   const eye=views.overview.eye.clone(),focus=views.overview.look.clone();
@@ -1268,6 +1403,29 @@ export function makeScene(canvas,onSelect=()=>{}){
       lastModelHour=snapshot.clock.hours;
     }
     data=snapshot;syncAnimals(snapshot.farm);
+    syncNativeEnclosures(snapshot.farm,snapshot.farmWorldOriginM);
+    // Native farm-world motion is an explicit, read-only optional integration.
+    // Never infer native agent positions from biological aggregates or invent them.
+    // An actual WV.agents Map and calibrated origin must be supplied together.
+    if(snapshot.farmWorld != null){
+      const origin=snapshot.farmWorldOriginM;
+      if(!origin || !["x","y","z"].every(k=>Number.isFinite(origin[k])))
+        throw new TypeError("Native farm world requires finite farmWorldOriginM");
+      const poses=nativeFarmWorldPoses(snapshot.farmWorld,origin);
+      const next=new Map();
+      for(const pose of poses){
+        if(next.has(pose.id))throw new Error("Duplicate native farm agent ID: "+pose.id);
+        next.set(pose.id,pose);
+      }
+      for(const rig of agents.children){
+        const current=next.get(String(rig.userData.modelId));
+        const prior=nativeAnimalPoses?.get(String(rig.userData.modelId));
+        rig.userData.nativePoseChanged=Boolean(current&&(!prior||
+          current.position.x!==prior.position.x||current.position.y!==prior.position.y||
+          current.position.z!==prior.position.z));
+      }
+      nativeAnimalPoses=next;
+    }else nativeAnimalPoses=null;
     const last=snapshot.last,c=snapshot.config;
     const ratio=c.waterStorageCapacityL>0?THREE.MathUtils.clamp(snapshot.waterStoredL/c.waterStorageCapacityL,0,1):0;
     visualTankFraction=ratio;
@@ -1324,6 +1482,7 @@ export function makeScene(canvas,onSelect=()=>{}){
       elevationDeg:elevation*180/Math.PI,azimuthDeg:azimuth*180/Math.PI,
       directIntensity:direct.intensity};
   }
+  let nativeAnimalPoses=null,nativeGeneration=null;
   let visualSunState=null;
   let previous=performance.now();
   function animate(now){
@@ -1332,6 +1491,33 @@ export function makeScene(canvas,onSelect=()=>{}){
     const gap=now-previous;
     const dt=frameDeltaSeconds(gap,document.hidden);previous=now;
     observeFrameGap(now,gap);
+    // Advance the ORIGINAL visual-only Farm controller at its fixed 1/60 s step.
+    // World agent IDs and physics positions are never fabricated by this renderer.
+    if(data?.farmWorld&&farmVisual){
+      const generation=farmVisual.stats().generation;
+      if(nativeGeneration!==generation){
+        nativeGeneration=generation;nativeAnimalPoses=null;
+        for(const rig of agents.children){
+          rig.userData.nativePoseInitialized=false;
+          rig.userData.nativePoseChanged=false;
+          rig.userData.travelM=0;
+        }
+      }
+      farmVisual.frame(dt,playing,data.clock.hourOfDay);
+      const sample=nativeFarmWorldPoses(data.farmWorld,data.farmWorldOriginM);
+      const next=new Map();
+      for(const pose of sample){
+        if(next.has(pose.id))throw new Error("Duplicate Farm native pose "+pose.id);
+        next.set(pose.id,pose);
+      }
+      for(const rig of agents.children){
+        const id=String(rig.userData.modelId),current=next.get(id),prior=nativeAnimalPoses?.get(id);
+        rig.userData.nativePoseChanged=Boolean(current&&(!prior||
+          current.position.x!==prior.position.x||current.position.y!==prior.position.y||
+          current.position.z!==prior.position.z));
+      }
+      nativeAnimalPoses=next;
+    }
     if(playing)visualTime+=dt;
     // A clicked animal can be followed at eye level; drag/pinch/wheel releases
     // follow mode. No biological state or agent motion is driven by this camera.
@@ -1366,28 +1552,51 @@ export function makeScene(canvas,onSelect=()=>{}){
       const healthSpeed=.35+.65*THREE.MathUtils.clamp(s.health/100,0,1);
       const youngKit=!chicken&&s.stage==="kit"&&s.age<10;
       const youngRest=!chicken&&youngKit;
-      const active=Boolean(playing&&awake&&!youngRest);
+      const nativeActive=nativeAnimalPoses?.get(String(s.modelId))?.moving;
+      const active=Boolean(playing&&nativeAnimalPoses&&nativeActive);
       // The visual agent traverses genuine horizontal distance around the pen,
       // rather than moving a few centimeters around a fixed sine-wave anchor.
-      const speed=active?s.walkSpeed*healthSpeed:0;
-      if(speed>0&&dt>0){
-        s.pathProgress=(s.pathProgress+dt*speed/Math.max(1,s.pathLength))%1;
-        const p=s.path.getPointAt(s.pathProgress);
-        const dx=p.x-a.position.x,dz=p.z-a.position.z;
-        s.travelM+=Math.hypot(dx,dz);
-        a.position.x=p.x;a.position.z=p.z;
-        const tangent=s.path.getTangentAt(s.pathProgress);
-        const targetYaw=Math.atan2(tangent.x,tangent.z);
-        const deltaYaw=Math.atan2(Math.sin(targetYaw-a.rotation.y),
-                                  Math.cos(targetYaw-a.rotation.y));
-        a.rotation.y+=deltaYaw*smoothAlpha(9,dt);
+      const nativePose=nativeAnimalPoses?.get(String(s.modelId));
+      // Native physics supplies the pose; no synthetic circular path remains. No interpolation
+      // can write back into WV.agents or the farm biological model.
+      if(nativeAnimalPoses){
+        if(!nativePose){
+          // Fail closed: an unmatched native ID must never be assigned a
+          // fabricated route, gait, or position by the renderer.
+          s.walking=false;
+          s.torso.position.y=0;
+          s.torso.rotation.z=0;
+          if(chicken)stepChickenFeet(a,s,false);
+          continue;
+        }
+        const dx=nativePose.position.x-a.position.x;
+        const dz=nativePose.position.z-a.position.z;
+        const distance=Math.hypot(dx,dz);
+        // Travel is derived only from successive native physics snapshots.
+        // It must not accumulate again on repeated render frames.
+        // The first native sample establishes the pose baseline; the distance
+        // from a legacy spawn point is a coordinate-frame jump, not walking.
+        if(s.nativePoseChanged&&s.nativePoseInitialized)s.travelM+=distance;
+        s.nativePoseInitialized=true;
+        // Native rabbit height includes the original raised hutch floor of
+        // 2.05 ft and any native hop. Preserve it even while playback is paused;
+        // subtracting 0.625 m previously dropped rabbits through their decks.
+        // Chickens remain terrain-grounded because the coop floor is illustrative.
+        const nativeGround=terrainY(nativePose.position.x,nativePose.position.z);
+        a.position.set(nativePose.position.x,
+          nativeGround+(chicken?0:Math.max(0,nativePose.position.y)),
+          nativePose.position.z);
+        if(distance>1e-5)a.rotation.y=Math.atan2(dx,dz);
+        s.nativePoseChanged=false;
       }
+      // No native pose means stationary. Never generate a synthetic path.
       const phase=s.travelM*(chicken?19:11)+s.phase;
-      const gait=gaitPose(playing,awake,youngRest,chicken,phase,i);
+      const gait=gaitPose(playing,nativeAnimalPoses?active:awake,
+        nativeAnimalPoses?false:youngRest,chicken,phase,i);
       const stepWave=gait.wave;
       // Chicken roots stay exactly on the triangulated ground; the torso bobs
       // over independently animated alternating feet (no helicopter movement).
-      a.position.y=terrainY(a.position.x,a.position.z)+(chicken?0:gait.heightM);
+      if(!nativePose)a.position.y=terrainY(a.position.x,a.position.z);
       // Weight shift follows the same distance-based stance cycle as the feet,
       // not the old high-frequency sinusoidal gait (which made hens vibrate).
       if(chicken){
@@ -1404,6 +1613,24 @@ export function makeScene(canvas,onSelect=()=>{}){
       s.head.rotation.x=active?(chicken?.08+Math.max(0,Math.sin(phase*.4+i))*.19:
         .035+Math.sin(phase*.45)*.065):-.04;
       s.head.rotation.y=active?Math.sin(phase*.18+i)*.07:0;
+      // The original Farm controller selects its actions (peck, preen, dust,
+      // groom, rest, huddle, roost); the 3D rig only illustrates that action.
+      // These poses cannot change task choice, position or biological output.
+      if(nativePose&&!active&&playing){
+        const act=nativePose.action;
+        const pulse=Math.sin(visualTime*5+i*1.13);
+        if(act==="peck"||act==="eat"||act==="drink"){
+          s.head.rotation.x=.44+.16*pulse;
+        }else if(act==="preen"||act==="groom"){
+          s.head.rotation.x=.18+.12*pulse;
+          s.head.rotation.y=.2+.12*Math.sin(visualTime*2.7+i);
+        }else if(act==="dust"||act==="flop"){
+          s.torso.rotation.z=.13*Math.sin(visualTime*3+i);
+          s.head.rotation.x=.17;
+        }else if(act==="rest"||act==="huddle"||act==="roost"){
+          s.head.rotation.x=-.14;
+        }
+      }
       if(chicken)stepChickenFeet(a,s,active);
       else for(let k=0;k<s.limbs.length;k++){
         const legPhase=k%2?-stepWave:stepWave;
@@ -1505,7 +1732,9 @@ export function makeScene(canvas,onSelect=()=>{}){
     update,go,setPlayback(on){
       playing=Boolean(on);
       if(!playing)for(const rig of agents.children){
-        rig.position.y=terrainY(rig.position.x,rig.position.z);
+        const pose=nativeAnimalPoses?.get(String(rig.userData.modelId));
+        rig.position.y=terrainY(rig.position.x,rig.position.z)+
+          (rig.userData.kind==="chicken"?0:Math.max(0,pose?.position.y??0));
         rig.userData.walking=false;
         if(rig.userData.kind==="chicken"){
           rig.userData.torso.position.y=0;
@@ -1523,6 +1752,36 @@ export function makeScene(canvas,onSelect=()=>{}){
         requestedHeightAboveGroundM:toEye.y-terrainY(toEye.x,toEye.z),
         followAnimalId:trackedAnimalId},
       visualSun:visualSunState?{...visualSunState}:null,
+      nativeEnclosureLayout:{count:nativeEnclosureCount,footprints:nativeEnclosureFootprints,renderedMeshes:nativeEnclosures.children.length,
+        railEndpointResidualM:nativeRailEndpointResidualM,railCount:nativeRailCount, 
+        // Derive rail/post centers from actual rendered meshes, not source metadata. 
+        meshCenters:nativeEnclosures.children.map(o=>({x:o.position.x,y:o.position.y,z:o.position.z})),
+        // Actual world-space AABBs include post radii and rotated rail thickness.
+        meshBounds:nativeEnclosures.children.map(o=>{
+          const b=new THREE.Box3().setFromObject(o);
+          return {min:{x:b.min.x,y:b.min.y,z:b.min.z},
+            max:{x:b.max.x,y:b.max.y,z:b.max.z}};
+        })},
+      nativeHutchFloors:{heightAboveTerrainM:NATIVE_HUTCH_FLOOR_M,
+        count:nativeHutchFloors.children.filter(o=>o.isMesh).length,
+        surfaces:nativeHutchFloors.children.filter(o=>o.isMesh).map(o=>{
+          const b=new THREE.Box3().setFromObject(o);
+          return {componentId:o.userData.nativeComponentId,visualOnly:true,
+            min:{x:b.min.x,y:b.min.y,z:b.min.z},
+            max:{x:b.max.x,y:b.max.y,z:b.max.z}};
+        })},
+      nativeHutchSupports:{count:nativeHutchSupports.children.length,
+        legs:nativeHutchSupports.children.map(o=>({
+          componentId:o.userData.nativeComponentId,visualOnly:true,
+          x:o.position.x,z:o.position.z,baseY:o.userData.baseY,
+          groundY:o.userData.groundY,topY:o.userData.topY}))},
+      rabbitElevation:agents.children.filter(o=>o.userData.kind==="rabbit").map(o=>{
+        const p=nativeAnimalPoses?.get(String(o.userData.modelId));
+        const nativeHeightM=Math.max(0,p?.position.y??0);
+        return {id:String(o.userData.modelId),nativeHeightM,
+          renderedHeightM:o.position.y-terrainY(o.position.x,o.position.z),
+          errorM:Math.abs(o.position.y-terrainY(o.position.x,o.position.z)-nativeHeightM)};
+      }),
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
       tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport(),
       structureAudit:{houseFacade:facadeProbe(homestead,houseFront,6,3),
@@ -1540,10 +1799,17 @@ export function makeScene(canvas,onSelect=()=>{}){
         hasRampClearance:(31.65-28.35)>ramp.geometry.parameters.width,
         hutchFenceClearanceM:hutches.position.x-7.85/2-19},
       chickenFootContact:chickenFootReport(),
+      nativeAnimalActions:nativeAnimalPoses?[...nativeAnimalPoses.values()].reduce((counts,p)=>{
+        counts[p.action]=(counts[p.action]||0)+1;return counts;
+      },{}):{},
       animalMotion:{walkingChickens:agents.children.filter(a=>a.userData.kind==="chicken"&&a.userData.walking).length,
         chickenTravelM:agents.children.filter(a=>a.userData.kind==="chicken").reduce((n,a)=>n+a.userData.travelM,0),
         maxRootGroundErrorM:agents.children.filter(a=>a.userData.kind==="chicken").reduce(
           (n,a)=>Math.max(n,Math.abs(a.position.y-terrainY(a.position.x,a.position.z))),0)},
-      pausedGroundErrorM:playing?null:agents.children.reduce((e,a)=>Math.max(e,Math.abs(a.position.y-terrainY(a.position.x,a.position.z))),0)}}
+      pausedGroundErrorM:playing?null:agents.children.reduce((e,a)=>{
+        const p=nativeAnimalPoses?.get(String(a.userData.modelId));
+        const elevated=a.userData.kind==="chicken"?0:Math.max(0,p?.position.y??0);
+        return Math.max(e,Math.abs(a.position.y-terrainY(a.position.x,a.position.z)-elevated));
+      },0)}}
   };
 }

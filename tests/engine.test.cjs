@@ -1,7 +1,7 @@
 "use strict";
 const assert=require("node:assert/strict"),fs=require("node:fs"),vm=require("node:vm");
 const path=require("node:path"),test=require("node:test");
-const ctx=vm.createContext({console,Date,Math,Map,Set,Number,String,Array,Object,JSON,Error,Uint8Array,Float64Array,Float32Array,Int32Array,Infinity,NaN});
+const ctx=vm.createContext({console,Date,Math,Map,Set,Number,String,Array,Object,JSON,Error,Uint8Array,Float64Array,Float32Array,Int32Array,Infinity,NaN,performance:require('node:perf_hooks').performance});
 for(const p of ["vendor/solar-next-core.js","vendor/water-engine.js","vendor/farm-core.js","src/coordinator.js"]){
  const code=fs.readFileSync(path.join(__dirname,"..",p),"utf8");
  vm.runInContext(code,ctx,{filename:p,timeout:60000});
@@ -113,4 +113,101 @@ test("chicken feet use alternating distance-based stance and positive terrain sw
  for(const args of [[-1,0,.26,0],[0,0,0,0],[0,1,NaN,0],[0,0,.26,-1]])
    assert.throws(()=>chickenFootPhase(...args),RangeError);
  assert.throws(()=>chickenSwingLift(.5,-.02),RangeError);
+});
+
+test("native Farm runtime never mutates biological state or the visual seed model",()=>{
+  const farm=ctx.HomesteadFarmCore;
+  farm.reset(7);farm.advanceDay();
+  const biologicalBefore=JSON.stringify(farm.snapshot());
+  const native=farm.nativeVisual;
+  assert.equal(typeof native.init,"function");
+  const initial=native.init(20261104,9);
+  assert.ok(initial.initialized);
+  assert.equal(initial.agentCount,farm.snapshot().animals.length);
+  assert.ok(native.world().agents instanceof Map);
+  const start=new Map([...native.world().agents].map(([id,a])=>[id,[a.x,a.y,a.z]]));
+  for(let i=0;i<600;i++)native.frame(1/60,true,9);
+  const running=native.stats();
+  assert.ok(running.visualSteps>=500,running);
+  let moved=0;
+  for(const [id,a] of native.world().agents){
+    const p=start.get(id);
+    if(p&&Math.hypot(a.x-p[0],a.y-p[1])>.025)moved++;
+    assert.ok(Number.isFinite(a.x)&&Number.isFinite(a.y)&&Number.isFinite(a.z));
+  }
+  assert.ok(moved>0,"At least one original agent must truly move within 10 seconds");
+  assert.ok(running.hops>0,"Original rabbit hop physics must execute within the deterministic 10-second replay");
+  assert.equal(JSON.stringify(farm.snapshot()),biologicalBefore,
+    "Visual physics must not change biological outcomes");
+  const paused=[...native.world().agents].map(([id,a])=>[id,a.x,a.y,a.z]);
+  native.frame(1/12,false,9);
+  assert.deepEqual([...native.world().agents].map(([id,a])=>[id,a.x,a.y,a.z]),paused,
+    "Pause must freeze all native animal positions");
+  const fingerprint=JSON.stringify([...native.world().agents].map(([id,a])=>[id,a.x,a.y,a.z]));
+  native.init(20261104,9);
+  for(let i=0;i<600;i++)native.frame(1/60,true,9);
+  assert.equal(JSON.stringify([...native.world().agents].map(([id,a])=>[id,a.x,a.y,a.z])),
+    fingerprint,"Identical visual seeds and timestep schedules must replay identically");
+  assert.equal(JSON.stringify(farm.snapshot()),biologicalBefore);
+});
+
+test("native Farm visual runtime handles malformed inputs, same-day pause and model-day synchronization",()=>{
+  const f=ctx.HomesteadFarmCore,n=f.nativeVisual;
+  f.reset(11);f.advanceDay();
+  assert.throws(()=>n.init(NaN,9),/integer/);
+  assert.throws(()=>n.init(20261104,-1),/hour/);
+  n.init(20261104,9);
+  const current=JSON.stringify(f.snapshot());
+  const pts=JSON.stringify([...n.world().agents].map(([id,g])=>[id,g.x,g.y,g.z]));
+  n.frame(0,true,9);n.frame(0.1,false,9);
+  assert.equal(JSON.stringify([...n.world().agents].map(([id,g])=>[id,g.x,g.y,g.z])),pts);
+  assert.throws(()=>n.frame(-1,true,9),/Invalid native Farm frame/);
+  assert.throws(()=>n.frame(Infinity,true,9),/Invalid native Farm frame/);
+  assert.throws(()=>n.frame(0,false,24),/hour/);
+  assert.equal(JSON.stringify(f.snapshot()),current,"native view cannot mutate biology");
+  // The biological engine alone is allowed to progress the day and create
+  // births/deaths. Native worldSync must reconcile the exact model population.
+  for(let i=0;i<25;i++)f.advanceDay();
+  n.sync(12);
+  const model=f.snapshot();
+  assert.equal(n.stats().day,model.day);
+  assert.equal(n.stats().agentCount,model.animals.length);
+  const present=new Set([...n.world().agents.keys()]);
+  assert.equal(present.size,model.animals.length);
+  for(const a of model.animals)assert.ok(present.has(a.id));
+});
+
+
+test("native Farm component footprint is read-only, unit-correct and rejects malformed geometry",async()=>{
+ const {nativeFarmComponentFootprint,FEET_TO_METRES}=await import("../src/upstream/farm-world/pose-adapter.mjs");
+ assert.equal(FEET_TO_METRES,0.3048);
+ const origin=Object.freeze({x:23,y:0,z:6});
+ const c=Object.freeze({id:"run-1",type:"run",x:40,y:10,w:8,d:12});
+ const p=nativeFarmComponentFootprint(c,origin);
+ assert.deepEqual({...p},{id:"run-1",type:"run",
+   x0:23+40*.3048,x1:23+48*.3048,z0:6+10*.3048,z1:6+22*.3048,unit:"m"});
+ assert.ok(Object.isFrozen(p));
+ assert.equal(c.x,40);assert.equal(origin.x,23);
+ for(const bad of [
+   null,{...c,w:0},{...c,d:-1},{...c,x:NaN},
+   {...c,y:Infinity},{...c,w:Infinity}
+ ])assert.equal(nativeFarmComponentFootprint(bad,origin),null);
+ assert.equal(nativeFarmComponentFootprint(c,{...origin,z:NaN}),null);
+ assert.equal(nativeFarmComponentFootprint(c,null),null);
+ assert.equal(nativeFarmComponentFootprint({...c,x:Number.MAX_VALUE},
+   {...origin,x:Number.MAX_VALUE}),null);
+});
+
+test("native Farm agent pose rejects coordinate overflow without mutating the original",async()=>{
+ const {nativeFarmAgentPose,FEET_TO_METRES}=await import("../src/upstream/farm-world/pose-adapter.mjs");
+ const agent=Object.freeze({id:"hen-1",x:2,y:3,z:0,vx:0,vy:0,act:"idle"});
+ const origin=Object.freeze({x:12,y:1,z:-4});
+ const pose=nativeFarmAgentPose(agent,origin);
+ assert.equal(pose.position.x,12+2*FEET_TO_METRES);
+ assert.equal(pose.position.z,-4+3*FEET_TO_METRES);
+ assert.ok(Object.isFrozen(pose.position));
+ assert.equal(agent.x,2);
+ assert.throws(()=>nativeFarmAgentPose({...agent,x:Number.MAX_VALUE},
+   {...origin,x:Number.MAX_VALUE}),/finite world coordinates/);
+ assert.throws(()=>nativeFarmAgentPose({...agent,z:Infinity},origin),/Non-finite native z/);
 });

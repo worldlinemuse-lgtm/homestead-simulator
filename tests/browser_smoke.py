@@ -18,7 +18,12 @@ try:
             errors=[]
             page.on("pageerror",lambda e:errors.append(str(e)+"\n"+(getattr(e,"stack","") or "")))
             page.goto("http://127.0.0.1:%d/"%server.server_port,wait_until="load")
-            page.wait_for_function("window.HomesteadApp && window.HomesteadApp.snapshot().farm.counts.n > 0",timeout=40000)
+            try:
+                page.wait_for_function("window.HomesteadApp && window.HomesteadApp.snapshot().farm.counts.n > 0",timeout=40000)
+            except Exception as exc:
+                # Startup failures must expose the first browser exception, not
+                # only an opaque forty-second readiness timeout.
+                raise AssertionError(f"Homestead startup failed (mobile={mobile}); page errors={errors!r}; url={page.url}") from exc
             assert page.locator("#world").is_visible()
             if mobile:
                 assert page.evaluate("document.getElementById('summary').classList.contains('collapsed')")
@@ -31,6 +36,136 @@ try:
             assert page.locator("#assetReadout").is_visible()
             page.locator("#closeInspector").click()
             assert page.evaluate("window.HomesteadApp.world().animals") > 0
+            # Native Farm enclosure footprints are mapped from the original
+            # model's feet coordinates, not authored freehand in Three.js.
+            assert page.evaluate("""() => {
+                const s=window.HomesteadApp.snapshot();
+                const v=window.HomesteadApp.world();
+                const e=v.nativeEnclosureLayout, origin=v.farmWorldOriginM;
+                const relevant=s.farm.components.filter(c=>c.type==="run"||c.type==="hutch");
+                return origin&&Number.isFinite(origin.x)&&Number.isFinite(origin.z)&&
+                  e.count===relevant.length&&e.count>=3&&
+                  relevant.every(c=>{
+                    const x=e.footprints.find(p=>p.id===c.id);
+                    return x&&x.unit==="m"&&x.type===c.type&&
+                      Math.abs(x.x0-(origin.x+c.x*0.3048))<1e-8&&
+                      Math.abs(x.z0-(origin.z+c.y*0.3048))<1e-8&&
+                      Math.abs(x.x1-(origin.x+(c.x+c.w)*0.3048))<1e-8&&
+                      Math.abs(x.z1-(origin.z+(c.y+c.d)*0.3048))<1e-8&&
+                      Math.abs((x.x1-x.x0)-c.w*0.3048)<1e-8&&
+                      Math.abs((x.z1-x.z0)-c.d*0.3048)<1e-8;
+                  });
+            }""")
+            # A scenario reset must preserve the exact authoritative enclosure
+            # footprint layout, without accumulating stale Three.js geometry.
+            enclosure_baseline=page.evaluate("""() => JSON.stringify(
+                window.HomesteadApp.world().nativeEnclosureLayout)""")
+            assert enclosure_baseline and enclosure_baseline != "null"
+            # Footprint metadata alone cannot detect obsolete rail mesh buildup.
+            enclosure_meshes=page.evaluate("""() =>
+                window.HomesteadApp.world().nativeEnclosureLayout.renderedMeshes""")
+            assert isinstance(enclosure_meshes,int) and enclosure_meshes>0, (
+                "Native Farm enclosure meshes missing",mobile,enclosure_meshes)
+            # The renderer creates four posts per enclosure and three rails
+            # per <=1.1 m perimeter segment. Assert the exact mesh budget
+            # against authoritative Farm dimensions, not merely a nonzero count.
+            assert page.evaluate("""() => {
+                const farm=window.HomesteadApp.snapshot().farm;
+                const layout=window.HomesteadApp.world().nativeEnclosureLayout;
+                const components=farm.components.filter(c=>c.type==="run"||c.type==="hutch");
+                const expected=components.reduce((total,c)=>{
+                    const w=c.w*0.3048, d=c.d*0.3048;
+                    const segments=2*Math.ceil(w/1.1)+2*Math.ceil(d/1.1);
+                    return total+4+3*segments;
+                },0);
+                return layout.renderedMeshes===expected && expected>0;
+            }"""), ("Native enclosure rail mesh budget differs from Farm footprints",mobile)
+            # All three rendered rails per perimeter segment must meet
+            # their terrain-sampled endpoints (not the segment midpoint).
+            # railCount counts actual rail MESHES, not edge segments; each
+            # enclosure also creates four corner posts.
+            rail_result=page.evaluate("""() => {
+                const l=window.HomesteadApp.world().nativeEnclosureLayout;
+                const expectedRailMeshes=l.renderedMeshes-4*l.count;
+                return {pass:Number.isFinite(l.railEndpointResidualM) &&
+                    l.railEndpointResidualM<1e-6 &&
+                    Number.isInteger(l.railCount) &&
+                    l.railCount===expectedRailMeshes &&
+                    l.railCount>0 && l.railCount%3===0,
+                  measured:l.railCount,expected:expectedRailMeshes,
+                  residualM:l.railEndpointResidualM};
+            }""")
+            assert rail_result["pass"], (
+                "Farm rails do not meet terrain-sampled endpoints",mobile,rail_result)
+            # Validate the actual Three.js mesh centers against authoritative
+            # Farm footprint bounds; mesh-count checks alone miss displaced rails.
+            assert page.evaluate("""() => {
+                const l=window.HomesteadApp.world().nativeEnclosureLayout;
+                const eps=1e-6;
+                return l.meshCenters.length===l.renderedMeshes &&
+                  l.meshCenters.every(p=>[p.x,p.y,p.z].every(Number.isFinite) &&
+                    l.footprints.some(f=>p.x>=f.x0-eps&&p.x<=f.x1+eps&&
+                      p.z>=f.z0-eps&&p.z<=f.z1+eps));
+            }"""), ("Rendered enclosure mesh center outside Farm footprint",mobile)
+            # Verify complete rotated Three.js geometry, not only mesh centers.
+            # Posts have a 0.045 m radius and rails have a 0.036 m depth;
+            # 0.06 m is a conservative allowance for illustrative thickness.
+            assert page.evaluate("""() => {
+                const l=window.HomesteadApp.world().nativeEnclosureLayout;
+                const allowance=0.06;
+                return l.meshBounds.length===l.renderedMeshes &&
+                  l.meshBounds.every(b=>
+                    [b.min.x,b.min.y,b.min.z,b.max.x,b.max.y,b.max.z]
+                      .every(Number.isFinite) &&
+                    b.min.x<=b.max.x && b.min.y<=b.max.y && b.min.z<=b.max.z &&
+                    l.footprints.some(f=>
+                      b.min.x>=f.x0-allowance && b.max.x<=f.x1+allowance &&
+                      b.min.z>=f.z0-allowance && b.max.z<=f.z1+allowance));
+            }"""), ("Rendered enclosure mesh extends outside Farm footprint",mobile)
+            # The native Farm hutch bank floor is 2.05 ft above ground.
+            # Unlike the old freestanding decorative hutches, these new
+            # rendered wire-floor decks follow the exact Farm footprints.
+            assert page.evaluate("""() => {
+                const w=window.HomesteadApp.world();
+                const l=w.nativeEnclosureLayout;
+                const h=w.nativeHutchFloors;
+                const hutches=l.footprints.filter(f=>f.type==="hutch");
+                const eps=1e-6;
+                return h.count===hutches.length && h.count>=2 &&
+                  h.surfaces.length===h.count &&
+                  Math.abs(h.heightAboveTerrainM-2.05*0.3048)<1e-10 &&
+                  h.surfaces.every(s=>{
+                    const f=hutches.find(x=>x.id===s.componentId);
+                    return f&&s.visualOnly===true &&
+                      [s.min.x,s.min.y,s.min.z,s.max.x,s.max.y,s.max.z]
+                        .every(Number.isFinite) &&
+                      s.min.x>=f.x0-eps&&s.max.x<=f.x1+eps &&
+                      s.min.z>=f.z0-eps&&s.max.z<=f.z1+eps &&
+                      s.min.y<s.max.y &&
+                      s.max.y-s.min.y<1 &&
+                      s.min.y>-.5;
+                  });
+            }"""), ("Raised native hutch floors do not match Farm footprints",mobile)
+            # Four terrain-embedded load-bearing supports per authoritative
+            # hutch footprint. Prevent a floating-deck visual regression.
+            assert page.evaluate("""() => {
+                const w=window.HomesteadApp.world();
+                const h=w.nativeHutchSupports;
+                const hutches=w.nativeEnclosureLayout.footprints.filter(f=>f.type==="hutch");
+                const eps=1e-6;
+                return h.count===4*hutches.length && h.count>0 &&
+                  h.legs.length===h.count &&
+                  h.legs.every(leg=>{
+                    const f=hutches.find(x=>x.id===leg.componentId);
+                    return f && leg.visualOnly===true &&
+                      [leg.x,leg.z,leg.baseY,leg.groundY,leg.topY]
+                        .every(Number.isFinite) &&
+                      leg.x>=f.x0-eps && leg.x<=f.x1+eps &&
+                      leg.z>=f.z0-eps && leg.z<=f.z1+eps &&
+                      leg.baseY<=leg.groundY &&
+                      Math.abs(leg.topY-leg.groundY-2.05*0.3048)<1e-9;
+                  });
+            }"""), ("Native hutch deck supports float or leave Farm footprints",mobile)
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
             # Visual sun and shadows are driven by coordinator hour, never
             # fed back into the Solar energy ledger. Check actual UI steps.
@@ -62,6 +197,12 @@ try:
             page.wait_for_timeout(350)
             page.screenshot(path=str(light_out/("mobile-light-advanced.png" if mobile else "desktop-light-advanced.png")))
             page.locator("#resetBtn").click()
+            assert page.evaluate("""() => JSON.stringify(
+                window.HomesteadApp.world().nativeEnclosureLayout)""")==enclosure_baseline, (
+                "Native Farm enclosure footprints changed across reset",mobile)
+            assert page.evaluate("""() =>
+                window.HomesteadApp.world().nativeEnclosureLayout.renderedMeshes""")==enclosure_meshes, (
+                "Native Farm rail meshes accumulated or disappeared on reset",mobile)
             reset_sun=page.evaluate("window.HomesteadApp.world().visualSun")
             assert reset_sun["hour"]==initial_hour
             assert abs(reset_sun["directIntensity"]-initial_sun["directIntensity"])<1e-9
@@ -166,11 +307,17 @@ try:
             survivors=set(baseline["stableIds"]) & set(after["stableIds"])
             assert after["added"]-baseline["added"] <= len(set(after["stableIds"])-set(baseline["stableIds"]))+1
             beforeMotion=page.evaluate("window.HomesteadApp.world().animalMotion")
+            beforeNative=page.evaluate("window.HomesteadApp.world().nativeFarm")
+            assert beforeNative["initialized"] is True and beforeNative["agentCount"]>0, beforeNative
             page.locator("#playBtn").click()
             assert page.evaluate("window.HomesteadApp.world().playing") is True
             page.wait_for_timeout(950)
             afterMotion=page.evaluate("window.HomesteadApp.world().animalMotion")
-            assert afterMotion["walkingChickens"] > 0, afterMotion
+            afterNative=page.evaluate("window.HomesteadApp.world().nativeFarm")
+            # Native fixed-step physics must actually advance. A foraging chicken can
+            # legitimately pause at the exact frame sampled; assess cumulative travel,
+            # not whether the current animation frame happens to be a walking pose.
+            assert afterNative["visualSteps"] > beforeNative["visualSteps"], (beforeNative,afterNative)
             assert afterMotion["chickenTravelM"] > beforeMotion["chickenTravelM"] + .05, (
                 "Chickens must traverse the yard, not just hover in place",beforeMotion,afterMotion)
             assert afterMotion["maxRootGroundErrorM"] < 1e-9, afterMotion
@@ -188,8 +335,9 @@ try:
                 ("mobile-farm-stride.png" if mobile else "desktop-farm-stride.png"))))
             page.locator("#playBtn").click()
             assert page.evaluate("window.HomesteadApp.world().playing") is False
-            # Pause must land all animals immediately, even if the frozen gait
-            # phase had them airborne; it must not keep walking toward spawn.
+            # Pausing freezes native poses. Chickens remain grounded, while
+            # rabbits in raised hutches must retain original Farm floor height;
+            # flattening all animals onto the ground was a visual bug.
             assert page.evaluate("""() => {
                 const w=window.HomesteadApp.world();
                 return Number.isFinite(w.pausedGroundErrorM)
@@ -197,6 +345,12 @@ try:
             }""")
             page.wait_for_timeout(130)
             assert page.evaluate("window.HomesteadApp.world().pausedGroundErrorM") < 1e-9
+            assert page.evaluate("""() => {
+                const rabbits=window.HomesteadApp.world().rabbitElevation;
+                return rabbits.length>0 &&
+                  rabbits.some(r=>r.nativeHeightM>.6) &&
+                  rabbits.every(r=>Number.isFinite(r.errorM)&&r.errorM<1e-6);
+            }"""), ("Paused rabbits lost native raised floor elevation",mobile)
             resting=page.evaluate("window.HomesteadApp.world().chickenFootContact")
             assert resting["planted"] == 2*resting["chickens"], resting
             assert resting["swinging"] == 0, resting
@@ -252,6 +406,18 @@ try:
                     "70 day button presses should advance 1680 hours",
                     starting_hour, actual_hour)
                 assert not errors,errors
+            metrics=page.evaluate("""() => {
+                const w=window.HomesteadApp.world();
+                return {animals:w.animals,qualityFps:w.qualityFps,
+                  qualityPixelRatio:w.qualityPixelRatio,qualityTier:w.qualityTier,
+                  physicsFrameMs:w.nativeFarm.physicsFrameMs,
+                  nativeSteps:w.nativeFarm.visualSteps,
+                  enclosureCount:w.nativeEnclosureLayout.count,
+                  nativeActions:w.nativeAnimalActions};
+            }""")
+            assert metrics["animals"]>=0 and metrics["qualityPixelRatio"]>0, metrics
+            assert metrics["nativeSteps"]>=0 and metrics["enclosureCount"]>=3
+            print(f"3D visual performance mobile={mobile}: {metrics}",flush=True)
             page.close()
         browser.close()
     print("PASS: unified 3D site runs, both layouts step 25 model hours, no page exceptions")
