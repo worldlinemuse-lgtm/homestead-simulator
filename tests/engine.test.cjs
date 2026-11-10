@@ -114,3 +114,38 @@ test("chicken feet use alternating distance-based stance and positive terrain sw
    assert.throws(()=>chickenFootPhase(...args),RangeError);
  assert.throws(()=>chickenSwingLift(.5,-.02),RangeError);
 });
+
+test("native Farm runtime never mutates biological state or the visual seed model",()=>{
+  const farm=ctx.HomesteadFarmCore;
+  farm.reset(7);farm.advanceDay();
+  const biologicalBefore=JSON.stringify(farm.snapshot());
+  const native=farm.nativeVisual;
+  assert.equal(typeof native.init,"function");
+  const initial=native.init(20261104,9);
+  assert.ok(initial.initialized);
+  assert.equal(initial.agentCount,farm.snapshot().animals.length);
+  assert.ok(native.world().agents instanceof Map);
+  const start=new Map([...native.world().agents].map(([id,a])=>[id,[a.x,a.y,a.z]]));
+  for(let i=0;i<600;i++)native.frame(1/60,true,9);
+  const running=native.stats();
+  assert.ok(running.visualSteps>=500,running);
+  let moved=0;
+  for(const [id,a] of native.world().agents){
+    const p=start.get(id);
+    if(p&&Math.hypot(a.x-p[0],a.y-p[1])>.025)moved++;
+    assert.ok(Number.isFinite(a.x)&&Number.isFinite(a.y)&&Number.isFinite(a.z));
+  }
+  assert.ok(moved>0,"At least one original agent must truly move within 10 seconds");
+  assert.equal(JSON.stringify(farm.snapshot()),biologicalBefore,
+    "Visual physics must not change biological outcomes");
+  const paused=[...native.world().agents].map(([id,a])=>[id,a.x,a.y,a.z]);
+  native.frame(1/12,false,9);
+  assert.deepEqual([...native.world().agents].map(([id,a])=>[id,a.x,a.y,a.z]),paused,
+    "Pause must freeze all native animal positions");
+  const fingerprint=JSON.stringify([...native.world().agents].map(([id,a])=>[id,a.x,a.y,a.z]));
+  native.init(20261104,9);
+  for(let i=0;i<600;i++)native.frame(1/60,true,9);
+  assert.equal(JSON.stringify([...native.world().agents].map(([id,a])=>[id,a.x,a.y,a.z])),
+    fingerprint,"Identical visual seeds and timestep schedules must replay identically");
+  assert.equal(JSON.stringify(farm.snapshot()),biologicalBefore);
+});
