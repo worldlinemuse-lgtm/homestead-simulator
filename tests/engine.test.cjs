@@ -136,6 +136,7 @@ test("native Farm runtime never mutates biological state or the visual seed mode
     assert.ok(Number.isFinite(a.x)&&Number.isFinite(a.y)&&Number.isFinite(a.z));
   }
   assert.ok(moved>0,"At least one original agent must truly move within 10 seconds");
+  assert.ok(running.hops>0,"Original rabbit hop physics must execute within the deterministic 10-second replay");
   assert.equal(JSON.stringify(farm.snapshot()),biologicalBefore,
     "Visual physics must not change biological outcomes");
   const paused=[...native.world().agents].map(([id,a])=>[id,a.x,a.y,a.z]);
