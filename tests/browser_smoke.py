@@ -36,6 +36,20 @@ try:
             assert page.locator("#assetReadout").is_visible()
             page.locator("#closeInspector").click()
             assert page.evaluate("window.HomesteadApp.world().animals") > 0
+            # Native Farm enclosure footprints are mapped from the original
+            # model's feet coordinates, not authored freehand in Three.js.
+            assert page.evaluate("""() => {
+                const s=window.HomesteadApp.snapshot();
+                const e=window.HomesteadApp.world().nativeEnclosureLayout;
+                const relevant=s.farm.components.filter(c=>c.type==="run"||c.type==="hutch");
+                return e.count===relevant.length&&e.count>=3&&
+                  relevant.every(c=>{
+                    const x=e.footprints.find(p=>p.id===c.id);
+                    return x&&x.unit==="m"&&x.type===c.type&&
+                      Math.abs((x.x1-x.x0)-c.w*0.3048)<1e-8&&
+                      Math.abs((x.z1-x.z0)-c.d*0.3048)<1e-8;
+                  });
+            }""")
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
             # Visual sun and shadows are driven by coordinator hour, never
             # fed back into the Solar energy ledger. Check actual UI steps.
