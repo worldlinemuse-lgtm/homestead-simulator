@@ -2600,7 +2600,7 @@ function advanceDay(){step();return snapshot();}
 function snapshot(){const r=S.hist.length?S.hist[S.hist.length-1]:null;return {day:S.day,date:dateOf(S.day).toISOString().slice(0,10),animals:S.animals.map(a=>({id:a.id,sp:a.sp,st:a.st,health:a.health})),components:S.comps.map(c=>({id:c.id,type:c.type,x:c.x,y:c.y,w:c.w,d:c.d})),daily:r?{...r}:null,counts:counts()};}
 function setParameter(key,value){if(!Object.prototype.hasOwnProperty.call(P,key))throw new Error('Unknown farm parameter '+key);if(!Number.isFinite(value))throw new Error('Parameter must be finite');P[key]=value;refreshToday();}
 
-/* BEGIN native farm visual runtime: original farm-sim source, unchanged below. */
+/* BEGIN native farm visual runtime: original farm-sim source (blobs pinned per file). */
 
 // Original upstream file: source/src/app/clock.js (blob 7d36ad05a1fa2bfbc4be43a63579028761b9cd8a)
 // app/clock.js
@@ -5993,12 +5993,8 @@ function depart(g, quick) {
         a.retired
           ? 'retired'
           : a.sp === 'rabbit'
-            ? 'fryer sold 
-})();
- + (a.wt * P.pr_fryer).toFixed(2)
-            : 'bird sold 
-})();
- + (+P.pr_bird).toFixed(2),
+            ? 'fryer sold $' + (a.wt * P.pr_fryer).toFixed(2)
+            : 'bird sold $' + (+P.pr_bird).toFixed(2),
         '#c8f7c5'
       );
     });
@@ -6062,7 +6058,6 @@ function goF(F, t, sp, dt) {
 }
 
 /* END original native farm visual source. */
-
 
 /* Homestead-only adapter. Visual world state is separate from the biological RNG
  * and must never write to S, P, ledgers or model results.
