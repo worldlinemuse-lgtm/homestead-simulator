@@ -197,3 +197,18 @@ test("native Farm component footprint is read-only, unit-correct and rejects mal
  assert.equal(nativeFarmComponentFootprint({...c,x:Number.MAX_VALUE},
    {...origin,x:Number.MAX_VALUE}),null);
 });
+
+test("native Farm agent pose rejects coordinate overflow without mutating the original",async()=>{
+ const {nativeFarmAgentPose,FEET_TO_METRES}=await import("../src/upstream/farm-world/pose-adapter.mjs");
+ const agent=Object.freeze({id:"hen-1",x:2,y:3,z:0,vx:0,vy:0,act:"idle"});
+ const origin=Object.freeze({x:12,y:1,z:-4});
+ const pose=nativeFarmAgentPose(agent,origin);
+ assert.equal(pose.position.x,12+2*FEET_TO_METRES);
+ assert.equal(pose.position.z,-4+3*FEET_TO_METRES);
+ assert.ok(Object.isFrozen(pose.position));
+ assert.equal(agent.x,2);
+ assert.throws(()=>nativeFarmAgentPose(agent,{...origin,x:Number.MAX_VALUE}),/finite world coordinates/);
+ assert.throws(()=>nativeFarmAgentPose({...agent,x:Number.MAX_VALUE},
+   {...origin,x:Number.MAX_VALUE}),/finite world coordinates/);
+ assert.throws(()=>nativeFarmAgentPose({...agent,z:Infinity},origin),/Non-finite native z/);
+});
