@@ -1434,7 +1434,8 @@ export function makeScene(canvas,onSelect=()=>{}){
         a.rotation.y+=deltaYaw*smoothAlpha(9,dt);
       }
       const phase=s.travelM*(chicken?19:11)+s.phase;
-      const gait=gaitPose(playing,nativeAnimalPoses?active:awake,\n        nativeAnimalPoses?false:youngRest,chicken,phase,i);
+      const gait=gaitPose(playing,nativeAnimalPoses?active:awake,
+        nativeAnimalPoses?false:youngRest,chicken,phase,i);
       const stepWave=gait.wave;
       // Chicken roots stay exactly on the triangulated ground; the torso bobs
       // over independently animated alternating feet (no helicopter movement).
