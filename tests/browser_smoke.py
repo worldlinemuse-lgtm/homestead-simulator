@@ -90,6 +90,21 @@ try:
                     l.footprints.some(f=>p.x>=f.x0-eps&&p.x<=f.x1+eps&&
                       p.z>=f.z0-eps&&p.z<=f.z1+eps));
             }"""), ("Rendered enclosure mesh center outside Farm footprint",mobile)
+            # Verify complete rotated Three.js geometry, not only mesh centers.
+            # Posts have a 0.045 m radius and rails have a 0.036 m depth;
+            # 0.06 m is a conservative allowance for illustrative thickness.
+            assert page.evaluate("""() => {
+                const l=window.HomesteadApp.world().nativeEnclosureLayout;
+                const allowance=0.06;
+                return l.meshBounds.length===l.renderedMeshes &&
+                  l.meshBounds.every(b=>
+                    [b.min.x,b.min.y,b.min.z,b.max.x,b.max.y,b.max.z]
+                      .every(Number.isFinite) &&
+                    b.min.x<=b.max.x && b.min.y<=b.max.y && b.min.z<=b.max.z &&
+                    l.footprints.some(f=>
+                      b.min.x>=f.x0-allowance && b.max.x<=f.x1+allowance &&
+                      b.min.z>=f.z0-allowance && b.max.z<=f.z1+allowance));
+            }"""), ("Rendered enclosure mesh extends outside Farm footprint",mobile)
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
             # Visual sun and shadows are driven by coordinator hour, never
             # fed back into the Solar energy ledger. Check actual UI steps.
