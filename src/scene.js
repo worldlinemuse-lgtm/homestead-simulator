@@ -920,6 +920,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   // replacement for Farm collision or its biological state.
   const NATIVE_HUTCH_FLOOR_M=2.05*FEET_TO_METRES;
   const nativeHutchFloors=new THREE.Group();scene.add(nativeHutchFloors);
+  const nativeHutchSupports=new THREE.Group();scene.add(nativeHutchSupports);
   const hutchFloorMat=mat(0x8d9b9d,{roughness:.69,metalness:.44,side:THREE.DoubleSide});
   const hutchWireMat=new THREE.LineBasicMaterial({color:0xc0cecc,transparent:true,opacity:.8,depthWrite:false});
   let nativeEnclosureKey="",nativeEnclosureCount=0,nativeEnclosureFootprints=[];
@@ -937,13 +938,15 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     nativeEnclosures.clear();
     nativeHutchFloors.traverse(o=>{if(o.geometry)o.geometry.dispose();});
     nativeHutchFloors.clear();
+    nativeHutchSupports.traverse(o=>{if(o.geometry)o.geometry.dispose();});
+    nativeHutchSupports.clear();
     nativeEnclosureCount=0;nativeEnclosureFootprints=[];
     if(!validOrigin)return;
     for(const c of comps){
       const footprint=nativeFarmComponentFootprint(c,origin);
       if(!footprint)continue;
       const {x0,x1,z0,z1}=footprint;
-      const raised=c.type==="hutch"?.625:0;
+      const raised=c.type==="hutch"?NATIVE_HUTCH_FLOOR_M:0;
       const H=c.type==="run"?1.28:.87;
       const corners=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]];
       for(const [x,z] of corners){
@@ -970,6 +973,19 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       nativeEnclosureCount++;
       nativeEnclosureFootprints.push(footprint);
       if(c.type==="hutch"){
+        // Raised hutch decks need visible load-bearing posts. Every post
+        // terminates on the same terrain sampler as the model-aligned deck.
+        // Supports are illustrative, never Farm collision obstacles.
+        for(const [px,pz] of [[x0+.09,z0+.09],[x1-.09,z0+.09],
+          [x1-.09,z1-.09],[x0+.09,z1-.09]]){
+          const bottom=terrainY(px,pz)-.04;
+          const top=terrainY(px,pz)+NATIVE_HUTCH_FLOOR_M;
+          const leg=box(.105,top-bottom,.105,m.wood,px,(bottom+top)/2,pz);
+          leg.name="Native raised hutch support "+String(c.id);
+          leg.userData={nativeComponentId:c.id,visualOnly:true,
+            groundY:terrainY(px,pz),baseY:bottom,topY:top};
+          nativeHutchSupports.add(leg);
+        }
         // A real raised floor, following the SAME triangulated terrain sampler
         // under the native rabbit rigs. Mesh and wire are illustrative; no
         // model fixture levels or animal health outcomes are inferred.
@@ -1736,6 +1752,11 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
             min:{x:b.min.x,y:b.min.y,z:b.min.z},
             max:{x:b.max.x,y:b.max.y,z:b.max.z}};
         })},
+      nativeHutchSupports:{count:nativeHutchSupports.children.length,
+        legs:nativeHutchSupports.children.map(o=>({
+          componentId:o.userData.nativeComponentId,visualOnly:true,
+          x:o.position.x,z:o.position.z,baseY:o.userData.baseY,
+          groundY:o.userData.groundY,topY:o.userData.topY}))},
       rabbitElevation:agents.children.filter(o=>o.userData.kind==="rabbit").map(o=>{
         const p=nativeAnimalPoses?.get(String(o.userData.modelId));
         const nativeHeightM=Math.max(0,p?.position.y??0);
