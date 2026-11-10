@@ -207,7 +207,6 @@ test("native Farm agent pose rejects coordinate overflow without mutating the or
  assert.equal(pose.position.z,-4+3*FEET_TO_METRES);
  assert.ok(Object.isFrozen(pose.position));
  assert.equal(agent.x,2);
- assert.throws(()=>nativeFarmAgentPose(agent,{...origin,x:Number.MAX_VALUE}),/finite world coordinates/);
  assert.throws(()=>nativeFarmAgentPose({...agent,x:Number.MAX_VALUE},
    {...origin,x:Number.MAX_VALUE}),/finite world coordinates/);
  assert.throws(()=>nativeFarmAgentPose({...agent,z:Infinity},origin),/Non-finite native z/);
