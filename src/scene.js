@@ -1513,6 +1513,24 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       s.head.rotation.x=active?(chicken?.08+Math.max(0,Math.sin(phase*.4+i))*.19:
         .035+Math.sin(phase*.45)*.065):-.04;
       s.head.rotation.y=active?Math.sin(phase*.18+i)*.07:0;
+      // The original Farm controller selects its actions (peck, preen, dust,
+      // groom, rest, huddle, roost); the 3D rig only illustrates that action.
+      // These poses cannot change task choice, position or biological output.
+      if(nativePose&&!active&&playing){
+        const act=nativePose.action;
+        const pulse=Math.sin(visualTime*5+i*1.13);
+        if(act==="peck"||act==="eat"||act==="drink"){
+          s.head.rotation.x=.44+.16*pulse;
+        }else if(act==="preen"||act==="groom"){
+          s.head.rotation.x=.18+.12*pulse;
+          s.head.rotation.y=.2+.12*Math.sin(visualTime*2.7+i);
+        }else if(act==="dust"||act==="flop"){
+          s.torso.rotation.z=.13*Math.sin(visualTime*3+i);
+          s.head.rotation.x=.17;
+        }else if(act==="rest"||act==="huddle"||act==="roost"){
+          s.head.rotation.x=-.14;
+        }
+      }
       if(chicken)stepChickenFeet(a,s,active);
       else for(let k=0;k<s.limbs.length;k++){
         const legPhase=k%2?-stepWave:stepWave;
@@ -1650,6 +1668,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         hasRampClearance:(31.65-28.35)>ramp.geometry.parameters.width,
         hutchFenceClearanceM:hutches.position.x-7.85/2-19},
       chickenFootContact:chickenFootReport(),
+      nativeAnimalActions:nativeAnimalPoses?[...nativeAnimalPoses.values()].reduce((counts,p)=>{
+        counts[p.action]=(counts[p.action]||0)+1;return counts;
+      },{}):{},
       animalMotion:{walkingChickens:agents.children.filter(a=>a.userData.kind==="chicken"&&a.userData.walking).length,
         chickenTravelM:agents.children.filter(a=>a.userData.kind==="chicken").reduce((n,a)=>n+a.userData.travelM,0),
         maxRootGroundErrorM:agents.children.filter(a=>a.userData.kind==="chicken").reduce(
