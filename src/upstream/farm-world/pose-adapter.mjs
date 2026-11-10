@@ -36,3 +36,21 @@ export function nativeFarmWorldPoses(world,origin) {
   if (!(world?.agents instanceof Map)) throw new TypeError("Expected original WV.agents Map");
   return [...world.agents.values()].map(a=>nativeFarmAgentPose(a,origin));
 }
+
+/**
+ * Read-only footprint of an original Farm component in the Homestead world.
+ * Farm components use x/y/w/d in feet; Homestead uses x/z in metres.
+ * This function does not edit source collision geometry or fabricate fixtures.
+ */
+export function nativeFarmComponentFootprint(component, origin) {
+  if (!component || !origin) return null;
+  if (!["x","y","z"].every(k=>Number.isFinite(origin[k]))) return null;
+  if (!["x","y","w","d"].every(k=>Number.isFinite(component[k]))) return null;
+  if (component.w<=0 || component.d<=0) return null;
+  const x0=origin.x+component.x*FEET_TO_METRES;
+  const z0=origin.z+component.y*FEET_TO_METRES;
+  const x1=x0+component.w*FEET_TO_METRES;
+  const z1=z0+component.d*FEET_TO_METRES;
+  if (![x0,x1,z0,z1].every(Number.isFinite) || x1<=x0 || z1<=z0) return null;
+  return Object.freeze({id:component.id,type:component.type,x0,x1,z0,z1,unit:"m"});
+}
