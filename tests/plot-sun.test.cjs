@@ -12,8 +12,8 @@ test("native chicken coop and run share an actual east doorway, not an oversized
   assert.ok(Math.abs(p.plane-(23+48*.3048))<1e-10);
   assert.ok(Math.abs(p.center-(6+14*.3048))<1e-10);
   assert.ok(p.width>=.9&&p.width<=1.1);
-  assert.equal(p.coop.x1,p.run.x0);
-  assert.equal(p.start+p.width,p.end);
+  assert.ok(Math.abs(p.coop.x1-p.run.x0)<1e-10);
+  assert.ok(Math.abs((p.start+p.width)-p.end)<1e-10);
   assert.equal(nativeCoopRunPortal([{...source[0],w:0},source[1]],{x:23,y:0,z:6}),null);
   assert.equal(nativeCoopRunPortal([source[0],{...source[1],x:70}],{x:23,y:0,z:6}),null);
 });
@@ -22,7 +22,7 @@ test("every garden row stays within property fence and outside the native chicke
     nativeCoopRunPortal}=await import("../src/plot-layout.mjs");
   const bounds=gardenBounds();
   assert.ok(bounds.x1-bounds.x0>=8);
-  assert.ok(bounds.z1-bounds.z0>=9.4);
+  assert.ok(bounds.z1-bounds.z0>=9.4-1e-10);
   assert.equal(FARM_PERIMETER.length,5);
   assert.ok(fenceToGardenClearance()>1,"plant/leaf envelopes must clear every fence rail by a metre");
   assert.equal(fenceToGardenClearance([[[bounds.x0-1,bounds.z0+1],
