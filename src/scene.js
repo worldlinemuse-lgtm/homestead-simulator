@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import {nativeFarmWorldPoses,nativeFarmComponentFootprint,nativeFarmCoopFrame} from "./upstream/farm-world/pose-adapter.mjs";
+import {nativeFarmWorldPoses} from "./upstream/farm-world/pose-adapter.mjs";
 import {frameDeltaSeconds,smoothAlpha,gaitPose,chickenFootPhase,chickenSwingLift,
   CHICKEN_STANCE_FRACTION} from "./visual-motion.mjs";
 
@@ -723,129 +723,114 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     target.add(screen);housingScreenCount++;
     return screen;
   }
-  // One architectural shell, attached to the authoritative Farm coop footprint.
-  // The old 9-m-wide illustration overlapped the 8-ft native coop and concealed
-  // moving birds; rescale and rotate it to the model's actual metres-space box.
-  const barn=group("farm","Henhouse",36.4,10.27);
-  const barnBody=new THREE.Group();barn.add(barnBody);
-  const barnPad=box(1,1,1,m.stone);barnPad.name="Henhouse foundation";barn.add(barnPad);
-  const barnFoundationState={asset:"Henhouse",top:0,bottom:0,minTerrain:0,maxTerrain:0,
-    footprint:[0,0],minimumEmbedM:0};foundations.push(barnFoundationState);
-  let nativeCoopLayout=null;
+  const barn=group("farm","Henhouse",33,7.2);
+  foundationFor(barn,33,7.2,9.25,8.5);
   // Place the illustrated building's east wall alongside the native 8 ft coop
   // and attached run footprint (Farm original x40/y10 and x48/y10 in feet).
   // It is still a scale illustration, not a claim that its interior fixtures
   // or bird-door openings exactly match the original compact Farm enclosure.
   // Continuous siding is textured wood; trim gives the coop construction-scale detail.
-  barnBody.add(box(9.35,.32,8.8,m.stone,0,.16,0));
+  barn.add(box(9.35,.32,8.8,m.stone,0,.16,0));
   
-  const coopFront=facadeWithOpenings(barnBody,"coop/front",9,5.5,4.2,
+  const coopFront=facadeWithOpenings(barn,"coop/front",9,5.5,4.2,
     [{name:"person-door",x:-2.42,y:1.30,w:1.56,h:2.38},
      {name:"bird-door",x:0,y:1.24,w:.92,h:.79},
      ...[-2.65,2.65].map(x=>({name:"window-"+x,x,y:3.93,w:1.58,h:1.27}))],
      m.cedar,.26);
-  rearAndSides(barnBody,"coop",9,5.5,8.4,m.cedar);
+  rearAndSides(barn,"coop",9,5.5,8.4,m.cedar);
   for(const x of [-4.4,-3.55,-2.7,-1.85,1.85,2.7,3.55,4.4]){
-    barnBody.add(box(.07,5.05,.095,m.trim,x,2.87,4.27));
+    barn.add(box(.07,5.05,.095,m.trim,x,2.87,4.27));
   }
   for(const z of [-3.99,4.28]){
-    barnBody.add(box(9.25,.19,.14,m.darkWood,0,.49,z));
-    barnBody.add(box(9.25,.14,.14,m.trim,0,5.43,z));
+    barn.add(box(9.25,.19,.14,m.darkWood,0,.49,z));
+    barn.add(box(9.25,.14,.14,m.trim,0,5.43,z));
   }
   // Full-size service door is separate from the chicken-scale pop hole;
   // the ramp reaches the latter, not an implausibly oversized service doorway.
-  addPorchFixture(barnBody,-.95,2.68,4.55);
+  addPorchFixture(barn,-.95,2.68,4.55);
   const coopDoor=box(1.56,2.38,.15,m.darkWood,-2.42,1.30,4.30);
-  barnBody.add(coopDoor);
-  for(const x of [-3.27,-1.57])barnBody.add(box(.11,2.46,.18,m.trim,x,1.32,4.39));
-  barnBody.add(box(1.79,.14,.18,m.trim,-2.42,2.55,4.39));
-  barnBody.add(cyl(.075,.075,.09,m.metal,-1.91,1.31,4.45,10));
+  barn.add(coopDoor);
+  for(const x of [-3.27,-1.57])barn.add(box(.11,2.46,.18,m.trim,x,1.32,4.39));
+  barn.add(box(1.79,.14,.18,m.trim,-2.42,2.55,4.39));
+  barn.add(cyl(.075,.075,.09,m.metal,-1.91,1.31,4.45,10));
   // Open sliding chicken hatch: the slab is raised above its actual opening.
   // This is visual static geometry; it does not claim dynamic gate automation.
   const popDoor=box(.92,.79,.15,m.darkWood,0,2.08,4.34);
-  popDoor.name="Coop raised chicken hatch";barnBody.add(popDoor);
-  for(const x of [-.54,.54])barnBody.add(box(.06,1.65,.15,m.steel,x,1.62,4.45));
-  for(const x of [-.52,.52])barnBody.add(box(.095,.97,.17,m.trim,x,1.23,4.39));
-  barnBody.add(box(1.15,.12,.18,m.trim,0,1.76,4.39));
-  barnBody.add(box(1.18,.11,.31,m.wood,0,.78,4.50));
+  popDoor.name="Coop raised chicken hatch";barn.add(popDoor);
+  for(const x of [-.54,.54])barn.add(box(.06,1.65,.15,m.steel,x,1.62,4.45));
+  for(const x of [-.52,.52])barn.add(box(.095,.97,.17,m.trim,x,1.23,4.39));
+  barn.add(box(1.15,.12,.18,m.trim,0,1.76,4.39));
+  barn.add(box(1.18,.11,.31,m.wood,0,.78,4.50));
   // Correct the original inverted (valley) roof: ridge higher than eaves.
   for(const side of [-1,1]){
     const roof=box(5.35,.32,9.35,m.roofAlt,side*2.43,6.35,0);
-    roof.rotation.z=-side*.35;barnBody.add(roof);
+    roof.rotation.z=-side*.35;barn.add(roof);
     const fascia=box(.22,.24,9.5,m.trim,side*4.93,5.48,0);
-    fascia.rotation.z=-side*.35;barnBody.add(fascia);
+    fascia.rotation.z=-side*.35;barn.add(fascia);
   }
-  barnBody.add(box(.37,.26,9.7,m.roof,0,7.12,0));
+  barn.add(box(.37,.26,9.7,m.roof,0,7.12,0));
   // Close both triangular openings behind the roof, including the rear face.
-  gableEnd(barnBody,8.9,5.45,7.12,4.18,m.cedar);
-  gableEnd(barnBody,8.9,5.45,7.12,-4.32,m.cedar);
+  gableEnd(barn,8.9,5.45,7.12,4.18,m.cedar);
+  gableEnd(barn,8.9,5.45,7.12,-4.32,m.cedar);
   // Gable ventilation louvers, roof eaves and illuminated-looking windows.
   for(const y of [5.65,5.83,6.01]){
-    barnBody.add(box(1.24,.08,.14,m.darkWood,0,y,4.31));
+    barn.add(box(1.24,.08,.14,m.darkWood,0,y,4.31));
   }
   for(const x of [-2.65,2.65]){
-    barnBody.add(box(1.83,1.53,.12,m.trim,x,3.93,4.33));
-    barnBody.add(box(1.58,1.27,.08,m.glass,x,3.93,4.24));
-    barnBody.add(box(.08,1.36,.12,m.trim,x,3.93,4.40));
-    barnBody.add(box(1.66,.07,.12,m.trim,x,3.93,4.40));
-    barnBody.add(box(2.03,.14,.30,m.wood,x,3.12,4.46));
+    barn.add(box(1.83,1.53,.12,m.trim,x,3.93,4.33));
+    barn.add(box(1.58,1.27,.08,m.glass,x,3.93,4.24));
+    barn.add(box(.08,1.36,.12,m.trim,x,3.93,4.40));
+    barn.add(box(1.66,.07,.12,m.trim,x,3.93,4.40));
+    barn.add(box(2.03,.14,.30,m.wood,x,3.12,4.46));
   }
   // Illustration of the exterior nest-access hatch; boxes do not alter egg count.
   for(const z of [-2.1,0,2.1]){
-    barnBody.add(box(1.12,1.23,1.57,m.wood,4.96,2.60,z));
+    barn.add(box(1.12,1.23,1.57,m.wood,4.96,2.60,z));
     const lid=box(1.50,.16,1.92,m.roofAlt,5.01,3.27,z);
-    lid.rotation.z=-.18;barnBody.add(lid);
-    barnBody.add(box(.62,.11,.11,m.metal,5.60,2.48,z));
+    lid.rotation.z=-.18;barn.add(lid);
+    barn.add(box(.62,.11,.11,m.metal,5.60,2.48,z));
   }
   // Cleated entry ramp into the fenced run. Static facade: no automatic-door claim.
   const ramp=box(2.15,.17,4.25,m.wood,0,.82,6.38);
-  ramp.rotation.x=.235;barnBody.add(ramp);
+  ramp.rotation.x=.235;barn.add(ramp);
   for(const zz of [4.95,5.58,6.21,6.84,7.47]){
     const yy=.82-(zz-6.38)*Math.sin(.235)+.12;
     const rung=box(2.08,.10,.19,m.trim,0,yy,zz);
-    rung.rotation.x=.235;barnBody.add(rung);
+    rung.rotation.x=.235;barn.add(rung);
   }
   for(const x of [-1.08,1.08]){
     const sideRail=box(.12,.25,4.36,m.darkWood,x,.99,6.36);
-    sideRail.rotation.x=.235;barnBody.add(sideRail);
+    sideRail.rotation.x=.235;barn.add(sideRail);
   }
   // A small illustrative feed trough; its contents are deliberately not drawn
   // because this coordinator exposes aggregate feed demand, not fixture inventory.
-  barnBody.add(box(2.5,.25,.67,m.steel,2.9,.64,6.0));
-  barnBody.add(box(2.24,.055,.48,m.darkWood,2.9,.79,6.0));
-  for(const x of [1.87,3.93])barnBody.add(box(.16,.65,.20,m.wood,x,.33,6.0));
-  // No oversized independent pasture perimeter: the original Farm run and
-  // hutch footprints are rendered downstream from farm.components below.
-  // A second, non-colliding fence had contradicted those native boundaries.
-  function syncNativeCoop(farm,origin){
-    const frame=nativeFarmCoopFrame(farm,origin);
-    barn.visible=Boolean(frame);
-    if(!frame){nativeCoopLayout=null;return;}
-    const bounds=footprintBounds(frame.x,frame.z,frame.width,frame.depth);
-    const top=bounds.max+.04,bottom=bounds.min-.32,height=top-bottom;
-    barn.position.set(frame.x,top,frame.z);
-    barnBody.rotation.y=frame.rotationY;
-    // Shell dimensions are illustrations; native x/y/w/d remain authoritative.
-    // Height is an illustrated ~3-m henhouse, not a measured manufacturer spec.
-    barnBody.scale.set(frame.scaleX,.42,frame.scaleZ);
-    barnPad.position.set(0,-height/2,0);
-    barnPad.scale.set(frame.width+.08,height,frame.depth+.08);
-    Object.assign(barnFoundationState,{top,bottom,minTerrain:bounds.min,
-      maxTerrain:bounds.max,footprint:[frame.width,frame.depth],
-      minimumEmbedM:bounds.min-bottom});
-    barn.updateMatrixWorld(true);
-    const rampTip=barnBody.localToWorld(V(0,0,8.5));
-    const rampEndsInNativeRun=(farm?.components||[]).some(c=>{
-      if(c.type!=="run")return false;
-      const f=nativeFarmComponentFootprint(c,origin);
-      return f&&rampTip.x>=f.x0&&rampTip.x<=f.x1&&
-        rampTip.z>=f.z0&&rampTip.z<=f.z1;
-    });
-    nativeCoopLayout={footprint:frame.footprint,side:frame.side,
-      doorway:frame.door,doorCentered:frame.doorCentered,
-      rampTip:{x:rampTip.x,z:rampTip.z},rampEndsInNativeRun,
-      shellHeightM:7.12*barnBody.scale.y};
+  barn.add(box(2.5,.25,.67,m.steel,2.9,.64,6.0));
+  barn.add(box(2.24,.055,.48,m.darkWood,2.9,.79,6.0));
+  for(const x of [1.87,3.93])barn.add(box(.16,.65,.20,m.wood,x,.33,6.0));
+  const animalArea=group("farm","Pasture, hutches and livestock",30,5);
+  // South entrance remains open precisely where the coop ramp crosses the fence.
+  // The surrounding rails do not intersect the ramp or form an invisible gate.
+  const fenceLines=[[[19,-2],[28.35,-2]],[[31.65,-2],[44,-2]],
+    [[44,-2],[47,20]],[[47,20],[18,20]],[[18,20],[19,-2]]];
+  function woodFence(a,b){
+    const dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz),num=Math.ceil(len/2.2);
+    const dir=V(dx/len,0,dz/len);
+    for(let i=0;i<=num;i++){
+      const t=i/num,x=a[0]+t*dx,z=a[1]+t*dz,h=terrainY(x,z);
+      const post=cyl(.10,.11,1.65,m.wood,x,h+.8,z,7);scene.add(post);
+    }
+    for(const height of [.55,1.18]){
+      const curve=route([[a[0],a[1],height],[b[0],b[1],height]],m.darkWood,.065);
+      void curve;
+    }
   }
+  fenceLines.forEach(([a,b])=>woodFence(a,b));
+  for(const gx of [28.35,31.65]){
+    const y=terrainY(gx,-2);
+    const post=cyl(.14,.16,1.83,m.darkWood,gx,y+.9,-2,9);
+    post.name="Coop gate opening marker";scene.add(post);
+  }
+  // Move the hutches wholly within the fence (west edge is near x=18–19).
   const hutches=group("farm","Rabbit hutches",24.5,11);
   // Reuse Farm's raised wire-floor hutches, outside feeders/water bottles,
   // nest boxes and cage-door hinge/latch vocabulary. The geometries represent
@@ -939,10 +924,11 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     nativeEnclosureKey=key;
     nativeEnclosures.traverse(o=>{if(o.isMesh&&o.geometry)o.geometry.dispose();});
     nativeEnclosures.clear();nativeEnclosureCount=0;nativeEnclosureFootprints=[];
+    const ft=0.3048;
     for(const c of comps){
-      const footprint=nativeFarmComponentFootprint(c,origin);
-      if(!footprint)continue;
-      const {x0,x1,z0,z1}=footprint;
+      if(![c.x,c.y,c.w,c.d].every(Number.isFinite)||c.w<=0||c.d<=0)continue;
+      const x0=origin.x+c.x*ft,x1=x0+c.w*ft;
+      const z0=origin.z+c.y*ft,z1=z0+c.d*ft;
       const raised=c.type==="hutch"?.625:0;
       const H=c.type==="run"?1.28:.87;
       const corners=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]];
@@ -968,7 +954,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         }
       }
       nativeEnclosureCount++;
-      nativeEnclosureFootprints.push(footprint);
+      nativeEnclosureFootprints.push({id:c.id,type:c.type,x0,x1,z0,z1,unit:"m"});
     }
   }
   // Visual vocabulary adapted from the user's Farm Simulator:
@@ -1321,7 +1307,6 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       lastModelHour=snapshot.clock.hours;
     }
     data=snapshot;syncAnimals(snapshot.farm);
-    syncNativeCoop(snapshot.farm,snapshot.farmWorldOriginM);
     syncNativeEnclosures(snapshot.farm,snapshot.farmWorldOriginM);
     // Native farm-world motion is an explicit, read-only optional integration.
     // Never infer native agent positions from biological aggregates or invent them.
@@ -1589,12 +1574,11 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   }
 
   function facadeProbe(parent,front,solidX,solidY){
-    const ray=new THREE.Raycaster();
-    parent.updateWorldMatrix(true,false);
+    const ray=new THREE.Raycaster(),dir=V(0,0,-1);
+    parent.updateMatrixWorld(true);
     function count(x,y){
-      const origin=parent.localToWorld(V(x,y,front.z+1.5));
-      const dir=V(0,0,-1).transformDirection(parent.matrixWorld);
-      ray.set(origin,dir);
+      ray.set(V(parent.position.x+x,parent.position.y+y,
+        parent.position.z+front.z+1.5),dir);
       return ray.intersectObjects(front.parts,false).length;
     }
     return {wallSegments:front.parts.length,openingCount:front.openings.length,
@@ -1671,20 +1655,22 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         followAnimalId:trackedAnimalId},
       visualSun:visualSunState?{...visualSunState}:null,
       nativeEnclosureLayout:{count:nativeEnclosureCount,footprints:nativeEnclosureFootprints},
-      nativeCoopLayout,
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
       tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport(),
       structureAudit:{houseFacade:facadeProbe(homestead,houseFront,6,3),
-        coopFacade:facadeProbe(barnBody,coopFront,4.1,2.7),
+        coopFacade:facadeProbe(barn,coopFront,4.1,2.7),
         houseDoorHeightM:frontDoor.geometry.parameters.height,
-        coopServiceDoorHeightM:coopDoor.geometry.parameters.height*barnBody.scale.y,
-        coopPopDoorHeightM:popDoor.geometry.parameters.height*barnBody.scale.y,
-        coopHatchClearanceM:(popDoor.position.y-popDoor.geometry.parameters.height/2-
-          (1.24+.79/2))*barnBody.scale.y,
+        coopServiceDoorHeightM:coopDoor.geometry.parameters.height,
+        coopPopDoorHeightM:popDoor.geometry.parameters.height,
+        coopHatchClearanceM:popDoor.position.y-popDoor.geometry.parameters.height/2-
+          (1.24+.79/2),
         closedGables:closedGableCount,
-        rampWidthM:ramp.geometry.parameters.width*barnBody.scale.x,
-        rampEndsInNativeRun:Boolean(nativeCoopLayout?.rampEndsInNativeRun),
-        coopDoorCentered:Boolean(nativeCoopLayout?.doorCentered)},
+        gateOpeningM:31.65-28.35,
+        rampWidthM:ramp.geometry.parameters.width,
+        hutchWestWorldX:hutches.position.x-7.85/2,
+        westFenceMaxX:19,
+        hasRampClearance:(31.65-28.35)>ramp.geometry.parameters.width,
+        hutchFenceClearanceM:hutches.position.x-7.85/2-19},
       chickenFootContact:chickenFootReport(),
       nativeAnimalActions:nativeAnimalPoses?[...nativeAnimalPoses.values()].reduce((counts,p)=>{
         counts[p.action]=(counts[p.action]||0)+1;return counts;
