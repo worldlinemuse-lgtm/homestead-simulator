@@ -86,7 +86,9 @@ function renderAsset(s){
    if(a)entries=[
      ["Model animal ID",a.id],["Species",a.sp],
      ["Life stage",a.st],["Modeled health",Number.isFinite(a.health)?fmt(a.health,1):"Unavailable"],
-     ["Authority","Original Farm daily biological engine; display movement is illustrative"]
+     ["Assigned enclosure",a.enc??"Unassigned"],
+     ["Native visual action",farmVisual.world().agents.get(id)?.act??"Idle"],
+     ["Authority","Original Farm biology and native visual controller; movement/actions are illustrative"]
    ];
  }
  target.replaceChildren();
