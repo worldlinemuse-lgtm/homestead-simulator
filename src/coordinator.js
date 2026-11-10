@@ -114,22 +114,32 @@
       const baseWh=cfg.backgroundLoadW+farmDailyKWh*1000/24; // estimated uniform hourly farm demand
       const energy=allocateEnergy({pvWh,baseWh,pumpWh:cfg.pumpElectricalW,
         initialBatteryWh:this.batteryWh,cfg});
-      const waterBefore=this.waterStoredL,waterProducedBefore=this.water.produced;
-      const pump=this.water.parts.find(p=>p.type==="pump_sky");
+      // Execute hydraulic substeps against a working copy. A failed solver must
+      // not partially advance the authoritative water state or scenario clock.
+      const waterBefore=this.waterStoredL;
+      must(Number.isFinite(this.water.produced) && this.water.produced>=0,
+        "Invalid existing water production");
+      const nextWater=root.HomesteadWaterCore.cloneWorld(this.water);
+      must(nextWater && nextWater!==this.water && Number.isFinite(nextWater.produced),
+        "Water solver cannot create an independent snapshot");
+      const waterProducedBefore=nextWater.produced;
+      const pump=nextWater.parts.find(p=>p.type==="pump_sky");
       must(!!pump,"Water reference preset is missing its pump");
       pump.params.psi=energy.pumpEnabled?50:0;
       // Original network solver; dynamic storage/filter updates. Exact result from water core,
       // not an assumed gallons-per-hour constant.
-      let elapsed=0,iterations=0;
+      let elapsed=0,iterations=0,previousProduced=waterProducedBefore;
       while(elapsed<3600-1e-7){
         const dt=Math.min(300,3600-elapsed);
-        const r=root.HomesteadWaterCore.step(this.water,dt,1);
+        const r=root.HomesteadWaterCore.step(nextWater,dt,1);
         must(r && Number.isFinite(r.dt) && r.dt>0 && r.dt<=dt+1e-6,"Water solver returned invalid timestep");
-        must(Number.isFinite(this.water.produced) && this.water.produced>=waterProducedBefore-EPS,"Water solver returned non-finite or decreasing cumulative production");
+        must(Number.isFinite(nextWater.produced) && nextWater.produced>=previousProduced-EPS,
+          "Water solver returned non-finite or decreasing cumulative production");
+        previousProduced=nextWater.produced;
         elapsed+=r.dt;
         if(++iterations>1000)throw new Error("Water solver exceeded substep limit");
       }
-      const treatedL=this.water.produced-waterProducedBefore;
+      const treatedL=nextWater.produced-waterProducedBefore;
       must(Number.isFinite(treatedL) && treatedL>=-EPS,"Invalid water production");
       const wantL=farmDailyWaterL/24;
       const beforeUse=waterBefore+treatedL;
@@ -137,9 +147,14 @@
       const shortfallL=wantL-consumedL;
       const afterUse=beforeUse-consumedL;
       const overflowL=Math.max(0,afterUse-cfg.waterStorageCapacityL);
-      this.waterStoredL=afterUse-overflowL;
-      const waterResidual=waterBefore+treatedL-consumedL-overflowL-this.waterStoredL;
-      must(Math.abs(waterResidual)<1e-5,"Water conservation failure "+waterResidual);
+      const nextWaterStoredL=afterUse-overflowL;
+      const waterResidual=waterBefore+treatedL-consumedL-overflowL-nextWaterStoredL;
+      must(Number.isFinite(nextWaterStoredL) && nextWaterStoredL>=-EPS &&
+        Number.isFinite(waterResidual) && Math.abs(waterResidual)<1e-5,
+        "Water conservation failure "+waterResidual);
+      // Hydraulic state, tank inventory and electricity commit together.
+      this.water=nextWater;
+      this.waterStoredL=nextWaterStoredL;
       this.batteryWh=energy.batteryWh;
       this.cumulative.pvWh+=pvWh;
       this.cumulative.baseWh+=energy.servedBaseWh;
