@@ -9,7 +9,7 @@ import {frameDeltaSeconds,smoothAlpha,gaitPose,chickenFootPhase,chickenSwingLift
  * All animation highlighting comes exclusively from the coordinator snapshot.
  * The original physics and biological models are untouched by this renderer.
  */
-export function makeScene(canvas,onSelect=()=>{}){
+export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:"high-performance"});
   // Adapt Farm Simulator world/perf.js's visual-only Auto quality policy.
   // Device DPR is an upper bound, not a promise of smooth rendering.
@@ -1343,6 +1343,24 @@ export function makeScene(canvas,onSelect=()=>{}){
     const gap=now-previous;
     const dt=frameDeltaSeconds(gap,document.hidden);previous=now;
     observeFrameGap(now,gap);
+    // Advance the ORIGINAL visual-only Farm controller at its fixed 1/60 s step.
+    // World agent IDs and physics positions are never fabricated by this renderer.
+    if(data?.farmWorld&&farmVisual){
+      farmVisual.frame(dt,playing,data.clock.hourOfDay);
+      const sample=nativeFarmWorldPoses(data.farmWorld,data.farmWorldOriginM);
+      const next=new Map();
+      for(const pose of sample){
+        if(next.has(pose.id))throw new Error("Duplicate Farm native pose "+pose.id);
+        next.set(pose.id,pose);
+      }
+      for(const rig of agents.children){
+        const id=String(rig.userData.modelId),current=next.get(id),prior=nativeAnimalPoses?.get(id);
+        rig.userData.nativePoseChanged=Boolean(current&&(!prior||
+          current.position.x!==prior.position.x||current.position.y!==prior.position.y||
+          current.position.z!==prior.position.z));
+      }
+      nativeAnimalPoses=next;
+    }
     if(playing)visualTime+=dt;
     // A clicked animal can be followed at eye level; drag/pinch/wheel releases
     // follow mode. No biological state or agent motion is driven by this camera.
@@ -1382,7 +1400,7 @@ export function makeScene(canvas,onSelect=()=>{}){
       // The visual agent traverses genuine horizontal distance around the pen,
       // rather than moving a few centimeters around a fixed sine-wave anchor.
       const nativePose=nativeAnimalPoses?.get(String(s.modelId));
-      // A native pose takes priority over the legacy curve. No interpolation
+      // Native physics supplies the pose; no synthetic circular path remains. No interpolation
       // can write back into WV.agents or the farm biological model.
       if(nativeAnimalPoses){
         if(!nativePose){
@@ -1403,7 +1421,14 @@ export function makeScene(canvas,onSelect=()=>{}){
         // from a legacy spawn point is a coordinate-frame jump, not walking.
         if(s.nativePoseChanged&&s.nativePoseInitialized)s.travelM+=distance;
         s.nativePoseInitialized=true;
-        a.position.set(nativePose.position.x,nativePose.position.y,nativePose.position.z);
+        // The native controller owns horizontal motion and rabbit elevation.
+        // Chicken roots follow the shared terrain: do not float the whole bird
+        // 0.35 native feet above the ground (native coop floor is illustrative).
+        a.position.set(nativePose.position.x,
+          chicken?terrainY(nativePose.position.x,nativePose.position.z):
+            terrainY(nativePose.position.x,nativePose.position.z)+
+              Math.max(0,nativePose.position.y-0.625),
+          nativePose.position.z);
         if(distance>1e-5)a.rotation.y=Math.atan2(dx,dz);
         s.nativePoseChanged=false;
       }
@@ -1414,7 +1439,7 @@ export function makeScene(canvas,onSelect=()=>{}){
       const stepWave=gait.wave;
       // Chicken roots stay exactly on the triangulated ground; the torso bobs
       // over independently animated alternating feet (no helicopter movement).
-      a.position.y=nativePose?nativePose.position.y:terrainY(a.position.x,a.position.z)+(chicken?0:gait.heightM);
+      if(!nativePose)a.position.y=terrainY(a.position.x,a.position.z);
       // Weight shift follows the same distance-based stance cycle as the feet,
       // not the old high-frequency sinusoidal gait (which made hens vibrate).
       if(chicken){
