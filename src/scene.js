@@ -723,8 +723,8 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     target.add(screen);housingScreenCount++;
     return screen;
   }
-  const barn=group("farm","Henhouse",30,-10);
-  foundationFor(barn,30,-10,9.25,8.5);
+  const barn=group("farm","Henhouse",35.5,2.5);
+  foundationFor(barn,35.5,2.5,9.25,8.5);
   // Continuous siding is textured wood; trim gives the coop construction-scale detail.
   barn.add(box(9.35,.32,8.8,m.stone,0,.16,0));
   
@@ -890,7 +890,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   trough.add(cyl(.95,.95,.88,m.steel,0,.48,0,16));
   const troughWater=cyl(.84,.84,.05,m.water,0,.90,0,16);trough.add(troughWater);
   trough.add(cyl(.13,.13,2.0,m.pipe,-.2,1.08,0,10));
-  const garden=group("farm","Pasture forage patch",39,10);
+  const garden=group("farm","Pasture forage patch",41,17);
   for(let row=0;row<5;row++){
     const bed=box(1.4,.12,9.4,m.earth,row*1.65-3.25,.12,0);garden.add(bed);
     for(let i=0;i<9;i++){
@@ -906,6 +906,53 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   // Visual animals use the real farm population: species/stage are model fields.
   // Their tiny idle motions are deliberately visual-only (never RNG for biology).
   const agents=new THREE.Group();scene.add(agents);
+  // Original farm-sim component footprint coordinates (feet) control the
+  // physical bounds of native agent collision. Show those exact footprints
+  // inside the same landscape, rather than inventing unrelated pen rectangles.
+  // Heights, rail diameter and construction are illustrative; footprint is not.
+  const nativeEnclosures=new THREE.Group();scene.add(nativeEnclosures);
+  let nativeEnclosureKey="",nativeEnclosureCount=0,nativeEnclosureFootprints=[];
+  function syncNativeEnclosures(farm,origin){
+    if(!origin)return;
+    const comps=(farm?.components||[]).filter(c=>["run","hutch"].includes(c.type));
+    const key=JSON.stringify([origin,comps]);
+    if(key===nativeEnclosureKey)return;
+    nativeEnclosureKey=key;
+    nativeEnclosures.traverse(o=>{if(o.isMesh&&o.geometry)o.geometry.dispose();});
+    nativeEnclosures.clear();nativeEnclosureCount=0;nativeEnclosureFootprints=[];
+    const ft=0.3048;
+    for(const c of comps){
+      if(![c.x,c.y,c.w,c.d].every(Number.isFinite)||c.w<=0||c.d<=0)continue;
+      const x0=origin.x+c.x*ft,x1=x0+c.w*ft;
+      const z0=origin.z+c.y*ft,z1=z0+c.d*ft;
+      const raised=c.type==="hutch"?.625:0;
+      const H=c.type==="run"?1.28:.87;
+      const corners=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]];
+      for(const [x,z] of corners){
+        const ground=terrainY(x,z),post=cyl(.045,.045,H+raised+.25,m.wood,x,
+          ground+(H+raised+.25)/2,z,7);
+        nativeEnclosures.add(post);
+      }
+      for(let i=0;i<4;i++){
+        const [ax,az]=corners[i],[bx,bz]=corners[(i+1)%4];
+        const dx=bx-ax,dz=bz-az,len=Math.hypot(dx,dz);
+        const N=Math.max(1,Math.ceil(len/1.1));
+        for(let q=0;q<N;q++){
+          const t0=q/N,t1=(q+1)/N;
+          const xa=ax+dx*t0,za=az+dz*t0,xb=ax+dx*t1,zb=az+dz*t1;
+          const cx=(xa+xb)/2,cz=(za+zb)/2,edge=Math.hypot(xb-xa,zb-za);
+          for(const h of [.25,.65,H]){
+            const bar=box(edge,.031,.036,m.steel,0,0,0);
+            bar.rotation.y=Math.atan2(-(zb-za),xb-xa);
+            bar.position.set(cx,terrainY(cx,cz)+raised+h,cz);
+            nativeEnclosures.add(bar);
+          }
+        }
+      }
+      nativeEnclosureCount++;
+      nativeEnclosureFootprints.push({id:c.id,type:c.type,x0,x1,z0,z1,unit:"m"});
+    }
+  }
   // Visual vocabulary adapted from the user's Farm Simulator:
   // source/src/world/agents.js (RAB / HEN palettes and species movement) and
   // world/looks.js (life-stage distinctions) and world/physics.js (rabbit hopping).
@@ -1256,6 +1303,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       lastModelHour=snapshot.clock.hours;
     }
     data=snapshot;syncAnimals(snapshot.farm);
+    syncNativeEnclosures(snapshot.farm,snapshot.farmWorldOriginM);
     // Native farm-world motion is an explicit, read-only optional integration.
     // Never infer native agent positions from biological aggregates or invent them.
     // An actual WV.agents Map and calibrated origin must be supplied together.
@@ -1575,6 +1623,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         requestedHeightAboveGroundM:toEye.y-terrainY(toEye.x,toEye.z),
         followAnimalId:trackedAnimalId},
       visualSun:visualSunState?{...visualSunState}:null,
+      nativeEnclosureLayout:{count:nativeEnclosureCount,footprints:nativeEnclosureFootprints},
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
       tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport(),
       structureAudit:{houseFacade:facadeProbe(homestead,houseFront,6,3),
