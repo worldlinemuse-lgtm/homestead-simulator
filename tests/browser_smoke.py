@@ -311,13 +311,35 @@ try:
             assert beforeNative["initialized"] is True and beforeNative["agentCount"]>0, beforeNative
             page.locator("#playBtn").click()
             assert page.evaluate("window.HomesteadApp.world().playing") is True
-            page.wait_for_timeout(950)
+            # Software WebGL on shared CI runners can delay frames unpredictably.
+            # Wait for a specific number of native FIXED-TIME physics steps and real
+            # distance traveled; never infer motion from an arbitrary wall-clock sleep.
+            # The same assertions below remain mandatory and the wait is bounded.
+            try:
+                page.wait_for_function("""limit => {
+                    const w=window.HomesteadApp.world();
+                    return w.playing === true &&
+                      w.nativeFarm.visualSteps >= limit.steps + 12 &&
+                      w.animalMotion.chickenTravelM > limit.travelM + .05;
+                }""",arg={"steps":beforeNative["visualSteps"],
+                            "travelM":beforeMotion["chickenTravelM"]},
+                   polling=100,timeout=12000)
+            except Exception as exc:
+                diag=page.evaluate("""() => ({
+                    visibility:document.visibilityState,
+                    app:window.HomesteadApp.world(),
+                    hours:window.HomesteadApp.snapshot().clock.hours,
+                    errorText:document.querySelector('#errors')?.textContent
+                })""")
+                raise AssertionError(
+                    f"Native motion stalled (mobile={mobile}); diagnostics={diag!r}; page errors={errors!r}"
+                ) from exc
             afterMotion=page.evaluate("window.HomesteadApp.world().animalMotion")
             afterNative=page.evaluate("window.HomesteadApp.world().nativeFarm")
             # Native fixed-step physics must actually advance. A foraging chicken can
             # legitimately pause at the exact frame sampled; assess cumulative travel,
             # not whether the current animation frame happens to be a walking pose.
-            assert afterNative["visualSteps"] > beforeNative["visualSteps"], (beforeNative,afterNative)
+            assert afterNative["visualSteps"] >= beforeNative["visualSteps"] + 12, (beforeNative,afterNative)
             assert afterMotion["chickenTravelM"] > beforeMotion["chickenTravelM"] + .05, (
                 "Chickens must traverse the yard, not just hover in place",beforeMotion,afterMotion)
             assert afterMotion["maxRootGroundErrorM"] < 1e-9, afterMotion
