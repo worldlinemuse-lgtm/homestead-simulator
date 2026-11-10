@@ -80,6 +80,16 @@ try:
                 },0);
                 return layout.renderedMeshes===expected && expected>0;
             }"""), ("Native enclosure rail mesh budget differs from Farm footprints",mobile)
+            # Validate the actual Three.js mesh centers against authoritative
+            # Farm footprint bounds; mesh-count checks alone miss displaced rails.
+            assert page.evaluate("""() => {
+                const l=window.HomesteadApp.world().nativeEnclosureLayout;
+                const eps=1e-6;
+                return l.meshCenters.length===l.renderedMeshes &&
+                  l.meshCenters.every(p=>[p.x,p.y,p.z].every(Number.isFinite) &&
+                    l.footprints.some(f=>p.x>=f.x0-eps&&p.x<=f.x1+eps&&
+                      p.z>=f.z0-eps&&p.z<=f.z1+eps));
+            }"""), ("Rendered enclosure mesh center outside Farm footprint",mobile)
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
             # Visual sun and shadows are driven by coordinator hour, never
             # fed back into the Solar energy ledger. Check actual UI steps.
