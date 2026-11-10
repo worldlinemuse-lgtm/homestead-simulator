@@ -61,6 +61,11 @@ try:
             enclosure_baseline=page.evaluate("""() => JSON.stringify(
                 window.HomesteadApp.world().nativeEnclosureLayout)""")
             assert enclosure_baseline and enclosure_baseline != "null"
+            # Footprint metadata alone cannot detect obsolete rail mesh buildup.
+            enclosure_meshes=page.evaluate("""() =>
+                window.HomesteadApp.world().nativeEnclosureLayout.renderedMeshes""")
+            assert isinstance(enclosure_meshes,int) and enclosure_meshes>0, (
+                "Native Farm enclosure meshes missing",mobile,enclosure_meshes)
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
             # Visual sun and shadows are driven by coordinator hour, never
             # fed back into the Solar energy ledger. Check actual UI steps.
@@ -95,6 +100,9 @@ try:
             assert page.evaluate("""() => JSON.stringify(
                 window.HomesteadApp.world().nativeEnclosureLayout)""")==enclosure_baseline, (
                 "Native Farm enclosure footprints changed across reset",mobile)
+            assert page.evaluate("""() =>
+                window.HomesteadApp.world().nativeEnclosureLayout.renderedMeshes""")==enclosure_meshes, (
+                "Native Farm rail meshes accumulated or disappeared on reset",mobile)
             reset_sun=page.evaluate("window.HomesteadApp.world().visualSun")
             assert reset_sun["hour"]==initial_hour
             assert abs(reset_sun["directIntensity"]-initial_sun["directIntensity"])<1e-9
