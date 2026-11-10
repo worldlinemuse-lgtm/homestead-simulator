@@ -6504,7 +6504,7 @@ const nativeVisual=(function(){
   function stats(){
     return {initialized:booted,generation,agentCount:WV.agents.size,day:WV.lastDay,
       visualSteps:PHYS.steps,wallHits:PHYS.wallHits,pairHits:PHYS.pairHits,
-      hops:PHYS.hops,jumps:PHYS.jumps,visualOnly:true};
+      hops:PHYS.hops,jumps:PHYS.jumps,physicsFrameMs:PHYS.ms,visualOnly:true};
   }
   return Object.freeze({init,sync,frame,world:()=>WV,stats});
 })();
