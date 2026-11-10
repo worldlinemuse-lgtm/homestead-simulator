@@ -2597,7 +2597,7 @@ function labor() {
 function coopFix(c,k){return c&&c[k]!=null?+c[k]:TYPES.coop.props[k];}
 function reset(seed=7){P.env_seed=seed>>>0;newState();return snapshot();}
 function advanceDay(){step();return snapshot();}
-function snapshot(){const r=S.hist.length?S.hist[S.hist.length-1]:null;return {day:S.day,date:dateOf(S.day).toISOString().slice(0,10),animals:S.animals.map(a=>({id:a.id,sp:a.sp,st:a.st,health:a.health})),components:S.comps.map(c=>({id:c.id,type:c.type,x:c.x,y:c.y,w:c.w,d:c.d})),daily:r?{...r}:null,counts:counts()};}
+function snapshot(){const r=S.hist.length?S.hist[S.hist.length-1]:null;return {day:S.day,date:dateOf(S.day).toISOString().slice(0,10),animals:S.animals.map(a=>({id:a.id,sp:a.sp,st:a.st,age:a.age,sex:a.sex,enc:a.enc,wt:a.wt,health:a.health})),components:S.comps.map(c=>({id:c.id,type:c.type,x:c.x,y:c.y,w:c.w,d:c.d})),daily:r?{...r}:null,counts:counts()};}
 function setParameter(key,value){if(!Object.prototype.hasOwnProperty.call(P,key))throw new Error('Unknown farm parameter '+key);if(!Number.isFinite(value))throw new Error('Parameter must be finite');P[key]=value;refreshToday();}
 
 /* BEGIN native farm visual runtime: original farm-sim source (blobs pinned per file). */
