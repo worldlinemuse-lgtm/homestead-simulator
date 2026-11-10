@@ -171,11 +171,17 @@ try:
             survivors=set(baseline["stableIds"]) & set(after["stableIds"])
             assert after["added"]-baseline["added"] <= len(set(after["stableIds"])-set(baseline["stableIds"]))+1
             beforeMotion=page.evaluate("window.HomesteadApp.world().animalMotion")
+            beforeNative=page.evaluate("window.HomesteadApp.world().nativeFarm")
+            assert beforeNative["initialized"] is True and beforeNative["agentCount"]>0, beforeNative
             page.locator("#playBtn").click()
             assert page.evaluate("window.HomesteadApp.world().playing") is True
             page.wait_for_timeout(950)
             afterMotion=page.evaluate("window.HomesteadApp.world().animalMotion")
-            assert afterMotion["walkingChickens"] > 0, afterMotion
+            afterNative=page.evaluate("window.HomesteadApp.world().nativeFarm")
+            # Native fixed-step physics must actually advance. A foraging chicken can
+            # legitimately pause at the exact frame sampled; assess cumulative travel,
+            # not whether the current animation frame happens to be a walking pose.
+            assert afterNative["visualSteps"] > beforeNative["visualSteps"]+10, (beforeNative,afterNative)
             assert afterMotion["chickenTravelM"] > beforeMotion["chickenTravelM"] + .05, (
                 "Chickens must traverse the yard, not just hover in place",beforeMotion,afterMotion)
             assert afterMotion["maxRootGroundErrorM"] < 1e-9, afterMotion
