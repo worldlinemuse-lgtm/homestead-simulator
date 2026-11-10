@@ -1658,7 +1658,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         requestedHeightAboveGroundM:toEye.y-terrainY(toEye.x,toEye.z),
         followAnimalId:trackedAnimalId},
       visualSun:visualSunState?{...visualSunState}:null,
-      nativeEnclosureLayout:{count:nativeEnclosureCount,footprints:nativeEnclosureFootprints},
+      nativeEnclosureLayout:{count:nativeEnclosureCount,footprints:nativeEnclosureFootprints,renderedMeshes:nativeEnclosures.children.length},
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
       tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport(),
       structureAudit:{houseFacade:facadeProbe(homestead,houseFront,6,3),
