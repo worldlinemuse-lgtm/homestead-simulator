@@ -307,10 +307,10 @@ try:
                       "Water treatment and storage","Treated-water storage tank"]
                      .every(s=>g.foundationAssets.includes(s));
             }""")
-            # The raised hutches must contain visible mesh screens and usable-looking
-            # door frames rather than opaque solid fronts. Geometry is illustrative.
-            assert page.evaluate("window.HomesteadApp.world().housingScreenCount") >= 2
-            assert page.evaluate("window.HomesteadApp.world().illustrativeCageDoors") == 6
+            # Decorative cages were retired: no duplicate rabbit-housing meshes.
+            # Native Farm footprints and raised hutch floors are checked above.
+            assert page.evaluate("window.HomesteadApp.world().housingScreenCount") == 0
+            assert page.evaluate("window.HomesteadApp.world().illustrativeCageDoors") == 0
             # Raycast the segmented facade geometry rather than relying on flags.
             routing=page.evaluate("window.HomesteadApp.world().utilityRouting")
             assert routing["farmElectricalFenceClearanceM"]>.36, routing
@@ -388,7 +388,7 @@ try:
             proof=page.evaluate("window.HomesteadApp.world().solarMount")
             assert proof["supportCount"]==16 and proof["minTopClearanceM"]>=.095,proof
             proof=page.evaluate("window.HomesteadApp.world().rabbitHutchRoof")
-            assert proof["widthOverhangM"]<.13 and proof["depthOverhangM"]<.13,proof
+            assert proof["source"]=="native-farm-components" and proof["decorativeCount"]==0,proof
             page.locator("#closeInspector").click()
             page.locator("#stepBtn").click()
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==1
