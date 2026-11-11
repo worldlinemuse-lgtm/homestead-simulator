@@ -7,6 +7,12 @@ test("solar legs terminate beneath the tilted rack for both supports",async()=>{
    assert.ok(p.lengthM>0);
    assert.ok(p.clearanceM>=.099);
    assert.ok(p.postTopM < p.undersideM);
+   // Three.js RotationX: world Y = -sin(angle) * local Z.
+   const actualRackUnderside=SOLAR_RACK.heightM-
+     Math.sin(SOLAR_RACK.tiltRad)*z-
+     SOLAR_RACK.halfThicknessM*Math.cos(SOLAR_RACK.tiltRad);
+   assert.ok(Math.abs(p.undersideM-actualRackUnderside)<1e-10,
+     "support top must follow the tilted mesh, not the mirrored slope");
    assert.ok(p.postBottomM<=terrain-.2);
  }
  assert.equal(SOLAR_RACK.heightM,2.15);
