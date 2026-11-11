@@ -968,9 +968,16 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         // Lintel above the native shared-door route; birds stay at ground level.
         wall(.09,p1-p0,x1+.045,(p0+p1)/2,"portal lintel",base+1.22,top);
       }else wall(.09,z1-z0+.16,x1+.045,cz,"east wall");
+      // The outer eave must clear the wall top even for wider native coops.
+      // A fixed center elevation lets the rotated roof intersect its walls.
+      const roofDepth=(z1-z0)/2+.25;
+      const pitch=.34,roofThickness=.13;
+      const eaveDrop=Math.sin(pitch)*roofDepth/2+
+        Math.cos(pitch)*roofThickness/2;
+      const roofCenterY=top+eaveDrop+.03;
       for(const side of [-1,1]){
-        const roof=box(x1-x0+.35,.13,(z1-z0)/2+.25,m.roof,
-          cx,top+.14,cz+side*(z1-z0)/4);
+        const roof=box(x1-x0+.35,roofThickness,roofDepth,m.roof,
+          cx,roofCenterY,cz+side*(z1-z0)/4);
         roof.rotation.x=side*.34;
         roof.name="Native coop pitched roof "+String(c.id);
         nativeCoopHouses.add(roof);
