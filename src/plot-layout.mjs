@@ -37,7 +37,10 @@ export function nativeCoopRunPortal(components,origin){
       :(Math.abs(plane-b.z0)<e||Math.abs(plane-b.z1)<e);
     if(matching&&upper-lower>0.75){
       const center=(lower+upper)/2;
-      const width=Math.min(1.08,upper-lower-.3);
+      // The original controller routes through the centre, but its flock
+      // spans the shared wall while assembling/roosting. An open-front coop
+      // attached directly to the run must not visually cut through those birds.
+      const width=upper-lower;
       return Object.freeze({axis,plane,center,width,
         start:center-width/2,end:center+width/2,
         coopId:coop.id,runId:run.id,coop:a,run:b,unit:"m"});
