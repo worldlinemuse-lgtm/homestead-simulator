@@ -959,7 +959,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     nativeRailEndpointResidualM=0;nativeRailCount=0;
     if(!validOrigin)return;
     // Build all opaque walls exactly at native coop boundaries. The east-side
-    // shared portal is cut out where the original Farm routes birds into its run.
+    // OPEN FACE matches the original Farm run and never blocks flock traffic.
     // A flat open doorway has no invented raised threshold or blocking ramp.
     for(const c of coops){
       const fp=nativeFarmComponentFootprint(c,origin);
@@ -1544,12 +1544,14 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     for(const lamp of porchFixtures)lamp.intensity=lampLevel*1.55;
     fixtureGlass.emissiveIntensity=lampLevel*1.8;
     litWindowMaterial.emissiveIntensity=lampLevel*.75;
-    skyLight.intensity=.18+sun.twilightLevel*.25+sunLevel*(1.1+.35*syntheticClarity);
+    // Low-level blue-grey sky bounce keeps the open-front coop readable at
+    // night without pretending the sun or PV generation is active.
+    skyLight.intensity=.36+sun.twilightLevel*.28+sunLevel*(1.05+.35*syntheticClarity);
     direct.intensity=isDay?(.06+2.8*sunLevel*syntheticClarity):0;
     direct.color.setHSL(.105-.045*sunLevel,.40+.08*twilight,.70+.19*sunLevel);
     skyLight.color.setHSL(.58,.24,.64+.24*sunLevel);
     scene.background.setHSL(.57+.025*twilight,.28+.16*sunLevel,
-      .055+sun.twilightLevel*.24+sunLevel*.42);
+      .105+sun.twilightLevel*.24+sunLevel*.39);
     scene.fog.color.copy(scene.background);
     visualSunState={...sun,syntheticClarity,
       decorativeLighting:{lampCount:porchFixtures.length,intensity:porchFixtures[0].intensity,
