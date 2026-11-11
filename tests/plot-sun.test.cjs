@@ -11,7 +11,7 @@ test("native chicken coop and run share an actual east doorway, not an oversized
   assert.equal(p.axis,"x");
   assert.ok(Math.abs(p.plane-(23+48*.3048))<1e-10);
   assert.ok(Math.abs(p.center-(6+14*.3048))<1e-10);
-  assert.ok(p.width>=.9&&p.width<=1.1);
+  assert.ok(p.width>=2.4&&p.width<=2.5,"Native open-front coop must not squeeze the flock through a 1m door");
   assert.ok(Math.abs(p.coop.x1-p.run.x0)<1e-10);
   assert.ok(Math.abs((p.start+p.width)-p.end)<1e-10);
   assert.equal(nativeCoopRunPortal([{...source[0],w:0},source[1]],{x:23,y:0,z:6}),null);
