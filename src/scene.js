@@ -971,7 +971,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       for(const side of [-1,1]){
         const roof=box(x1-x0+.35,.13,(z1-z0)/2+.25,m.roof,
           cx,top+.14,cz+side*(z1-z0)/4);
-        roof.rotation.x=side*.34;
+        roof.rotation.x=-side*.34;
         roof.name="Native coop pitched roof "+String(c.id);
         nativeCoopHouses.add(roof);
       }
