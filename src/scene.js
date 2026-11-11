@@ -1525,10 +1525,13 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     const azimuth=sun.azimuthDeg*Math.PI/180;
     const elevation=sun.elevationDeg*Math.PI/180;
     const sunDistance=85;
+    // The light vector must actually encode the computed solar altitude
+    // and azimuth; an old 20m offset skewed winter shadows toward overhead.
+    const horizontalSunDistance=sunDistance*Math.cos(elevation);
     direct.position.set(
-      Math.sin(azimuth)*sunDistance*Math.cos(elevation),
+      Math.sin(azimuth)*horizontalSunDistance,
       sunDistance*Math.sin(elevation),
-      20+Math.cos(azimuth)*sunDistance*.30*Math.cos(elevation)
+      Math.cos(azimuth)*horizontalSunDistance
     );
     direct.target.position.set(0,0,0);
     direct.target.updateMatrixWorld();
@@ -1557,6 +1560,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       decorativeLighting:{lampCount:porchFixtures.length,intensity:porchFixtures[0].intensity,
         windowEmissive:litWindowMaterial.emissiveIntensity,baseSupplyWh,
         modeledLampLoad:false},
+      // Expose actual Three.js light direction for independent visual QA.
+      renderedElevationDeg:Math.asin(direct.position.y/direct.position.length())*180/Math.PI,
+      renderedAzimuthDeg:(Math.atan2(direct.position.x,direct.position.z)*180/Math.PI+360)%360,
       directIntensity:direct.intensity};
   }
   let nativeAnimalPoses=null,nativeGeneration=null;
