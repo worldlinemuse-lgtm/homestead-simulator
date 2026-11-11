@@ -1,7 +1,15 @@
 import {makeScene} from "./scene.js";
+import {seasonalSun} from "./seasonal-sun.mjs";
 const $=id=>document.getElementById(id);
 const fmt=(n,d=1)=>Number(n).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
+const solarClock=h=>{const minute=Math.round(h*60);return String(Math.floor(minute/60)).padStart(2,"0")+":"+String(minute%60).padStart(2,"0")};
 const coordinator=new window.HomesteadCoordinator.Coordinator();
+// This is the ORIGINAL Farm world, running inside the same biological model closure.
+// It has an independent seeded visual RNG and never writes numeric model results.
+const farmVisual=window.HomesteadFarmCore.nativeVisual;
+farmVisual.init(20261104,9);
+// Whole-plot rigid transform (feet -> metres); not a modification of farm pen data.
+const farmWorldOriginM=Object.freeze({x:23,y:0,z:6});
 let selected="overview",playing=false,timer=null,scene;
 let selectedAsset=null;
 function fail(e){playing=false;scene?.setPlayback(false);clearInterval(timer);timer=null;$("playBtn").textContent="▶ Play";$("errors").textContent="Simulation stopped: "+(e?.message||e);$("errors").style.display="block";console.error(e);}
@@ -80,7 +88,9 @@ function renderAsset(s){
    if(a)entries=[
      ["Model animal ID",a.id],["Species",a.sp],
      ["Life stage",a.st],["Modeled health",Number.isFinite(a.health)?fmt(a.health,1):"Unavailable"],
-     ["Authority","Original Farm daily biological engine; display movement is illustrative"]
+     ["Assigned enclosure",a.enc??"Unassigned"],
+     ["Native visual action",farmVisual.world().agents.get(id)?.act??"Idle"],
+     ["Authority","Original Farm biology and native visual controller; movement/actions are illustrative"]
    ];
  }
  target.replaceChildren();
@@ -94,7 +104,8 @@ function renderAsset(s){
 }
 
 function redraw(s){
- scene?.update(s);renderAsset(s);
+ farmVisual.sync(s.clock.hourOfDay);
+ scene?.update({...s,farmWorld:farmVisual.world(),farmWorldOriginM});renderAsset(s);
  const e=s.last?.energy,w=s.last?.water,f=s.farm;
  $("energyValue").textContent=fmt(s.batteryWh/1000,2)+" kWh";
  $("energyDetail").textContent=e?"PV "+fmt(e.pvWh/1000,2)+" kWh/h · "+(e.pumpEnabled?"pump on":"pump off")+" · residual "+fmt(e.residualWh,4)+" Wh":"Battery remaining · awaiting interval";
@@ -103,7 +114,11 @@ function redraw(s){
  $("farmValue").textContent=f.counts.n+" animals";
  $("farmDetail").textContent="Daily "+fmt(f.daily?.waterGal||0,1)+" gal water · "+fmt(f.daily?.kWh||0,2)+" kWh · "+(f.daily?.eggs||0)+" eggs";
  $("simDate").textContent=s.clock.date+" · "+String(s.clock.hourOfDay).padStart(2,"0")+":00";
- $("simPhase").textContent="Model hour "+s.clock.hours+" · linked resource accounting";
+ // Calendar-driven visible daylight is explicitly distinct from experimental
+ // energy/irradiance dispatch; communicate the season directly to the user.
+ const localSun=seasonalSun(s.clock.date,s.clock.hourOfDay);
+ $("simPhase").textContent="Daylight "+fmt(localSun.dayLengthHours,1)+"h · Sunrise "+solarClock(localSun.sunriseHour)+
+   " · Sunset "+solarClock(localSun.sunsetHour);
  $("alerts").textContent=s.last?.warnings.length?s.last.warnings.join(" "):"See Details for the model assumptions and limitations.";
 }
 function tick(){try{$("errors").style.display="none";redraw(coordinator.stepHour())}catch(e){fail(e)}}
@@ -111,10 +126,24 @@ function stop(){playing=false;scene?.setPlayback(false);clearInterval(timer);tim
 function toggle(){if(playing){stop();return;}playing=true;scene?.setPlayback(true);$("playBtn").textContent="Ⅱ Pause";timer=setInterval(tick,1200);tick()}
 $("playBtn").addEventListener("click",toggle);$("stepBtn").addEventListener("click",()=>{stop();tick()});
 $("dayBtn").addEventListener("click",()=>{stop();try{for(let i=0;i<24;i++)coordinator.stepHour();redraw(coordinator.snapshot())}catch(e){fail(e)}});
-$("resetBtn").addEventListener("click",()=>{stop();try{redraw(coordinator.reset());$("errors").style.display="none"}catch(e){fail(e)}});
-document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=null;selectArea(b.dataset.view);$("sceneHint").textContent="Drag to orbit · Pinch to zoom · Select equipment";renderAsset(coordinator.snapshot())}));
+function resetScenario(){
+  const next=coordinator.reset();
+  farmVisual.init(20261104,next.clock.hourOfDay);
+  redraw(next);
+  return next;
+}
+$("resetBtn").addEventListener("click",()=>{stop();try{resetScenario();$("errors").style.display="none"}catch(e){fail(e)}});
+document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=null;selectArea(b.dataset.view);$("sceneHint").textContent=selected==="farm"
+  ?"Tap an animal to follow · Drag to orbit · Pinch to zoom"
+  :"Drag to orbit · Pinch to zoom · Select equipment";renderAsset(coordinator.snapshot())}));
 $("inspectBtn").addEventListener("click",()=>$("inspector").classList.toggle("open"));
 $("hudToggle").addEventListener("click",()=>{const collapsed=$("summary").classList.toggle("collapsed");$("hudToggle").setAttribute("aria-expanded",String(!collapsed));$("hudToggle").setAttribute("aria-label",collapsed?"Expand resource summary":"Collapse resource summary");});
+// Keep the living landscape visible on narrow phones; all readings remain one tap away.
+if(window.matchMedia("(max-width: 650px)").matches){
+ $("summary").classList.add("collapsed");
+ $("hudToggle").setAttribute("aria-expanded","false");
+ $("hudToggle").setAttribute("aria-label","Expand resource summary");
+}
 $("closeInspector").addEventListener("click",()=>$("inspector").classList.remove("open"));
 for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*100,0)+"%"],["houseLoad","houseLoadOut","backgroundLoadW",x=>fmt(x,0)+" W"],["pumpLoad","pumpLoadOut","pumpElectricalW",x=>fmt(x,0)+" W"]]){
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
@@ -129,7 +158,7 @@ try{scene=makeScene($("world"),(kind,label)=>{
   $("inspectTitle").textContent=selectedAsset||descriptions[kind][0];
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
   renderAsset(coordinator.snapshot());$("inspector").classList.add("open");
-});selectArea("overview");redraw(coordinator.snapshot())}catch(e){fail(e)}
-window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),step:tick,reset:()=>redraw(coordinator.reset()),world:()=>scene?.stats()});
+},farmVisual);selectArea("overview");redraw(coordinator.snapshot())}catch(e){fail(e)}
+window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),step:tick,reset:()=>{stop();return resetScenario()},world:()=>({...scene?.stats(),nativeFarm:farmVisual.stats(),farmWorldOriginM})});
 
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(console.warn));
