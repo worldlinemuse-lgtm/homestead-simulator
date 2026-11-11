@@ -388,7 +388,7 @@ try:
             proof=page.evaluate("window.HomesteadApp.world().solarMount")
             assert proof["supportCount"]==16 and proof["minTopClearanceM"]>=.095,proof
             proof=page.evaluate("window.HomesteadApp.world().rabbitHutchRoof")
-            assert proof["widthOverhangM"]<.13 and proof["depthOverhangM"]<.13,proof
+            assert proof["source"]=="native-farm-components" and proof["decorativeCount"]==0,proof
             page.locator("#closeInspector").click()
             page.locator("#stepBtn").click()
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==1
