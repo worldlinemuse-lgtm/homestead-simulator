@@ -381,9 +381,9 @@ try:
             assert moved[-1]["x"]==before[-1]["x"]+1,(before,moved)
             page.locator("#objectType").select_option("barrel")
             page.locator("#objectSwap").click()
-            assert page.evaluate("window.HomesteadApp.editList()[-1].type")=="barrel"
+            assert page.evaluate("window.HomesteadApp.editList().at(-1).type")=="barrel"
             page.locator("#objectUndo").click()
-            assert page.evaluate("window.HomesteadApp.editList()[-1].type")=="compost"
+            assert page.evaluate("window.HomesteadApp.editList().at(-1).type")=="compost"
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==initial_model
             proof=page.evaluate("window.HomesteadApp.world().solarMount")
             assert proof["supportCount"]==16 and proof["minTopClearanceM"]>=.095,proof
