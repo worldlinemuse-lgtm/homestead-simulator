@@ -117,8 +117,11 @@ try:
             }"""), ("Native chicken doorway is blocked by a modeled wall or rail",mobile)
             assert page.evaluate("""() => {
                 const g=window.HomesteadApp.world().gardenLayout;
+                const a=g.bounds,p=g.planBounds,eps=1e-5;
                 return g.fenceClearanceM>1&&g.runOverlap===false &&
-                  g.bounds.x0<g.bounds.x1&&g.bounds.z0<g.bounds.z1;
+                  a.x0>=p.x0-eps&&a.x1<=p.x1+eps&&
+                  a.z0>=p.z0-eps&&a.z1<=p.z1+eps&&
+                  a.x0<a.x1&&a.z0<a.z1;
             }"""), ("Garden intersects livestock or property fence",mobile)
             # All three rendered rails per perimeter segment must meet
             # their terrain-sampled endpoints (not the segment midpoint).
@@ -214,6 +217,8 @@ try:
             assert initial_sun and initial_sun["hour"]==initial_hour, initial_sun
             assert initial_sun["date"]==page.evaluate("window.HomesteadApp.snapshot().clock.date")
             assert initial_sun["latitudeDeg"]==41.6
+            assert all(word in page.locator("#simPhase").inner_text() for word in
+                       ("Daylight", "Sunrise", "Sunset")), "Seasonal daylight summary missing"
             assert 9<initial_sun["dayLengthHours"]<11, initial_sun
             assert page.evaluate("""async () => {
                 const {seasonalSun}=await import('./src/seasonal-sun.mjs');
