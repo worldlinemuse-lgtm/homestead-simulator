@@ -1827,8 +1827,16 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         requestedHeightAboveGroundM:toEye.y-terrainY(toEye.x,toEye.z),
         followAnimalId:trackedAnimalId},
       visualSun:visualSunState?{...visualSunState}:null,
-      gardenLayout:{bounds:gardenBounds(),fenceClearanceM:fenceToGardenClearance(),
-        runOverlap:nativeCoopProof.portal? aabbOverlap(gardenBounds(),nativeCoopProof.portal.run):null},
+      // Inspect actual rendered plant AND bed extents (including foliage), not
+      // merely the authored plot rectangle: this catches fence penetrations.
+      gardenLayout:(()=>{
+        const box3=new THREE.Box3().setFromObject(garden);
+        const bounds={x0:box3.min.x,x1:box3.max.x,z0:box3.min.z,z1:box3.max.z};
+        return {bounds,planBounds:gardenBounds(),
+          fenceClearanceM:fenceToGardenClearance(FARM_PERIMETER,bounds),
+          runOverlap:nativeCoopProof.portal?
+            aabbOverlap(bounds,nativeCoopProof.portal.run):null};
+      })(),
       nativeCoopLayout:{...nativeCoopProof,meshCount:nativeCoopHouses.children.length},
       nativeEnclosureLayout:{count:nativeEnclosureCount,footprints:nativeEnclosureFootprints,renderedMeshes:nativeEnclosures.children.length,
         railEndpointResidualM:nativeRailEndpointResidualM,railCount:nativeRailCount, 
