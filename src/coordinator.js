@@ -115,9 +115,19 @@
     }
     configure(next={}){
       const updated=configuration({...this.cfg,...next});
+      // Configuration cannot erase or manufacture physical inventory. Reject
+      // incompatible edits *before* changing any state, including the config.
+      must(Number.isFinite(this.batteryWh)&&this.batteryWh>=0,
+        "Invalid current battery inventory");
+      must(Number.isFinite(this.waterStoredL)&&this.waterStoredL>=0,
+        "Invalid current water inventory");
+      must(this.batteryWh<=updated.batteryCapacityWh,
+        "Battery capacity below current stored energy; transfer energy first");
+      must(this.batteryWh>=updated.batteryReserveWh,
+        "Battery reserve exceeds current stored energy");
+      must(this.waterStoredL<=updated.waterStorageCapacityL,
+        "Water capacity below current stored volume; transfer water first");
       this.cfg=updated;
-      if(this.batteryWh>updated.batteryCapacityWh)this.batteryWh=updated.batteryCapacityWh;
-      if(this.waterStoredL>updated.waterStorageCapacityL)this.waterStoredL=updated.waterStorageCapacityL;
       return this.snapshot();
     }
     stepHour(){

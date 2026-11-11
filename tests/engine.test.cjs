@@ -211,3 +211,47 @@ test("native Farm agent pose rejects coordinate overflow without mutating the or
    {...origin,x:Number.MAX_VALUE}),/finite world coordinates/);
  assert.throws(()=>nativeFarmAgentPose({...agent,z:Infinity},origin),/Non-finite native z/);
 });
+
+test("configuration edits preserve live inventories and reject conflicting constraints atomically",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator();
+ const before=JSON.stringify(c.snapshot());
+ for(const bad of [
+  {batteryCapacityWh:5999,waterStorageCapacityL:200},
+  {batteryCapacityWh:7000,waterStorageCapacityL:59},
+  {batteryReserveWh:6001},
+  {batteryCapacityWh:5999,waterStorageCapacityL:59,batteryReserveWh:4000},
+  {batteryCapacityWh:NaN},
+  {waterStorageCapacityL:Infinity}
+ ]){
+  assert.throws(()=>c.configure(bad),/capacity|reserve|finite|Inconsistent/);
+  assert.equal(JSON.stringify(c.snapshot()),before,
+    "rejected reconfiguration must not mutate any scenario state");
+ }
+ const changed=c.configure({batteryCapacityWh:6000,waterStorageCapacityL:60,
+   batteryReserveWh:6000});
+ assert.equal(changed.batteryWh,6000);
+ assert.equal(changed.waterStoredL,60);
+ assert.equal(changed.config.batteryCapacityWh,6000);
+ assert.equal(changed.config.waterStorageCapacityL,60);
+ assert.equal(changed.config.batteryReserveWh,6000);
+ // Valid configuration edits must not change cumulative resource totals.
+ assert.deepEqual({...changed.cumulative},{...JSON.parse(before).cumulative});
+ const reset=c.reset();
+ assert.equal(reset.batteryWh,6000);
+ assert.equal(reset.waterStoredL,60);
+});
+
+test("live reserve enforcement also protects stores after numerical stepping",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({cloudTransmittance:0});
+ for(let i=0;i<2;i++)c.stepHour();
+ const baseline=JSON.stringify(c.snapshot()),s=c.snapshot();
+ assert.ok(s.batteryWh < s.config.batteryStartWh);
+ assert.throws(()=>c.configure({batteryReserveWh:s.batteryWh+1}),/reserve/);
+ assert.equal(JSON.stringify(c.snapshot()),baseline);
+ const updated=c.configure({batteryReserveWh:s.batteryWh,
+   waterStorageCapacityL:s.waterStoredL});
+ assert.equal(updated.batteryWh,s.batteryWh);
+ assert.equal(updated.waterStoredL,s.waterStoredL);
+ assert.equal(updated.config.batteryReserveWh,s.batteryWh);
+ assert.equal(updated.config.waterStorageCapacityL,s.waterStoredL);
+});
