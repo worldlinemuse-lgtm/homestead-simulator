@@ -1,7 +1,10 @@
 /* Homestead-only offline caching, isolated from other Worldline Muse Pages repos. */
-const NAME="homestead-3d-2026-11-11-v3",PREFIX="homestead-3d-";
+const NAME="homestead-3d-2026-11-11-v4",PREFIX="homestead-3d-";
 const FILES=["./","./index.html","./src/coordinator.js","./src/main.js","./src/scene.js",
-"./src/ui-polish.css","./src/resource-contract.js","./vendor/solar-next-core.js","./vendor/water-engine.js","./vendor/farm-core.js",
+"./src/ui-polish.css","./src/resource-contract.js",
+"./src/sim-clock.mjs","./src/visual-layout.mjs","./src/seasonal-sun.mjs",
+"./src/visual-motion.mjs","./src/plot-layout.mjs",
+"./src/upstream/farm-world/pose-adapter.mjs","./vendor/solar-next-core.js","./vendor/water-engine.js","./vendor/farm-core.js",
 "./vendor/three.module.min.js"];
 self.addEventListener("install",ev=>{ev.waitUntil(caches.open(NAME).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
 self.addEventListener("activate",ev=>{ev.waitUntil(caches.keys().then(xs=>Promise.all(xs.filter(x=>x.startsWith(PREFIX)&&x!==NAME).map(x=>caches.delete(x)))).then(()=>self.clients.claim()))});
