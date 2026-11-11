@@ -1,10 +1,13 @@
 /** Visual-only equipment mounting dimensions (metres), not construction specs. */
-export const SOLAR_RACK=Object.freeze({heightM:2.15,tiltRad:-.34,halfThicknessM:.11,postGapM:.10});
+export const SOLAR_RACK=Object.freeze({heightM:2.15,tiltRad:-.34,halfThicknessM:.11,postGapM:.055});
 export function solarPostMount(zRelativeM,terrainRelativeM){
  if(!Number.isFinite(zRelativeM)||!Number.isFinite(terrainRelativeM))
    throw new RangeError("Invalid solar support coordinates");
- const undersideM=SOLAR_RACK.heightM+-Math.sin(SOLAR_RACK.tiltRad)*zRelativeM-
-   SOLAR_RACK.halfThicknessM*Math.cos(SOLAR_RACK.tiltRad);
+ // World-space underside at a vertical post's fixed Z (invert the rotated box).
+ // A local-Z sample is not the same point after rack rotation.
+ const undersideM=SOLAR_RACK.heightM-
+   Math.tan(SOLAR_RACK.tiltRad)*zRelativeM-
+   SOLAR_RACK.halfThicknessM/Math.cos(SOLAR_RACK.tiltRad);
  const postTopM=undersideM-SOLAR_RACK.postGapM;
  const postBottomM=Math.min(-.12,terrainRelativeM-.22);
  if(postTopM<=postBottomM)throw new RangeError("Solar post would be inverted");
