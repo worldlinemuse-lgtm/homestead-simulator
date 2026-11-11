@@ -255,3 +255,55 @@ test("live reserve enforcement also protects stores after numerical stepping",()
  assert.equal(updated.config.batteryReserveWh,s.batteryWh);
  assert.equal(updated.config.waterStorageCapacityL,s.waterStoredL);
 });
+
+test("zero-watt modeled pump cannot create free treated water",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({pumpElectricalW:0,backgroundLoadW:0});
+ const before=c.water.produced, previousBattery=c.batteryWh;
+ const s=c.stepHour();
+ assert.equal(s.last.energy.pumpEnabled,false);
+ assert.equal(s.last.energy.servedPumpWh,0);
+ assert.equal(s.cumulative.pumpWh,0);
+ assert.equal(c.water.parts.find(p=>p.type==="pump_sky").params.psi,0);
+ // For the actual E stream -> pump -> pressure-gated RO preset, zero powered
+ // head blocks treated output. Do not generalize to all passive systems.
+ assert.ok(Math.abs(c.water.produced-before)<1e-8,
+  "Unpowered E preset unexpectedly produced treated water; inspect passive head");
+ assert.ok(Math.abs(s.last.water.treatedL)<1e-8);
+ assert.ok(Math.abs(s.last.energy.residualWh)<1e-5);
+ assert.ok(Math.abs(s.last.water.waterResidual)<1e-5);
+ assert.ok(Number.isFinite(s.batteryWh)&&s.batteryWh>=0);
+ assert.ok(Number.isFinite(previousBattery));
+});
+test("power allocator refuses zero demand and energy-short tiny powered requests",()=>{
+ const api=ctx.HomesteadCoordinator;
+ const cfg=api.configuration({batteryCapacityWh:1000,batteryStartWh:0,batteryReserveWh:0});
+ const alloc=inputs=>api.allocateEnergy({pvWh:0,baseWh:0,pumpWh:0,
+  initialBatteryWh:0,cfg,...inputs});
+ for(const pumpWh of [0,Number.EPSILON,1e-9,1,120]){
+  const e=alloc({pumpWh});
+  assert.equal(e.pumpEnabled,false);
+  assert.equal(e.servedPumpWh,0);
+  assert.ok(Math.abs(e.residualWh)<1e-5);
+ }
+ const pvZeroDemand=alloc({pvWh:500,pumpWh:0});
+ assert.equal(pvZeroDemand.pumpEnabled,false);
+ assert.equal(pvZeroDemand.servedPumpWh,0);
+ const enough=alloc({pvWh:150,baseWh:100,pumpWh:50});
+ assert.equal(enough.pumpEnabled,true);
+ assert.equal(enough.servedPumpWh,50);
+ assert.ok(Math.abs(enough.residualWh)<1e-5);
+ const insufficient=alloc({pvWh:150,baseWh:100,pumpWh:51});
+ assert.equal(insufficient.pumpEnabled,false);
+ assert.equal(insufficient.servedPumpWh,0);
+ assert.ok(Math.abs(insufficient.residualWh)<1e-5);
+});
+test("adequately powered pump retains original hydraulic solver integration",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({pumpElectricalW:120,backgroundLoadW:0});
+ const s=c.stepHour();
+ assert.equal(s.last.energy.pumpEnabled,true);
+ assert.ok(Math.abs(s.last.energy.servedPumpWh-120)<1e-8);
+ assert.equal(c.water.parts.find(p=>p.type==="pump_sky").params.psi,50);
+ assert.ok(Number.isFinite(s.last.water.treatedL) && s.last.water.treatedL>=0);
+ assert.ok(Math.abs(s.last.energy.residualWh)<1e-5);
+ assert.ok(Math.abs(s.last.water.waterResidual)<1e-5);
+});

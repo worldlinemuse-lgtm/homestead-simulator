@@ -62,8 +62,10 @@
       return direct+fromBattery;
     };
     servedBaseWh=deliver(baseWh);
-    const pumpEnabled=servedBaseWh>=baseWh-EPS &&
-        remainingPv+Math.max(0,batteryWh-reserve)*etaD>=pumpWh-EPS;
+    // An electrically powered pump must have strictly positive demand AND
+    // enough allocatable energy. No EPS subsidy for tiny pump requests.
+    const pumpEnabled=pumpWh>0 && servedBaseWh>=baseWh-EPS &&
+        remainingPv+Math.max(0,batteryWh-reserve)*etaD>=pumpWh;
     if(pumpEnabled)servedPumpWh=deliver(pumpWh);
     const chargeInWh=Math.min(remainingPv,Math.max(0,cfg.batteryCapacityWh-batteryWh)/etaC);
     batteryWh+=chargeInWh*etaC;

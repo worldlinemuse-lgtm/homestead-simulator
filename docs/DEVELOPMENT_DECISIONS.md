@@ -13,3 +13,9 @@ Battery reset inventory remains part of the configuration contract; changing cap
 
 ## Model limitations
 This change does not calibrate battery dispatch, solar generation, hydraulic pump power, or farm deficit biology. Future explicit transfer/disposal events should use PR #4's resource identity and unit contracts.
+
+## 2026-11-11 — Electrically powered water pump interlock (PR #2)
+
+The experimental one-hour coordinator previously enabled the 50 psi electrical pump when configured pump demand was zero, resulting in unsupported powered head for no modeled electricity. The energy allocator now requires strictly positive demand and enough allocatable Wh before enabling the pump, with no EPS allowance for an energy-short request. The original water hydraulic network is still stepped on its independent working snapshot; its output is not overwritten or artificially zeroed.
+
+Regression tests exercise zero pump input with source-backed preset E, sub-Wh requests without supply, a fully funded pump, an insufficient-power request, pressure flag and both conservation residuals. Any nonzero unpowered output from another topology would need source-level inspection and identification as passive head rather than arbitrary suppression. No claim of pump manufacturer's electrical input curve, water safety or field calibration.
