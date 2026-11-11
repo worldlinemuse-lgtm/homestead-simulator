@@ -504,8 +504,14 @@ try:
             page.wait_for_timeout(950)
             assert page.evaluate("window.HomesteadApp.world().view")=="energy"
             page.screenshot(path=str(out/("mobile-solar.png" if mobile else "desktop-solar.png")))
-            page.evaluate("window.HomesteadApp.world().go('solarClose')")
-            page.wait_for_timeout(950)
+            solar_before=page.evaluate("window.HomesteadApp.world().camera.requestedDistanceM")
+            rect=page.locator("#world").bounding_box()
+            assert rect and rect["width"]>200
+            page.mouse.move(rect["x"]+rect["width"]/2,rect["y"]+rect["height"]/2)
+            page.mouse.wheel(0,-450)
+            page.wait_for_timeout(850)
+            solar_after=page.evaluate("window.HomesteadApp.world().camera.requestedDistanceM")
+            assert solar_after<solar_before, (solar_before,solar_after)
             page.screenshot(path=str(out/("mobile-solar-close.png" if mobile else "desktop-solar-close.png")))
             # Close-up capture of new hutch mesh, coop roof, nesting details and ramp.
             page.locator("[data-view=farm]").click()
