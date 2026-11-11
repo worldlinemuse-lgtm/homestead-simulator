@@ -386,7 +386,12 @@ try:
             assert page.evaluate("window.HomesteadApp.editList().at(-1).type")=="compost"
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==initial_model
             proof=page.evaluate("window.HomesteadApp.world().solarMount")
-            assert proof["supportCount"]==16 and proof["minTopClearanceM"]>=.095,proof
+            assert proof["supportCount"]==16 and .05<=proof["minTopClearanceM"]<.06,proof
+            # Read ray intersections against the real tilted Three.js rack meshes.
+            # Metadata-only assertions would not catch post/mesh disagreement.
+            assert proof["meshSamples"]==16 and proof["missingSamples"]==0,proof
+            assert proof["postPenetrations"]==0,proof
+            assert .04<=proof["minActualGapM"]<=proof["maxActualGapM"]<.07,proof
             proof=page.evaluate("window.HomesteadApp.world().rabbitHutchRoof")
             assert proof["source"]=="native-farm-components" and proof["decorativeCount"]==0,proof
             page.locator("#closeInspector").click()
@@ -493,6 +498,21 @@ try:
             page.locator("[data-view=overview]").click()
             page.wait_for_timeout(900)  # smooth camera reaches the whole-property waypoint
             page.screenshot(path=str(out/("mobile-overview.png" if mobile else "desktop-overview.png")))
+            # The previous screenshot set showed only a tiny distant solar array.
+            # Record both the user-accessible Solar view and dedicated close angles.
+            page.locator("[data-view=energy]").click()
+            page.wait_for_timeout(950)
+            assert page.evaluate("window.HomesteadApp.world().view")=="energy"
+            page.screenshot(path=str(out/("mobile-solar.png" if mobile else "desktop-solar.png")))
+            solar_before=page.evaluate("window.HomesteadApp.world().camera.requestedDistanceM")
+            rect=page.locator("#world").bounding_box()
+            assert rect and rect["width"]>200
+            page.mouse.move(rect["x"]+rect["width"]/2,rect["y"]+rect["height"]/2)
+            page.mouse.wheel(0,-450)
+            page.wait_for_timeout(850)
+            solar_after=page.evaluate("window.HomesteadApp.world().camera.requestedDistanceM")
+            assert solar_after<solar_before, (solar_before,solar_after)
+            page.screenshot(path=str(out/("mobile-solar-close.png" if mobile else "desktop-solar-close.png")))
             # Close-up capture of new hutch mesh, coop roof, nesting details and ramp.
             page.locator("[data-view=farm]").click()
             page.wait_for_timeout(950)

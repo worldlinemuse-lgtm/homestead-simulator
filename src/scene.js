@@ -559,19 +559,28 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   // Four 435 W panel references, visually grouped 2x2. Dimensions illustrative.
   const panels=group("energy","Ground-mounted solar array",-35,-11);
   const solarSupportProof=[];
+  const solarSupportMeshes=[];
   function panel(x,z){
     const mount=new THREE.Group();mount.position.set(x,0,z);
     const height=2.15;
     const rack=box(5.35,.22,3.00,m.frame,0,height,0);rack.rotation.x=-.34;mount.add(rack);
     const face=box(5.08,.11,2.76,m.solar,0,height+.12,-.04);face.rotation.x=-.34;mount.add(face);
-    for(const dx of [-1.62,0,1.62])mount.add(box(.035,.015,2.7,m.metal,dx,height+.19,-.09));
-    for(const dz of [-.72,.72])mount.add(box(5.07,.025,.035,m.metal,0,height+.20,dz));
+    // Cell separators share the PV face's local tilted coordinate frame.
+    // Unrotated world-horizontal strips previously floated above the glass.
+    const cellTrim=new THREE.Group();
+    cellTrim.position.set(0,height+.19,-.04);
+    cellTrim.rotation.x=-.34;
+    for(const dx of [-1.62,0,1.62])cellTrim.add(box(.035,.015,2.7,m.metal,dx,0,0));
+    for(const dz of [-.72,.72])cellTrim.add(box(5.07,.025,.035,m.metal,0,0,dz));
+    mount.add(cellTrim);
     for(const dx of [-2,2])for(const dz of [-.75,.88]){
       // Posts end BELOW the tilted rack rather than piercing the PV face.
       const floor=terrainY(panels.position.x+x+dx,panels.position.z+z+dz)-panels.position.y;
       const support=solarPostMount(dz,floor);
-      mount.add(cyl(.11,.14,support.lengthM,m.steel,dx,support.centerM,dz,8));
+      const leg=cyl(.11,.14,support.lengthM,m.steel,dx,support.centerM,dz,8);
+      mount.add(leg);
       solarSupportProof.push(support);
+      solarSupportMeshes.push({leg,rack});
       // Each small pad reaches below the same triangulated heightfield.
       const footTop=.23,footBottom=Math.min(-.08,floor-.24);
       mount.add(cyl(.13,.16,footTop-footBottom,m.concrete,dx,(footTop+footBottom)/2,dz,9));
@@ -1354,7 +1363,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   // Waypoints frame locations inside one walkable-looking landscape, not tiles.
   const views={
     overview:{eye:V(16,59,91),look:V(0,1.5,-8)},
-    energy:{eye:V(-29,21,17),look:V(-29,2,-9)},
+    // User-facing Solar view frames actual panel models at close enough range
+    // for the support geometry to be inspected, including on mobile.
+    energy:{eye:V(-32,16,14),look:V(-32,2,-10)},
     water:{eye:V(17,24,-1),look:V(0,2,-23)},
     farm:{eye:V(46,4.6,14),look:V(39.5,.8,11.1)}
   };
@@ -2016,6 +2027,27 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       foundationAssets:foundations.map(f=>f.asset)};
     return groundingCache;
   }
+  // Real raycasts against the rotated rack meshes: mathematical metadata alone
+  // cannot reveal detached posts or a mistakenly mirrored transform.
+  function solarMeshClearanceReport(){
+    panels.updateMatrixWorld(true);
+    const probe=new THREE.Raycaster(),up=V(0,1,0);
+    let minActualGapM=Infinity,maxActualGapM=-Infinity,meshSamples=0,postPenetrations=0;
+    for(const {leg,rack} of solarSupportMeshes){
+      const h=leg.geometry.parameters.height;
+      const tip=leg.localToWorld(V(0,h/2,0));
+      probe.set(V(tip.x,tip.y-.5,tip.z),up);
+      const hit=probe.intersectObject(rack,false)[0];
+      if(!hit)continue;
+      const gap=hit.point.y-tip.y;
+      minActualGapM=Math.min(minActualGapM,gap);
+      maxActualGapM=Math.max(maxActualGapM,gap);
+      if(gap<0)postPenetrations++;
+      meshSamples++;
+    }
+    return {meshSamples,missingSamples:solarSupportMeshes.length-meshSamples,
+      minActualGapM,maxActualGapM,postPenetrations};
+  }
   requestAnimationFrame(animate);
   return {
     update,go,setVisualClock,editor:visualEditor,setPlayback(on){
@@ -2037,7 +2069,8 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       visualObjects:visualEditor.list(),
       solarMount:{supportCount:solarSupportProof.length,
         minTopClearanceM:Math.min(...solarSupportProof.map(p=>p.clearanceM)),
-        maxAboveUndersideM:Math.max(...solarSupportProof.map(p=>p.postTopM-p.undersideM))},
+        maxAboveUndersideM:Math.max(...solarSupportProof.map(p=>p.postTopM-p.undersideM)),
+        ...solarMeshClearanceReport()},
       rabbitHutchRoof:{source:"native-farm-components",decorativeCount:0},
       plumage:{sharedGeometry:true,sharedFeatherGeometryCount:1,
         chickens:agents.children.filter(a=>a.userData.kind==="chicken").length,
