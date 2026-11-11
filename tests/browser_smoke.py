@@ -106,7 +106,7 @@ try:
             # opaque coop walls nor the real Three.js run rails may cover it.
             assert page.evaluate("""() => {
                 const v=window.HomesteadApp.world(),p=v.nativeCoopLayout.portal;
-                if(!p||p.axis!=="x"||p.width<.8||
+                if(!p||p.axis!=="x"||p.width<2.4||
                    v.nativeCoopLayout.footprints.length!==1||v.nativeCoopLayout.meshCount<6)return false;
                 if(v.nativeCoopLayout.walls.some(w=>w.label.startsWith("east wall")&&
                    w.z1>p.start+.05&&w.z0<p.end-.05))return false;
