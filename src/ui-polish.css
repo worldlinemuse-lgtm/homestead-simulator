@@ -88,9 +88,9 @@ button{transition:background .17s ease,border-color .17s ease,transform .17s eas
   #inspector.open{display:block}
   #toolbar{bottom:10px;left:9px;right:9px;transform:none;max-width:none;width:auto;
     display:block;padding:9px;background:rgba(12,31,32,.90)}
-  #toolbar .toolbar-info{margin-bottom:6px;display:flex;align-items:center;justify-content:center}
+  #toolbar .toolbar-info{margin-bottom:6px;display:flex;flex-direction:column;gap:2px;align-items:center;justify-content:center;text-align:center}
   #toolbar .clock{font-size:11px}
-  #toolbar .status{display:none}
+  #toolbar .status{display:block;font-size:10px;line-height:1.25;max-width:100%;white-space:normal;text-align:center}
   #toolbar .controls{justify-content:space-between;gap:4px}
   #toolbar button{min-height:31px;font-size:11px;padding:5px 8px;flex:1}
   #sceneHint{right:10px;bottom:101px;font-size:9px;padding:6px 9px;max-width:155px;text-align:right}

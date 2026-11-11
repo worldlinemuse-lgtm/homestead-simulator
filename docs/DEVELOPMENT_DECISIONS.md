@@ -1,13 +1,21 @@
-# Development decision log
+# Atomic inventory-preserving scenario configuration — 2026-11-10
 
-## 2026-11-08 — Zero-watt powered-pump interlock (draft, unverified)
+## Reconciliation
+This single implementation incorporates the overlapping remedies proposed by PRs #1 and #3 on current `main`, including the already-merged PR #7 energy-domain validation and PR #6 transactional hydraulic solver. Neither original scientific engine nor the 3D scene is changed.
 
-**Observed in `src/coordinator.js` on main:** `allocateEnergy` accepted `pumpWh=0` and marked `pumpEnabled=true` whenever the base demand was served. `stepHour` interpreted this flag as a 50 psi powered pump despite zero electrical input. This is an unsupported energy-to-hydraulics coupling, not a physically validated pump model.
+## Invariant
+Stored battery Wh and water L are live model state, not editable capacities. `configure()` validates the proposed configuration and **all** live capacity and reserve constraints before assigning it. An incompatible edit throws without changing config, resource inventories, clock, last interval, or cumulative ledger. Compatible edits preserve stored inventory exactly. A capacity reduction below current inventory requires a separately modeled explicit transfer or disposal, not silent clipping.
 
-**Proposed correction:** Treat zero assumed pump input as an off/unsupported powered pump; preserve the existing explicit pump electrical assumption and conservation ledger. Regression test checks the pump enable flag, electrical charge, hydraulic pressure, produced water, and both residuals. The original Solar/Water/Farm engine snapshots remain untouched.
+Battery reset inventory remains part of the configuration contract; changing capacity below the configured reset inventory requires an explicit compatible reset-inventory edit too. The existing UI does not currently expose capacity editing controls.
 
-**Verification status:** NOT RUN. Local `git clone` failed because the environment could not resolve `github.com`. GitHub connector allowed source inspection and branch commits, but cannot run Node or Playwright. CI must run and confirm before merge. In particular verify that the original Water preset produces zero water at zero pump pressure; if not, trace passive-head behavior and distinguish it from electrically pumped water instead of masking it.
+## Proof
+`tests/engine.test.cjs` adds cases for rejected battery/water/reserve edits, combined atomic rollback, non-finite settings, exact-fit capacities, unchanged cumulative ledger, legal reset and post-step live reserve enforcement. CI runs all `tests/*.test.cjs`, JS syntax checks, and desktop/mobile browser smoke on the exact PR candidate. Do not merge before both checks pass.
 
-**Next engineering step:** Validate this interlock with CI and browser smoke tests. Then implement versioned typed contracts and per-transfer energy/water ledgers, before integrating manufacturer-supported pump curves or full Solar dispatch. Continue improving realistic, unified 3D equipment and direct interaction only with simulation-driven animation.
+## Model limitations
+This change does not calibrate battery dispatch, solar generation, hydraulic pump power, or farm deficit biology. Future explicit transfer/disposal events should use PR #4's resource identity and unit contracts.
 
-**Source references:** `solar-sandbox`, `water-purification-simulator`, `farm-sim` remain independent, pinned reference engines; no new physical validation is claimed.
+## 2026-11-11 — Electrically powered water pump interlock (PR #2)
+
+The experimental one-hour coordinator previously enabled the 50 psi electrical pump when configured pump demand was zero, resulting in unsupported powered head for no modeled electricity. The energy allocator now requires strictly positive demand and enough allocatable Wh before enabling the pump, with no EPS allowance for an energy-short request. The original water hydraulic network is still stepped on its independent working snapshot; its output is not overwritten or artificially zeroed.
+
+Regression tests exercise zero pump input with source-backed preset E, sub-Wh requests without supply, a fully funded pump, an insufficient-power request, pressure flag and both conservation residuals. Any nonzero unpowered output from another topology would need source-level inspection and identification as passive head rather than arbitrary suppression. No claim of pump manufacturer's electrical input curve, water safety or field calibration.

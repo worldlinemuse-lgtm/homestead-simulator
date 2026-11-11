@@ -41,9 +41,19 @@
   }
   function allocateEnergy(params){
     const {pvWh,baseWh,pumpWh,initialBatteryWh,cfg}=params;
-    const etaD=cfg.dischargeEfficiency,etaC=cfg.chargeEfficiency;
+    // All sources, demands, and stores are watt-hours. Reject unsafe arithmetic
+    // before computing state; non-finite values can invalidate conservation proofs.
+    must(cfg && typeof cfg==="object","Energy config must be an object");
+    for(const [name,value] of Object.entries({pvWh,baseWh,pumpWh,initialBatteryWh}))number(name,value);
+    const etaD=number("dischargeEfficiency",cfg.dischargeEfficiency);
+    const etaC=number("chargeEfficiency",cfg.chargeEfficiency);
+    must(etaD>0&&etaD<=1&&etaC>0&&etaC<=1,"Energy efficiencies must be in (0,1]");
+    const capacity=number("batteryCapacityWh",cfg.batteryCapacityWh);
+    const reserve=number("batteryReserveWh",cfg.batteryReserveWh);
+    must(reserve<=initialBatteryWh&&initialBatteryWh<=capacity,
+      "Energy inventory outside battery capacity/reserve");
+    must(Number.isFinite(initialBatteryWh+pvWh),"Energy input sum overflow");
     let batteryWh=initialBatteryWh, remainingPv=pvWh, batteryOutputWh=0, servedBaseWh=0, servedPumpWh=0;
-    const reserve=cfg.batteryReserveWh;
     const deliver=(need)=>{
       const direct=Math.min(need,remainingPv);remainingPv-=direct;
       const fromBattery=Math.min(need-direct,Math.max(0,batteryWh-reserve)*etaD);
@@ -52,10 +62,10 @@
       return direct+fromBattery;
     };
     servedBaseWh=deliver(baseWh);
-    // A powered pump with zero specified input is an unsupported configuration, not free water.
-    // Require strictly positive allocated pump demand before energizing the hydraulic solver.
+    // An electrically powered pump must have strictly positive demand AND
+    // enough allocatable energy. No EPS subsidy for tiny pump requests.
     const pumpEnabled=pumpWh>0 && servedBaseWh>=baseWh-EPS &&
-        remainingPv+Math.max(0,batteryWh-reserve)*etaD>=pumpWh-EPS;
+        remainingPv+Math.max(0,batteryWh-reserve)*etaD>=pumpWh;
     if(pumpEnabled)servedPumpWh=deliver(pumpWh);
     const chargeInWh=Math.min(remainingPv,Math.max(0,cfg.batteryCapacityWh-batteryWh)/etaC);
     batteryWh+=chargeInWh*etaC;
@@ -63,8 +73,13 @@
     const chargeLossWh=chargeInWh*(1-etaC);
     const dischargeLossWh=batteryOutputWh*(1/etaD-1);
     const residualWh=initialBatteryWh+pvWh-batteryWh-servedBaseWh-servedPumpWh-curtailedWh-chargeLossWh-dischargeLossWh;
-    must(Math.abs(residualWh)<1e-5,"Energy conservation failure "+residualWh);
-    return {batteryWh,servedBaseWh,unservedBaseWh:baseWh-servedBaseWh,servedPumpWh,pumpEnabled,
+    must(Number.isFinite(residualWh)&&Math.abs(residualWh)<1e-5,
+      "Energy conservation failure "+residualWh);
+    const unservedBaseWh=baseWh-servedBaseWh;
+    for(const [name,value] of Object.entries({batteryWh,servedBaseWh,unservedBaseWh,
+      servedPumpWh,curtailedWh,chargeLossWh,dischargeLossWh}))number(name,value);
+    must(batteryWh<=capacity+EPS,"Energy inventory exceeds battery capacity");
+    return {batteryWh,servedBaseWh,unservedBaseWh,servedPumpWh,pumpEnabled,
       pvWh,curtailedWh,chargeLossWh,dischargeLossWh,residualWh};
   }
   function configuration(overrides={}){
@@ -102,9 +117,19 @@
     }
     configure(next={}){
       const updated=configuration({...this.cfg,...next});
+      // Configuration cannot erase or manufacture physical inventory. Reject
+      // incompatible edits *before* changing any state, including the config.
+      must(Number.isFinite(this.batteryWh)&&this.batteryWh>=0,
+        "Invalid current battery inventory");
+      must(Number.isFinite(this.waterStoredL)&&this.waterStoredL>=0,
+        "Invalid current water inventory");
+      must(this.batteryWh<=updated.batteryCapacityWh,
+        "Battery capacity below current stored energy; transfer energy first");
+      must(this.batteryWh>=updated.batteryReserveWh,
+        "Battery reserve exceeds current stored energy");
+      must(this.waterStoredL<=updated.waterStorageCapacityL,
+        "Water capacity below current stored volume; transfer water first");
       this.cfg=updated;
-      if(this.batteryWh>updated.batteryCapacityWh)this.batteryWh=updated.batteryCapacityWh;
-      if(this.waterStoredL>updated.waterStorageCapacityL)this.waterStoredL=updated.waterStorageCapacityL;
       return this.snapshot();
     }
     stepHour(){
@@ -116,31 +141,47 @@
       const baseWh=cfg.backgroundLoadW+farmDailyKWh*1000/24; // estimated uniform hourly farm demand
       const energy=allocateEnergy({pvWh,baseWh,pumpWh:cfg.pumpElectricalW,
         initialBatteryWh:this.batteryWh,cfg});
-      const waterBefore=this.waterStoredL,waterProducedBefore=this.water.produced;
-      const pump=this.water.parts.find(p=>p.type==="pump_sky");
+      // Execute hydraulic substeps against a working copy. A failed solver must
+      // not partially advance the authoritative water state or scenario clock.
+      const waterBefore=this.waterStoredL;
+      must(Number.isFinite(this.water.produced) && this.water.produced>=0,
+        "Invalid existing water production");
+      const nextWater=root.HomesteadWaterCore.cloneWorld(this.water);
+      must(nextWater && nextWater!==this.water && Number.isFinite(nextWater.produced),
+        "Water solver cannot create an independent snapshot");
+      const waterProducedBefore=nextWater.produced;
+      const pump=nextWater.parts.find(p=>p.type==="pump_sky");
       must(!!pump,"Water reference preset is missing its pump");
       pump.params.psi=energy.pumpEnabled?50:0;
       // Original network solver; dynamic storage/filter updates. Exact result from water core,
       // not an assumed gallons-per-hour constant.
-      let elapsed=0,iterations=0;
+      let elapsed=0,iterations=0,previousProduced=waterProducedBefore;
       while(elapsed<3600-1e-7){
         const dt=Math.min(300,3600-elapsed);
-        const r=root.HomesteadWaterCore.step(this.water,dt,1);
-        must(r.dt>0&&r.dt<=dt+1e-6&&Number.isFinite(r.dt),"Water solver returned invalid timestep");
+        const r=root.HomesteadWaterCore.step(nextWater,dt,1);
+        must(r && Number.isFinite(r.dt) && r.dt>0 && r.dt<=dt+1e-6,"Water solver returned invalid timestep");
+        must(Number.isFinite(nextWater.produced) && nextWater.produced>=previousProduced-EPS,
+          "Water solver returned non-finite or decreasing cumulative production");
+        previousProduced=nextWater.produced;
         elapsed+=r.dt;
         if(++iterations>1000)throw new Error("Water solver exceeded substep limit");
       }
-      const treatedL=this.water.produced-waterProducedBefore;
-      must(treatedL>=-EPS,"Negative water production");
+      const treatedL=nextWater.produced-waterProducedBefore;
+      must(Number.isFinite(treatedL) && treatedL>=-EPS,"Invalid water production");
       const wantL=farmDailyWaterL/24;
       const beforeUse=waterBefore+treatedL;
       const consumedL=Math.min(beforeUse,wantL);
       const shortfallL=wantL-consumedL;
       const afterUse=beforeUse-consumedL;
       const overflowL=Math.max(0,afterUse-cfg.waterStorageCapacityL);
-      this.waterStoredL=afterUse-overflowL;
-      const waterResidual=waterBefore+treatedL-consumedL-overflowL-this.waterStoredL;
-      must(Math.abs(waterResidual)<1e-5,"Water conservation failure "+waterResidual);
+      const nextWaterStoredL=afterUse-overflowL;
+      const waterResidual=waterBefore+treatedL-consumedL-overflowL-nextWaterStoredL;
+      must(Number.isFinite(nextWaterStoredL) && nextWaterStoredL>=-EPS &&
+        Number.isFinite(waterResidual) && Math.abs(waterResidual)<1e-5,
+        "Water conservation failure "+waterResidual);
+      // Hydraulic state, tank inventory and electricity commit together.
+      this.water=nextWater;
+      this.waterStoredL=nextWaterStoredL;
       this.batteryWh=energy.batteryWh;
       this.cumulative.pvWh+=pvWh;
       this.cumulative.baseWh+=energy.servedBaseWh;
