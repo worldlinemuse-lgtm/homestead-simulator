@@ -222,6 +222,15 @@ try:
             assert abs(az_error)<1e-8, initial_sun
             assert all(word in page.locator("#simPhase").inner_text() for word in
                        ("Daylight", "Sunrise", "Sunset")), "Seasonal daylight summary missing"
+            if mobile:
+                assert page.locator("#simPhase").is_visible(), "Mobile daylight summary must be visible"
+                assert page.evaluate("""() => {
+                    const r=document.querySelector('#simPhase').getBoundingClientRect();
+                    const toolbar=document.querySelector('#toolbar').getBoundingClientRect();
+                    return r.height>10&&r.width>100&&r.left>=toolbar.left-2 &&
+                      r.right<=toolbar.right+2 && r.top>=toolbar.top &&
+                      r.bottom<=toolbar.bottom;
+                }"""), ("Mobile sunrise and sunset text clips outside the toolbar",mobile)
             assert 9<initial_sun["dayLengthHours"]<11, initial_sun
             assert page.evaluate("""async () => {
                 const {seasonalSun}=await import('./src/seasonal-sun.mjs');
