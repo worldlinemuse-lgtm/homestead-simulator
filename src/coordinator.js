@@ -41,9 +41,19 @@
   }
   function allocateEnergy(params){
     const {pvWh,baseWh,pumpWh,initialBatteryWh,cfg}=params;
-    const etaD=cfg.dischargeEfficiency,etaC=cfg.chargeEfficiency;
+    // All sources, demands, and stores are watt-hours. Reject unsafe arithmetic
+    // before computing state; non-finite values can invalidate conservation proofs.
+    must(cfg && typeof cfg==="object","Energy config must be an object");
+    for(const [name,value] of Object.entries({pvWh,baseWh,pumpWh,initialBatteryWh}))number(name,value);
+    const etaD=number("dischargeEfficiency",cfg.dischargeEfficiency);
+    const etaC=number("chargeEfficiency",cfg.chargeEfficiency);
+    must(etaD>0&&etaD<=1&&etaC>0&&etaC<=1,"Energy efficiencies must be in (0,1]");
+    const capacity=number("batteryCapacityWh",cfg.batteryCapacityWh);
+    const reserve=number("batteryReserveWh",cfg.batteryReserveWh);
+    must(reserve<=initialBatteryWh&&initialBatteryWh<=capacity,
+      "Energy inventory outside battery capacity/reserve");
+    must(Number.isFinite(initialBatteryWh+pvWh),"Energy input sum overflow");
     let batteryWh=initialBatteryWh, remainingPv=pvWh, batteryOutputWh=0, servedBaseWh=0, servedPumpWh=0;
-    const reserve=cfg.batteryReserveWh;
     const deliver=(need)=>{
       const direct=Math.min(need,remainingPv);remainingPv-=direct;
       const fromBattery=Math.min(need-direct,Math.max(0,batteryWh-reserve)*etaD);
@@ -61,8 +71,13 @@
     const chargeLossWh=chargeInWh*(1-etaC);
     const dischargeLossWh=batteryOutputWh*(1/etaD-1);
     const residualWh=initialBatteryWh+pvWh-batteryWh-servedBaseWh-servedPumpWh-curtailedWh-chargeLossWh-dischargeLossWh;
-    must(Math.abs(residualWh)<1e-5,"Energy conservation failure "+residualWh);
-    return {batteryWh,servedBaseWh,unservedBaseWh:baseWh-servedBaseWh,servedPumpWh,pumpEnabled,
+    must(Number.isFinite(residualWh)&&Math.abs(residualWh)<1e-5,
+      "Energy conservation failure "+residualWh);
+    const unservedBaseWh=baseWh-servedBaseWh;
+    for(const [name,value] of Object.entries({batteryWh,servedBaseWh,unservedBaseWh,
+      servedPumpWh,curtailedWh,chargeLossWh,dischargeLossWh}))number(name,value);
+    must(batteryWh<=capacity+EPS,"Energy inventory exceeds battery capacity");
+    return {batteryWh,servedBaseWh,unservedBaseWh,servedPumpWh,pumpEnabled,
       pvWh,curtailedWh,chargeLossWh,dischargeLossWh,residualWh};
   }
   function configuration(overrides={}){
