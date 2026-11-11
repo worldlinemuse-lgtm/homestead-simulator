@@ -1,15 +1,15 @@
-# Engineering decision log
+# Atomic inventory-preserving scenario configuration — 2026-11-10
 
-## 2026-11-08 — Atomic resource-capacity edits (proposed, PR pending)
+## Reconciliation
+This single implementation incorporates the overlapping remedies proposed by PRs #1 and #3 on current `main`, including the already-merged PR #7 energy-domain validation and PR #6 transactional hydraulic solver. Neither original scientific engine nor the 3D scene is changed.
 
-**Finding:** On main, `Coordinator.configure()` clamps stored battery Wh and treated-water liters when a user lowers capacity. This silently destroys modeled inventory, breaking the scenario's resource ledger without an explicit spill/discharge transaction. Existing reserve can also be raised above current stored energy.
+## Invariant
+Stored battery Wh and water L are live model state, not editable capacities. `configure()` validates the proposed configuration and **all** live capacity and reserve constraints before assigning it. An incompatible edit throws without changing config, resource inventories, clock, last interval, or cumulative ledger. Compatible edits preserve stored inventory exactly. A capacity reduction below current inventory requires a separately modeled explicit transfer or disposal, not silent clipping.
 
-**Decision:** Reject capacity edits that conflict with current inventory or battery reserve, before changing any configuration or state. Keep the full previous configuration unchanged after a rejected edit. Allow capacity exactly equal to current inventory. Treat this as a narrow safety invariant; no new physical equipment model is implied.
+Battery reset inventory remains part of the configuration contract; changing capacity below the configured reset inventory requires an explicit compatible reset-inventory edit too. The existing UI does not currently expose capacity editing controls.
 
-**Change scope:** `src/coordinator.js` and `tests/engine.test.cjs`. Original Solar, Water, Farm engines and Three.js scene are untouched.
+## Proof
+`tests/engine.test.cjs` adds cases for rejected battery/water/reserve edits, combined atomic rollback, non-finite settings, exact-fit capacities, unchanged cumulative ledger, legal reset and post-step live reserve enforcement. CI runs all `tests/*.test.cjs`, JS syntax checks, and desktop/mobile browser smoke on the exact PR candidate. Do not merge before both checks pass.
 
-**Verification gate:** Run `node --test tests/engine.test.cjs`, `python3 tests/browser_smoke.py` with Playwright installed, and inspect GitHub Actions for the PR head SHA. No full-suite or browser pass is claimed until independently observed. Test assertions cover unchanged inventory/config on invalid battery capacity, water capacity, and reserve; exact-fit capacities must succeed.
-
-**Next:** Verify this PR, check for overlapping prior draft PRs before merging, and add versioned typed inter-engine resource contracts with units and provenance. Later, support intentional spill/discharge as explicit conserved transfers rather than silently clipping stored inventory.
-
-**Model limitations:** The coupled coordinator still uses synthetic solar irradiance and assumed utilization/battery efficiencies/pump watts; farm daily demands are uniformly spread across hours. Do not infer certified electrical safety, potable water, or validated deficit biology.
+## Model limitations
+This change does not calibrate battery dispatch, solar generation, hydraulic pump power, or farm deficit biology. Future explicit transfer/disposal events should use PR #4's resource identity and unit contracts.
