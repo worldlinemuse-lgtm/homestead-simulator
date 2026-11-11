@@ -122,3 +122,29 @@ button{transition:background .17s ease,border-color .17s ease,transform .17s eas
  #summary.collapsed{width:205px}
  #hudToggle{width:23px;height:23px;min-height:23px;line-height:21px}
 }
+
+/* Minute-level playback and visual-time preview, visible without opening Details. */
+#toolbar{flex-wrap:wrap;width:min(850px,calc(100vw - 26px));gap:6px 13px}
+#timeTools{flex:1 0 100%;display:flex;align-items:center;gap:9px;
+ padding-top:7px;border-top:1px solid rgba(231,245,230,.14);min-width:0}
+#timeTools label{font-size:11px;white-space:nowrap}
+#timeTools output{font-variant-numeric:tabular-nums;color:#a4eccc}
+#timeSlider{flex:1;min-width:65px}
+#speedSelect{background:#294745;color:#f3fff5;border:1px solid #668b7b;border-radius:7px;
+ padding:6px;min-height:32px}
+#timeResume{font-size:10px!important;white-space:nowrap}
+#timeMode{font-size:10px;color:#c5dacd}
+#toolbar .controls{flex-wrap:wrap}
+@media(max-width:650px){
+ #toolbar{width:auto;gap:5px;padding:7px;bottom:8px}
+ #toolbar .controls{flex-wrap:wrap;justify-content:center}
+ #toolbar .controls button{flex:1 1 18%;padding:5px}
+ #timeTools{gap:5px;flex-wrap:wrap}
+ #timeTools label{font-size:10px}
+ #timeSlider{flex:1 1 44%}
+ #speedSelect{font-size:11px;min-height:28px}
+ #timeMode{flex-basis:100%;text-align:center;font-size:9px}
+ #timeResume{min-height:27px!important;font-size:9px!important}
+ #inspector{bottom:158px;max-height:min(58dvh,470px)}
+ #sceneHint{bottom:161px}
+}

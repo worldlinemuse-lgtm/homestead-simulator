@@ -1,5 +1,6 @@
 import {makeScene} from "./scene.js";
 import {seasonalSun} from "./seasonal-sun.mjs";
+import {ScenarioTimeline,formatHour} from "./sim-clock.mjs";
 const $=id=>document.getElementById(id);
 const fmt=(n,d=1)=>Number(n).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
 const solarClock=h=>{const minute=Math.round(h*60);return String(Math.floor(minute/60)).padStart(2,"0")+":"+String(minute%60).padStart(2,"0")};
@@ -10,9 +11,11 @@ const farmVisual=window.HomesteadFarmCore.nativeVisual;
 farmVisual.init(20261104,9);
 // Whole-plot rigid transform (feet -> metres); not a modification of farm pen data.
 const farmWorldOriginM=Object.freeze({x:23,y:0,z:6});
-let selected="overview",playing=false,timer=null,scene;
+let selected="overview",playing=false,scene;
+const timeline=new ScenarioTimeline(5);
+let previousFrame=null,lastClockPaint=0;
 let selectedAsset=null;
-function fail(e){playing=false;scene?.setPlayback(false);clearInterval(timer);timer=null;$("playBtn").textContent="▶ Play";$("errors").textContent="Simulation stopped: "+(e?.message||e);$("errors").style.display="block";console.error(e);}
+function fail(e){playing=false;scene?.setPlayback(false);$("playBtn").textContent="▶ Play";$("errors").textContent="Simulation stopped: "+(e?.message||e);$("errors").style.display="block";console.error(e);}
 const descriptions={
  overview:["Whole homestead","Energy production, water treatment and animal demand connected through one chronological ledger."],
  energy:["Solar & battery","Four LONGi 435 W reference module representations. Battery dispatch is experimental, not manufacturer-calibrated."],
@@ -113,21 +116,69 @@ function redraw(s){
  $("waterDetail").textContent=w?"Modeled treated "+fmt(w.treatedL,1)+" L/h · farm use "+fmt(w.consumedL,1)+" L":"Treated storage, not certified drinking water";
  $("farmValue").textContent=f.counts.n+" animals";
  $("farmDetail").textContent="Daily "+fmt(f.daily?.waterGal||0,1)+" gal water · "+fmt(f.daily?.kWh||0,2)+" kWh · "+(f.daily?.eggs||0)+" eggs";
- $("simDate").textContent=s.clock.date+" · "+String(s.clock.hourOfDay).padStart(2,"0")+":00";
- // Calendar-driven visible daylight is explicitly distinct from experimental
- // energy/irradiance dispatch; communicate the season directly to the user.
- const localSun=seasonalSun(s.clock.date,s.clock.hourOfDay);
- $("simPhase").textContent="Daylight "+fmt(localSun.dayLengthHours,1)+"h · Sunrise "+solarClock(localSun.sunriseHour)+
-   " · Sunset "+solarClock(localSun.sunsetHour);
+ updateVisibleClock(s);
  $("alerts").textContent=s.last?.warnings.length?s.last.warnings.join(" "):"See Details for the model assumptions and limitations.";
 }
-function tick(){try{$("errors").style.display="none";redraw(coordinator.stepHour())}catch(e){fail(e)}}
-function stop(){playing=false;scene?.setPlayback(false);clearInterval(timer);timer=null;$("playBtn").textContent="▶ Play"}
-function toggle(){if(playing){stop();return;}playing=true;scene?.setPlayback(true);$("playBtn").textContent="Ⅱ Pause";timer=setInterval(tick,1200);tick()}
-$("playBtn").addEventListener("click",toggle);$("stepBtn").addEventListener("click",()=>{stop();tick()});
-$("dayBtn").addEventListener("click",()=>{stop();try{for(let i=0;i<24;i++)coordinator.stepHour();redraw(coordinator.snapshot())}catch(e){fail(e)}});
+function updateVisibleClock(s=coordinator.snapshot()){
+ const view=timeline.display(s);
+ const visualMinute=Math.min(1439,Math.floor(view.minuteOfDay+1e-7));
+ $("simDate").textContent=view.date+" · "+formatHour(view.hour)+(view.preview?" · Preview":"");
+ const sun=seasonalSun(view.date,view.hour);
+ $("simPhase").textContent=(view.preview?"Lighting preview only · ":"")+"Daylight "+
+   fmt(sun.dayLengthHours,1)+"h · Sunrise "+solarClock(sun.sunriseHour)+
+   " · Sunset "+solarClock(sun.sunsetHour);
+ $("timeSlider").value=String(visualMinute);
+ $("timeValue").textContent=formatHour(view.hour);
+ $("timeMode").textContent=view.preview?"Preview only · model stays at "+String(view.modelHour).padStart(2,"0")+":00":"Model steps hourly · lighting moves every minute";
+ scene?.setVisualClock(view.date,view.hour);
+}
+function advanceMinutes(minutes){
+ try{
+   $("errors").style.display="none";
+   timeline.advance(minutes,()=>coordinator.stepHour());
+   redraw(coordinator.snapshot());
+ }catch(e){fail(e)}
+}
+function stop(){playing=false;scene?.setPlayback(false);$("playBtn").textContent="▶ Play"}
+function toggle(){
+ if(playing){stop();return}
+ timeline.resume();playing=true;previousFrame=null;
+ scene?.setPlayback(true);$("playBtn").textContent="Ⅱ Pause";
+ updateVisibleClock();
+}
+function clockFrame(now){
+ requestAnimationFrame(clockFrame);
+ if(playing){
+   const seconds=previousFrame===null?0:Math.max(0,Math.min(.25,(now-previousFrame)/1000));
+   try{
+     const stepped=timeline.advanceRealSeconds(document.hidden?0:seconds,
+       ()=>coordinator.stepHour());
+     if(stepped)redraw(coordinator.snapshot());
+   }catch(e){fail(e)}
+ }
+ previousFrame=now;
+ if(now-lastClockPaint>=70){
+   lastClockPaint=now;
+   if(scene)updateVisibleClock();
+ }
+}
+requestAnimationFrame(clockFrame);
+$("playBtn").addEventListener("click",toggle);
+for(const [id,minutes] of [["minuteBtn",1],["quarterBtn",15],["stepBtn",60],["dayBtn",1440]]){
+ $(id).addEventListener("click",()=>{stop();advanceMinutes(minutes)});
+}
+$("speedSelect").addEventListener("change",()=>{
+ try{timeline.setSpeed(Number($("speedSelect").value));updateVisibleClock()}
+ catch(e){fail(e)}
+});
+$("timeSlider").addEventListener("input",()=>{
+ stop();try{timeline.preview(Number($("timeSlider").value));updateVisibleClock()}
+ catch(e){fail(e)}
+});
+$("timeResume").addEventListener("click",()=>{stop();timeline.resume();updateVisibleClock()});
 function resetScenario(){
   const next=coordinator.reset();
+  timeline.reset();
   farmVisual.init(20261104,next.clock.hourOfDay);
   redraw(next);
   return next;
@@ -159,6 +210,13 @@ try{scene=makeScene($("world"),(kind,label)=>{
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
   renderAsset(coordinator.snapshot());$("inspector").classList.add("open");
 },farmVisual);selectArea("overview");redraw(coordinator.snapshot())}catch(e){fail(e)}
-window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),step:tick,reset:()=>{stop();return resetScenario()},world:()=>({...scene?.stats(),nativeFarm:farmVisual.stats(),farmWorldOriginM})});
+window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),
+ step:()=>{stop();advanceMinutes(60)},advanceMinutes:minutes=>{stop();advanceMinutes(minutes)},
+ previewTime:minute=>{stop();timeline.preview(minute);updateVisibleClock()},
+ resumeTime:()=>{timeline.resume();updateVisibleClock()},
+ setSpeed:speed=>{timeline.setSpeed(speed);$("speedSelect").value=String(speed);updateVisibleClock()},
+ time:()=>timeline.display(coordinator.snapshot()),
+ reset:()=>{stop();return resetScenario()},
+ world:()=>({...scene?.stats(),nativeFarm:farmVisual.stats(),farmWorldOriginM})});
 
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(console.warn));

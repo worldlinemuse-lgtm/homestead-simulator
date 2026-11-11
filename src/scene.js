@@ -1536,10 +1536,14 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     chargeRail.scale.x=Math.max(.015,br);chargeRail.visible=br>1e-8;
     inverterLed.intensity=last?.energy?.servedBaseWh>0?.85:0;
     pumpLight.intensity=last?.energy?.servedPumpWh>0?1.0:0;
+    setVisualClock(snapshot.clock.date,snapshot.clock.hourOfDay);
+  }
+  function setVisualClock(date,hour){
+    if(!data)return;
+    const snapshot=data,last=snapshot.last,c=snapshot.config;
     // Approximate local NOAA solar position, keyed to the actual scenario
     // calendar date and PA latitude/longitude. Separate from Solar dispatch.
-    const hour=Number(snapshot.clock.hourOfDay);
-    const sun=seasonalSun(snapshot.clock.date,hour);
+    const sun=seasonalSun(date,hour);
     const sunLevel=sun.sunLevel,isDay=sun.daylight;
     const azimuth=sun.azimuthDeg*Math.PI/180;
     const elevation=sun.elevationDeg*Math.PI/180;
@@ -1831,7 +1835,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   }
   requestAnimationFrame(animate);
   return {
-    update,go,setPlayback(on){
+    update,go,setVisualClock,setPlayback(on){
       playing=Boolean(on);
       if(!playing)for(const rig of agents.children){
         const pose=nativeAnimalPoses?.get(String(rig.userData.modelId));
