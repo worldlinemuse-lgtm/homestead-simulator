@@ -54,21 +54,29 @@
       "Energy inventory outside battery capacity/reserve");
     must(Number.isFinite(initialBatteryWh+pvWh),"Energy input sum overflow");
     let batteryWh=initialBatteryWh, remainingPv=pvWh, batteryOutputWh=0, servedBaseWh=0, servedPumpWh=0;
+    let directBaseWh=0,batteryBaseWh=0,directPumpWh=0,batteryPumpWh=0;
     const deliver=(need)=>{
       const direct=Math.min(need,remainingPv);remainingPv-=direct;
       const fromBattery=Math.min(need-direct,Math.max(0,batteryWh-reserve)*etaD);
       batteryWh-=fromBattery/etaD;
       batteryOutputWh+=fromBattery;
-      return direct+fromBattery;
+      return {direct,fromBattery,served:direct+fromBattery};
     };
-    servedBaseWh=deliver(baseWh);
+    const baseDelivery=deliver(baseWh);
+    directBaseWh=baseDelivery.direct;batteryBaseWh=baseDelivery.fromBattery;
+    servedBaseWh=baseDelivery.served;
     // An electrically powered pump must have strictly positive demand AND
     // enough allocatable energy. No EPS subsidy for tiny pump requests.
     const pumpEnabled=pumpWh>0 && servedBaseWh>=baseWh-EPS &&
         remainingPv+Math.max(0,batteryWh-reserve)*etaD>=pumpWh;
-    if(pumpEnabled)servedPumpWh=deliver(pumpWh);
+    if(pumpEnabled){
+      const pumpDelivery=deliver(pumpWh);
+      directPumpWh=pumpDelivery.direct;batteryPumpWh=pumpDelivery.fromBattery;
+      servedPumpWh=pumpDelivery.served;
+    }
     const chargeInWh=Math.min(remainingPv,Math.max(0,cfg.batteryCapacityWh-batteryWh)/etaC);
-    batteryWh+=chargeInWh*etaC;
+    const chargeStoredWh=chargeInWh*etaC;
+    batteryWh+=chargeStoredWh;
     const curtailedWh=remainingPv-chargeInWh;
     const chargeLossWh=chargeInWh*(1-etaC);
     const dischargeLossWh=batteryOutputWh*(1/etaD-1);
@@ -80,7 +88,8 @@
       servedPumpWh,curtailedWh,chargeLossWh,dischargeLossWh}))number(name,value);
     must(batteryWh<=capacity+EPS,"Energy inventory exceeds battery capacity");
     return {batteryWh,servedBaseWh,unservedBaseWh,servedPumpWh,pumpEnabled,
-      pvWh,curtailedWh,chargeLossWh,dischargeLossWh,residualWh};
+      pvWh,curtailedWh,chargeLossWh,dischargeLossWh,residualWh,
+      directBaseWh,batteryBaseWh,directPumpWh,batteryPumpWh,chargeStoredWh};
   }
   function configuration(overrides={}){
     const c={...configDefaults,...overrides};
@@ -179,6 +188,15 @@
       must(Number.isFinite(nextWaterStoredL) && nextWaterStoredL>=-EPS &&
         Number.isFinite(waterResidual) && Math.abs(waterResidual)<1e-5,
         "Water conservation failure "+waterResidual);
+      // Validate typed per-equipment transfers against the independently
+      // computed energy/water inventories *before* any model state commits.
+      must(root.HomesteadResourceContract &&
+        typeof root.HomesteadResourceContract.auditHour==="function",
+        "Resource transfer contract unavailable");
+      const resourceAudit=root.HomesteadResourceContract.auditHour({
+        hour:this.hours,energy,initialBatteryWh:this.batteryWh,
+        waterBeforeL:waterBefore,treatedL,consumedL,overflowL,waterAfterL:nextWaterStoredL
+      });
       // Hydraulic state, tank inventory and electricity commit together.
       this.water=nextWater;
       this.waterStoredL=nextWaterStoredL;
@@ -198,6 +216,7 @@
       }
       this.last={hour,day:this.farmSnapshot.date,
         pv,energy,water:{treatedL,waterStoredL:this.waterStoredL,consumedL,shortfallL,overflowL,waterResidual},
+        resourceAudit,
         farm:{dailyDemandWaterL:farmDailyWaterL,dailyDemandKWh:farmDailyKWh,counts:this.farmSnapshot.counts},
         warnings:[
           ...(energy.unservedBaseWh>EPS?["Essential energy demand was not met. Farm biological effects NOT modeled."]:[]),

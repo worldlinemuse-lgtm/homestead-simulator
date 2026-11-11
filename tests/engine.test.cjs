@@ -2,7 +2,7 @@
 const assert=require("node:assert/strict"),fs=require("node:fs"),vm=require("node:vm");
 const path=require("node:path"),test=require("node:test");
 const ctx=vm.createContext({console,Date,Math,Map,Set,Number,String,Array,Object,JSON,Error,Uint8Array,Float64Array,Float32Array,Int32Array,Infinity,NaN,performance:require('node:perf_hooks').performance});
-for(const p of ["vendor/solar-next-core.js","vendor/water-engine.js","vendor/farm-core.js","src/coordinator.js"]){
+for(const p of ["vendor/solar-next-core.js","vendor/water-engine.js","vendor/farm-core.js","src/resource-contract.js","src/coordinator.js"]){
  const code=fs.readFileSync(path.join(__dirname,"..",p),"utf8");
  vm.runInContext(code,ctx,{filename:p,timeout:60000});
 }
@@ -306,4 +306,39 @@ test("adequately powered pump retains original hydraulic solver integration",()=
  assert.ok(Number.isFinite(s.last.water.treatedL) && s.last.water.treatedL>=0);
  assert.ok(Math.abs(s.last.energy.residualWh)<1e-5);
  assert.ok(Math.abs(s.last.water.waterResidual)<1e-5);
+});
+
+test("coordinator emits typed per-hour energy/water transfers without changing biology",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator();
+ const before=JSON.stringify(c.farm.snapshot());
+ const s=c.stepHour(),a=s.last.resourceAudit;
+ assert.equal(a.schemaVersion,1);
+ assert.equal(a.hour,0);
+ assert.equal(a.electricity.resource,"electricity");
+ assert.equal(a.electricity.unit,"Wh");
+ assert.equal(a.water.resource,"water");
+ assert.equal(a.water.unit,"L");
+ assert.equal(a.electricity.balances["water.pump"],s.last.energy.servedPumpWh);
+ assert.equal(a.electricity.balances["site.base_load"],s.last.energy.servedBaseWh);
+ assert.ok(Math.abs(a.water.balances["tank.inventory"]-
+   (s.waterStoredL-c.cfg.waterStartL))<1e-8);
+ assert.ok(a.transfers.electricity.every(t=>t.hour===0&&t.unit==="Wh"));
+ assert.ok(a.transfers.water.every(t=>t.hour===0&&t.unit==="L"));
+ assert.equal(JSON.stringify(c.farm.snapshot()),before,"recording must not advance farm biology");
+ for(let i=1;i<5;i++){
+  const next=c.stepHour(),q=next.last.resourceAudit;
+  assert.equal(q.hour,i);
+  assert.ok(Math.abs(q.electricity.residual)<1e-5);
+  assert.ok(Math.abs(q.water.residual)<1e-5);
+ }
+});
+test("zero-power intervals still reconcile typed zero-pump transfers",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({pumpElectricalW:0,
+  cloudTransmittance:0,backgroundLoadW:0});
+ const s=c.stepHour(),a=s.last.resourceAudit;
+ assert.equal(s.last.energy.servedPumpWh,0);
+ assert.equal(a.electricity.balances["water.pump"],0);
+ assert.equal(a.water.balances["water.treatment_output"],0);
+ assert.ok(Math.abs(a.electricity.residual)<1e-5);
+ assert.ok(Math.abs(a.water.residual)<1e-5);
 });
