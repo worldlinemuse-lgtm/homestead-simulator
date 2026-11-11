@@ -88,3 +88,59 @@ export function fenceToGardenClearance(lines=FARM_PERIMETER,bounds=gardenBounds(
   }
   return minimum;
 }
+
+/** 
+ * Illustrative utility geometry in world metres.
+ * The electrical feeder remains OUTSIDE the fenced livestock property.
+ * The treated-water supply passes through the SOUTH GATE, buried beneath it.
+ * These are visualization paths, not electrically/hydraulically certified designs.
+ */
+export const FARM_ELECTRICAL_ROUTE=Object.freeze([
+  [6,8,.6],[10,2,.24],[14,-6,.24],[21,-11,.24],[28,-9,.55]
+].map(p=>Object.freeze(p)));
+export const FARM_WATER_SUPPLY_ROUTE=Object.freeze([
+  [12,-17,.35],[18,-15,.26],[24,-11,.26],
+  [29.7,-6,-.65],[30,-2,-.7],[29.7,1.3,-.65],[29,5,.8]
+].map(p=>Object.freeze(p)));
+function orient2(a,b,c){
+ return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+}
+function onSegment2(p,a,b){
+ return p[0]>=Math.min(a[0],b[0])-1e-10&&p[0]<=Math.max(a[0],b[0])+1e-10&&
+   p[1]>=Math.min(a[1],b[1])-1e-10&&p[1]<=Math.max(a[1],b[1])+1e-10;
+}
+function segmentsIntersect2(a,b,c,d){
+ const o1=orient2(a,b,c),o2=orient2(a,b,d),o3=orient2(c,d,a),o4=orient2(c,d,b),eps=1e-10;
+ if(((o1>eps&&o2< -eps)||(o1< -eps&&o2>eps))&&
+    ((o3>eps&&o4< -eps)||(o3< -eps&&o4>eps)))return true;
+ return (Math.abs(o1)<=eps&&onSegment2(c,a,b))||
+    (Math.abs(o2)<=eps&&onSegment2(d,a,b))||
+    (Math.abs(o3)<=eps&&onSegment2(a,c,d))||
+    (Math.abs(o4)<=eps&&onSegment2(b,c,d));
+}
+/**
+ * Minimum 2D distance from sampled actual 3D spline to rendered fence segments.
+ * Returns zero for crossings and overlaps, including paths that cross between
+ * sample points. Use many curve samples (>=192) to bound spline approximation.
+ * Vertical burial clearance is audited separately against the real terrain mesh.
+ */
+export function utilityFenceClearance(points,fenceLines=FARM_PERIMETER){
+ if(!Array.isArray(points)||points.length<2||!Array.isArray(fenceLines)||!fenceLines.length)
+   throw new RangeError("Utility route and fence require segments");
+ const finite2=p=>Array.isArray(p)&&p.length>=2&&
+   Number.isFinite(p[0])&&Number.isFinite(p[1]);
+ if(!points.every(finite2)||!fenceLines.every(([a,b])=>finite2(a)&&finite2(b)))
+   throw new RangeError("Non-finite utility or fence coordinates");
+ let minimum=Infinity;
+ for(let i=1;i<points.length;i++){
+   const a=points[i-1],b=points[i];
+   for(const [c,d] of fenceLines){
+     if(segmentsIntersect2(a,b,c,d))return 0;
+     minimum=Math.min(minimum,pointSegmentDistance(a[0],a[1],c,d),
+       pointSegmentDistance(b[0],b[1],c,d),
+       pointSegmentDistance(c[0],c[1],a,b),
+       pointSegmentDistance(d[0],d[1],a,b));
+   }
+ }
+ return minimum;
+}
