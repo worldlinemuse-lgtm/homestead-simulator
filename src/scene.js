@@ -3,7 +3,8 @@ import {nativeFarmWorldPoses,nativeFarmComponentFootprint,FEET_TO_METRES} from "
 import {frameDeltaSeconds,smoothAlpha,gaitPose,chickenFootPhase,chickenSwingLift,
   CHICKEN_STANCE_FRACTION} from "./visual-motion.mjs";
 import {FARM_PERIMETER,GARDEN_PLAN,gardenBounds,fenceToGardenClearance,
-  nativeCoopRunPortal,aabbOverlap} from "./plot-layout.mjs";
+  nativeCoopRunPortal,aabbOverlap,FARM_ELECTRICAL_ROUTE,
+  FARM_WATER_SUPPLY_ROUTE,utilityFenceClearance} from "./plot-layout.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
 
 /**
@@ -581,7 +582,8 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   const pvCable=route([[-35,-9,.23],[-31,-6,.23],[-26,-6,.23],[-22,-4,.55],[-20,-4,1.5]],m.electric,.09);
   const pumpCable=route([[-16,-4,.45],[-12,-9,.24],[-9,-18,.24],[-8,-25,1.0]],m.electric,.09);
   const homeCable=route([[-16,-4,.45],[-10,3,.24],[0,8,.26],[6,8,.6]],m.electric,.09);
-  const farmCable=route([[6,8,.6],[15,8,.26],[22,2,.25],[28,-9,.55]],m.electric,.09);
+  // Outside the perimeter instead of crossing two farm-fence segments.
+  const farmCable=route(FARM_ELECTRICAL_ROUTE,m.electric,.09);
 
   // Stream intake, pump, vertically arranged filter skids, elevated treated water tank.
   const water=group("water","Water treatment and storage",-7,-23);
@@ -702,7 +704,24 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   const intakeLine=route([[-18,-31,.1],[-14,-30,.24],[-11,-27,.24],[-8,-25,1.1]],m.pipe,.16);
   const filterLine=route([[-8,-25,1.12],[-5,-24,.95],[-2,-24,1.45],[-1,-23,2.1]],m.pipe,.14);
   const fillLine=route([[-1,-23,2.1],[3,-22,.65],[8,-19,.72],[12,-17,5.65]],m.pipe,.13);
-  const supplyLine=route([[12,-17,.35],[19,-15,.26],[23,-7,.27],[25,3,.26],[29,5,.8]],m.pipe,.13);
+  // Through the existing south gate, buried below its walk-through corridor.
+  // Flow particles share this same authoritative visual path, including burial.
+  const supplyLine=route(FARM_WATER_SUPPLY_ROUTE,m.pipe,.13);
+  const electricSamples=farmCable.getPoints(192);
+  const supplySamples=supplyLine.getPoints(192);
+  const gateSamples=supplySamples.filter(p=>Math.abs(p.z+2)<.30);
+  const utilityRoutingAudit=Object.freeze({
+    farmElectricalFenceClearanceM:utilityFenceClearance(
+      electricSamples.map(p=>[p.x,p.z])),
+    waterSupplyFenceClearanceM:utilityFenceClearance(
+      supplySamples.map(p=>[p.x,p.z])),
+    gateBurialM:gateSamples.length?
+      Math.min(...gateSamples.map(p=>terrainY(p.x,p.z)-p.y)):-Infinity,
+    gateCrossingX:gateSamples.length?
+      gateSamples.reduce((sum,p)=>sum+p.x,0)/gateSamples.length:NaN,
+    gateSampleCount:gateSamples.length,
+    maxUtilityVisualRadiusM:.177
+  });
   // Farm-sim world/draw.js: represent actual enclosure features (battens,
   // ventilators, pop-door, ramp, nest access and fixtures) without inventing
   // extra biological model entities. All fixture levels are intentionally
@@ -1877,6 +1896,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
           errorM:Math.abs(o.position.y-terrainY(o.position.x,o.position.z)-nativeHeightM)};
       }),
       activeFlowPaths:flows.filter(f=>flowAmount(f.kind,data?.last?.energy,data?.last?.water)>1e-8).length,
+      utilityRouting:utilityRoutingAudit,
       tankFillFraction:visualTankFraction,visualFarmHour:data?.clock?.hourOfDay??null,housingScreenCount,illustrativeCageDoors,qualityTier,qualityPixelRatio:pixelRatio(),qualityFps:Math.round(qualityFps),qualityChanges:quality.changes,grounding:groundingReport(),animalLifecycle:animalLifecycleReport(),
       structureAudit:{houseFacade:facadeProbe(homestead,houseFront,6,3),
         coopFacade:facadeProbe(barn,coopFront,4.1,2.7),

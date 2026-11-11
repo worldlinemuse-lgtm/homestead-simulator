@@ -312,6 +312,14 @@ try:
             assert page.evaluate("window.HomesteadApp.world().housingScreenCount") >= 2
             assert page.evaluate("window.HomesteadApp.world().illustrativeCageDoors") == 6
             # Raycast the segmented facade geometry rather than relying on flags.
+            routing=page.evaluate("window.HomesteadApp.world().utilityRouting")
+            assert routing["farmElectricalFenceClearanceM"]>.36, routing
+            assert routing["waterSupplyFenceClearanceM"]>.36, routing
+            assert routing["gateSampleCount"]>=1, routing
+            assert 28.35+.36<routing["gateCrossingX"]<31.65-.36, routing
+            # Pipe and FLOW sheath/particles are buried below the real terrain
+            # mesh through the gate; never leave a trip hazard or fence crossing.
+            assert routing["gateBurialM"]>=routing["maxUtilityVisualRadiusM"]+.18, routing
             audit=page.evaluate("window.HomesteadApp.world().structureAudit")
             assert audit["houseFacade"]["openingCount"] == 6, audit
             assert audit["coopFacade"]["openingCount"] == 4, audit
