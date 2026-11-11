@@ -217,6 +217,9 @@ try:
             assert initial_sun and initial_sun["hour"]==initial_hour, initial_sun
             assert initial_sun["date"]==page.evaluate("window.HomesteadApp.snapshot().clock.date")
             assert initial_sun["latitudeDeg"]==41.6
+            assert abs(initial_sun["renderedElevationDeg"]-initial_sun["elevationDeg"])<1e-8, initial_sun
+            az_error=(initial_sun["renderedAzimuthDeg"]-initial_sun["azimuthDeg"]+180)%360-180
+            assert abs(az_error)<1e-8, initial_sun
             assert all(word in page.locator("#simPhase").inner_text() for word in
                        ("Daylight", "Sunrise", "Sunset")), "Seasonal daylight summary missing"
             assert 9<initial_sun["dayLengthHours"]<11, initial_sun
