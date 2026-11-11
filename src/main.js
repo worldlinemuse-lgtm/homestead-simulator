@@ -1,6 +1,8 @@
 import {makeScene} from "./scene.js";
+import {seasonalSun} from "./seasonal-sun.mjs";
 const $=id=>document.getElementById(id);
 const fmt=(n,d=1)=>Number(n).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
+const solarClock=h=>{const minute=Math.round(h*60);return String(Math.floor(minute/60)).padStart(2,"0")+":"+String(minute%60).padStart(2,"0")};
 const coordinator=new window.HomesteadCoordinator.Coordinator();
 // This is the ORIGINAL Farm world, running inside the same biological model closure.
 // It has an independent seeded visual RNG and never writes numeric model results.
@@ -112,7 +114,11 @@ function redraw(s){
  $("farmValue").textContent=f.counts.n+" animals";
  $("farmDetail").textContent="Daily "+fmt(f.daily?.waterGal||0,1)+" gal water · "+fmt(f.daily?.kWh||0,2)+" kWh · "+(f.daily?.eggs||0)+" eggs";
  $("simDate").textContent=s.clock.date+" · "+String(s.clock.hourOfDay).padStart(2,"0")+":00";
- $("simPhase").textContent="Model hour "+s.clock.hours+" · linked resource accounting";
+ // Calendar-driven visible daylight is explicitly distinct from experimental
+ // energy/irradiance dispatch; communicate the season directly to the user.
+ const localSun=seasonalSun(s.clock.date,s.clock.hourOfDay);
+ $("simPhase").textContent="Daylight "+fmt(localSun.dayLengthHours,1)+"h · Sunrise "+solarClock(localSun.sunriseHour)+
+   " · Sunset "+solarClock(localSun.sunsetHour);
  $("alerts").textContent=s.last?.warnings.length?s.last.warnings.join(" "):"See Details for the model assumptions and limitations.";
 }
 function tick(){try{$("errors").style.display="none";redraw(coordinator.stepHour())}catch(e){fail(e)}}
