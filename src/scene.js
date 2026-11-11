@@ -6,7 +6,7 @@ import {FARM_PERIMETER,GARDEN_PLAN,gardenBounds,fenceToGardenClearance,
   nativeCoopRunPortal,aabbOverlap,FARM_ELECTRICAL_ROUTE,
   FARM_WATER_SUPPLY_ROUTE,utilityFenceClearance} from "./plot-layout.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
-import {solarPostMount,RABBIT_HUTCH_ROOF} from "./visual-layout.mjs";
+import {solarPostMount} from "./visual-layout.mjs";
 
 /**
  * Homestead 3D landscape v2: a single physical site, NOT isolated simulation stages.
@@ -857,69 +857,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     const post=cyl(.14,.16,1.83,m.darkWood,gx,y+.9,-2,9);
     post.name="Coop gate opening marker";scene.add(post);
   }
-  // Move the hutches wholly within the fence (west edge is near x=18–19).
-  const hutches=group("farm","Rabbit hutches",24.5,11);
-  // Reuse Farm's raised wire-floor hutches, outside feeders/water bottles,
-  // nest boxes and cage-door hinge/latch vocabulary. The geometries represent
-  // illustrative fixtures, NOT individually inventoried or calibrated cages.
-  for(const z of [-2.5,2.5]){
-    hutches.add(box(7.45,.19,3.05,m.wood,0,1.35,z)); // raised wire floor support
-    hutches.add(box(7.35,.22,3.05,m.steel,0,1.02,z)); // removable dropping tray
-    hutches.add(box(7.24,1.78,.15,m.cedar,0,2.38,z-1.45)); // windward back wall
-    for(const x of [-3.55,3.55]){
-      hutches.add(box(.15,1.73,2.85,m.wood,x,2.38,z));
-    }
-    // The cover follows the full cage footprint with a small supported eave.
-    const roof=box(RABBIT_HUTCH_ROOF.roofWidthM,.22,
-      RABBIT_HUTCH_ROOF.roofDepthM,m.roof,0,RABBIT_HUTCH_ROOF.heightM,z);
-    roof.rotation.x=-.055;hutches.add(roof);
-    hutches.add(box(RABBIT_HUTCH_ROOF.roofWidthM,.10,.13,m.trim,0,3.34,
-      z+RABBIT_HUTCH_ROOF.roofDepthM/2));
-      for(const x of [-3.40,-1.15,1.15,3.40]){
-      hutches.add(box(.14,2.12,.17,m.wood,x,2.36,z+1.44));
-      for(const dz of [-1.1,1.10]){
-        hutches.add(cyl(.105,.12,2.92,m.wood,x,1.51,z+dz,9));
-        const land=terrainY(hutches.position.x+x,hutches.position.z+z+dz)-hutches.position.y;
-        if(land<.06){
-          const top=.23,bottom=land-.2;
-          hutches.add(cyl(.12,.15,top-bottom,m.wood,x,(top+bottom)/2,z+dz,9));
-        }
-      }
-    }
-    for(const xx of [-1.14,1.14]){
-      hutches.add(box(.13,1.66,2.8,m.cedar,xx,2.39,z));
-    }
-    // One continuous screen, then three framed service doors and hinged latches.
-    enclosureScreen(hutches,-3.42,1.52,z+1.48,6.84,1.68,.24,.27);
-    for(const cx of [-2.27,0,2.27]){
-      for(const x of [cx-1.01,cx+1.01]){
-        hutches.add(box(.055,1.56,.078,m.steel,x,2.38,z+1.53));
-      }
-      for(const y of [1.61,3.15]){
-        hutches.add(box(2.08,.063,.075,m.steel,cx,y,z+1.53));
-      }
-      for(const y of [1.94,2.91]){
-        hutches.add(cyl(.071,.071,.105,m.metal,cx-.99,y,z+1.62,9));
-      }
-      hutches.add(box(.22,.075,.16,m.metal,cx+.88,2.31,z+1.62));
-      illustrativeCageDoors++;
-      // Feed hopper is shown empty: aggregate farm feed allocation is not a
-      // per-hopper fill measurement.
-      hutches.add(box(.54,.66,.38,m.steel,cx-.64,2.52,z+1.77));
-      hutches.add(box(.60,.07,.44,m.metal,cx-.64,2.88,z+1.77));
-      hutches.add(box(.48,.11,.20,m.darkWood,cx-.64,2.19,z+1.59));
-      // Wall-mounted translucent bottle + exterior clip + drinking nipple.
-      hutches.add(cyl(.18,.18,.67,bottleGlass,cx+.57,2.64,z+1.72,16));
-      hutches.add(cyl(.21,.21,.09,m.steel,cx+.57,3.01,z+1.72,16));
-      hutches.add(box(.10,.12,.19,m.metal,cx+.57,2.30,z+1.55));
-      const nipple=cyl(.048,.048,.32,m.metal,cx+.57,2.26,z+1.42,8);
-      nipple.rotation.x=Math.PI/2;hutches.add(nipple);
-      // A modest closed nest compartment visible behind the wired door.
-      hutches.add(box(.73,.73,.81,m.wood,cx+.68,1.92,z-.72));
-      hutches.add(box(.34,.35,.025,m.darkWood,cx+.68,1.93,z-.29));
-      hutches.add(box(.87,.09,.96,m.roof,cx+.68,2.34,z-.72));
-    }
-  }
+  // Rabbit housing is rendered exclusively from authoritative Farm hutch
+  // components in syncNativeEnclosures(). Do not create parallel cages here:
+  // their fixed footprints would disagree with rabbit agent collision space.
   const trough=group("farm","Livestock waterer",29,5);
   trough.add(cyl(.95,.95,.88,m.steel,0,.48,0,16));
   const troughWater=cyl(.84,.84,.05,m.water,0,.90,0,16);trough.add(troughWater);
@@ -1535,7 +1475,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     toEye.copy(toLook).add(d);cameraFloor(toEye);
   },{passive:false});
 
-  [homestead,power,panels,water,tank,barn,animalArea,hutches,trough,garden].forEach(select);
+  [homestead,power,panels,water,tank,barn,animalArea,trough,garden].forEach(select);
   // Placement editor: users may move the VISUAL garden and add/change props.
   // Authoritative equipment, native pens and animal biology are deliberately locked.
   const editableObjects=new Map([["garden",{root:garden,type:"garden",locked:true}]]);
@@ -1619,7 +1559,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
          aabbOverlap(b,nativeCoopProof.portal.run)))return false;
     }else if(root.position.x< -58||root.position.x>58||
              root.position.z< -37||root.position.z>36)return false;
-    for(const other of [homestead,power,panels,water,tank,barn,hutches,trough]){
+    for(const other of [homestead,power,panels,water,tank,barn,trough]){
       if(new THREE.Box3().setFromObject(other).intersectsBox(bounds3))return false;
     }
     for(const [otherId,other] of editableObjects){
@@ -2098,8 +2038,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       solarMount:{supportCount:solarSupportProof.length,
         minTopClearanceM:Math.min(...solarSupportProof.map(p=>p.clearanceM)),
         maxAboveUndersideM:Math.max(...solarSupportProof.map(p=>p.postTopM-p.undersideM))},
-      rabbitHutchRoof:{widthOverhangM:(RABBIT_HUTCH_ROOF.roofWidthM-RABBIT_HUTCH_ROOF.cageWidthM)/2,
-        depthOverhangM:(RABBIT_HUTCH_ROOF.roofDepthM-RABBIT_HUTCH_ROOF.cageDepthM)/2},
+      rabbitHutchRoof:{source:"native-farm-components",decorativeCount:0},
       plumage:{sharedGeometry:true,sharedFeatherGeometryCount:1,
         chickens:agents.children.filter(a=>a.userData.kind==="chicken").length,
         decorativeFeathers:agents.children.reduce((n,a)=>n+(a.userData.plumageFeathers||0),0)},
@@ -2162,10 +2101,10 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         closedGables:closedGableCount,
         gateOpeningM:31.65-28.35,
         rampWidthM:ramp.geometry.parameters.width,
-        hutchWestWorldX:hutches.position.x-7.85/2,
+        hutchWestWorldX:Math.min(Infinity,...nativeEnclosureFootprints.filter(p=>p.type==="hutch").map(p=>p.x0)),
         westFenceMaxX:19,
         hasRampClearance:(31.65-28.35)>ramp.geometry.parameters.width,
-        hutchFenceClearanceM:hutches.position.x-7.85/2-19},
+        hutchFenceClearanceM:Math.min(Infinity,...nativeEnclosureFootprints.filter(p=>p.type==="hutch").map(p=>p.x0))-19},
       chickenFootContact:chickenFootReport(),
       nativeAnimalActions:nativeAnimalPoses?[...nativeAnimalPoses.values()].reduce((counts,p)=>{
         counts[p.action]=(counts[p.action]||0)+1;return counts;
