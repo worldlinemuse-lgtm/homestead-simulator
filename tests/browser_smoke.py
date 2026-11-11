@@ -360,6 +360,36 @@ try:
             }""")
             assert page.evaluate("getComputedStyle(document.querySelector('#inspector')).display") == "none"
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==0
+
+            # Continuous time controls are local visual preview, not a model rewind.
+            initial_model=page.evaluate("window.HomesteadApp.snapshot().clock.hours")
+            page.locator("#timeSlider").fill("1195")
+            assert page.locator("#simDate").inner_text().endswith("19:55 · Preview")
+            assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==initial_model
+            assert page.evaluate("window.HomesteadApp.time().preview") is True
+            page.locator("#timeResume").click()
+            assert page.evaluate("window.HomesteadApp.time().preview") is False
+            # Editable visual props can be added, moved, swapped and undone.
+            page.locator("#inspectBtn").click()
+            page.locator("#objectType").select_option("compost")
+            page.locator("#objectAdd").click()
+            editor=page.evaluate("window.HomesteadApp.world().visualEditor")
+            assert editor["props"]==1, editor
+            before=page.evaluate("window.HomesteadApp.editList()")
+            page.locator("#objectRight").click()
+            moved=page.evaluate("window.HomesteadApp.editList()")
+            assert moved[-1]["x"]==before[-1]["x"]+1,(before,moved)
+            page.locator("#objectType").select_option("barrel")
+            page.locator("#objectSwap").click()
+            assert page.evaluate("window.HomesteadApp.editList()[-1].type")=="barrel"
+            page.locator("#objectUndo").click()
+            assert page.evaluate("window.HomesteadApp.editList()[-1].type")=="compost"
+            assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==initial_model
+            proof=page.evaluate("window.HomesteadApp.world().solarMount")
+            assert proof["supportCount"]==16 and proof["minTopClearanceM"]>=.095,proof
+            proof=page.evaluate("window.HomesteadApp.world().rabbitHutchRoof")
+            assert proof["widthOverhangM"]<.13 and proof["depthOverhangM"]<.13,proof
+            page.locator("#closeInspector").click()
             page.locator("#stepBtn").click()
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==1
             assert page.evaluate("""() => {

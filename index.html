@@ -14,6 +14,16 @@
 <div class="metric"><div class="row"><span class="ico">🐇 <b>Farm</b></span><strong id="farmValue">—</strong></div><div class="detail" id="farmDetail">Animals and resource demand</div></div></div><p id="alerts" style="margin-top:10px" role="status"></p></section>
 <aside id="inspector" class="glass" aria-label="System inspection and scenario controls"><div class="head"><div><div class="eyebrow">Inspect & configure</div><h2 id="inspectTitle">Whole homestead</h2></div><button id="closeInspector" aria-label="Close settings">✕</button></div><div class="inspector-body"><p class="sub" id="inspectDescription">Energy, treated water and animal demand are linked through one chronological resource ledger.</p>
 <section id="assetReadout" class="assetReadout" aria-live="polite"><p>Select a building or equipment in the 3D scene to inspect its model-driven state.</p></section>
+<section id="objectEditor" class="objectEditor" aria-label="Visual landscape object editor">
+<h3>Arrange the landscape</h3>
+<p class="editorNote">Move, turn, add or swap visual props. Garden placement is editable; biological pens and equipment are protected. These changes do not alter resource formulas.</p>
+<label class="editorCheck"><input id="editMode" type="checkbox"> Drag editable objects to move them</label>
+<label for="objectList">Selected object</label><select id="objectList" aria-label="Select editable visual object"></select>
+<label for="objectType">Object type</label><select id="objectType"><option value="planter">Raised planter</option><option value="compost">Compost bin</option><option value="fruit-tree">Fruit tree</option><option value="barrel">Water barrel (decorative)</option></select>
+<div class="editorButtons"><button id="objectAdd">+ Add</button><button id="objectSwap">Swap</button><button id="objectRemove">Remove</button><button id="objectUndo">Undo</button></div>
+<div class="editorButtons"><button id="objectLeft" aria-label="Move left">←</button><button id="objectUp" aria-label="Move toward north">↑</button><button id="objectDown" aria-label="Move toward south">↓</button><button id="objectRight" aria-label="Move right">→</button><button id="objectRotate">↻ Turn 90°</button></div>
+<output id="editStatus" aria-live="polite">Choose a prop or select the garden.</output>
+</section>
 <div class="setting"><div class="value"><label for="cloud">Illustrative cloud transmittance</label><output id="cloudOut">82%</output></div><input type="range" id="cloud" min="0" max="100" step="1" value="82"></div>
 <div class="setting"><div class="value"><label for="houseLoad">Background household demand</label><output id="houseLoadOut">85 W</output></div><input type="range" id="houseLoad" min="0" max="800" step="5" value="85"></div>
 <div class="setting"><div class="value"><label for="pumpLoad">Assumed pump electrical input</label><output id="pumpLoadOut">120 W</output></div><input type="range" id="pumpLoad" min="30" max="500" step="10" value="120"></div>

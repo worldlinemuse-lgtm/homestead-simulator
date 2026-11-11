@@ -6,6 +6,7 @@ import {FARM_PERIMETER,GARDEN_PLAN,gardenBounds,fenceToGardenClearance,
   nativeCoopRunPortal,aabbOverlap,FARM_ELECTRICAL_ROUTE,
   FARM_WATER_SUPPLY_ROUTE,utilityFenceClearance} from "./plot-layout.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
+import {solarPostMount,RABBIT_HUTCH_ROOF} from "./visual-layout.mjs";
 
 /**
  * Homestead 3D landscape v2: a single physical site, NOT isolated simulation stages.
@@ -540,7 +541,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   const power=group("energy","Solar inverter and battery", -18,-7);
   foundationFor(power,-18,-7,8.2,6.7);
   power.add(box(8,4.1,6.5,m.wood,0,2.05,0));
-  const powerRoof=box(9.2,.35,7.6,m.roof,0,4.5,0);powerRoof.rotation.z=.10;power.add(powerRoof);
+  // Centered, fully supported shed roof: no displaced mono-pitch slab.
+  const powerRoof=box(8.8,.35,7.20,m.roof,0,4.43,0);power.add(powerRoof);
+  for(const z of [-3.57,3.57])power.add(box(8.8,.14,.09,m.trim,0,4.32,z));
   power.add(box(1.48,2.31,.12,m.darkWood,0,1.24,3.31));
   for(const x of [-.80,.80])power.add(box(.10,2.46,.13,m.trim,x,1.25,3.39));
   power.add(box(1.76,.12,.13,m.trim,0,2.48,3.39));
@@ -555,6 +558,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   const inverterLed=new THREE.PointLight(0xa3f1e3,0,5);inverterLed.position.set(2.4,2.45,4.4);power.add(inverterLed);
   // Four 435 W panel references, visually grouped 2x2. Dimensions illustrative.
   const panels=group("energy","Ground-mounted solar array",-35,-11);
+  const solarSupportProof=[];
   function panel(x,z){
     const mount=new THREE.Group();mount.position.set(x,0,z);
     const height=2.15;
@@ -562,14 +566,15 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     const face=box(5.08,.11,2.76,m.solar,0,height+.12,-.04);face.rotation.x=-.34;mount.add(face);
     for(const dx of [-1.62,0,1.62])mount.add(box(.035,.015,2.7,m.metal,dx,height+.19,-.09));
     for(const dz of [-.72,.72])mount.add(box(5.07,.025,.035,m.metal,0,height+.20,dz));
-    for(const dx of [-2,2]){
-      for(const [dz,length,center] of [[-.75,1.85,.92],[.88,2.6,1.3]]){
-        mount.add(cyl(.11,.14,length,m.steel,dx,center,dz,8));
-        // Footing continues beneath the exact heightfield on the downhill side.
-        const floor=terrainY(panels.position.x+x+dx,panels.position.z+z+dz)-panels.position.y;
-        const top=.23,bottom=Math.min(-.08,floor-.24);
-        mount.add(cyl(.13,.16,top-bottom,m.concrete,dx,(top+bottom)/2,dz,9));
-      }
+    for(const dx of [-2,2])for(const dz of [-.75,.88]){
+      // Posts end BELOW the tilted rack rather than piercing the PV face.
+      const floor=terrainY(panels.position.x+x+dx,panels.position.z+z+dz)-panels.position.y;
+      const support=solarPostMount(dz,floor);
+      mount.add(cyl(.11,.14,support.lengthM,m.steel,dx,support.centerM,dz,8));
+      solarSupportProof.push(support);
+      // Each small pad reaches below the same triangulated heightfield.
+      const footTop=.23,footBottom=Math.min(-.08,floor-.24);
+      mount.add(cyl(.13,.16,footTop-footBottom,m.concrete,dx,(footTop+footBottom)/2,dz,9));
     }
     panels.add(mount);
   }
@@ -864,9 +869,12 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     for(const x of [-3.55,3.55]){
       hutches.add(box(.15,1.73,2.85,m.wood,x,2.38,z));
     }
-    const roof=box(7.85,.24,3.58,m.roof,0,3.48,z);
-    roof.rotation.x=-.09;hutches.add(roof);
-    hutches.add(box(7.85,.14,.13,m.trim,0,3.33,z+1.77));
+    // The cover follows the full cage footprint with a small supported eave.
+    const roof=box(RABBIT_HUTCH_ROOF.roofWidthM,.22,
+      RABBIT_HUTCH_ROOF.roofDepthM,m.roof,0,RABBIT_HUTCH_ROOF.heightM,z);
+    roof.rotation.x=-.055;hutches.add(roof);
+    hutches.add(box(RABBIT_HUTCH_ROOF.roofWidthM,.10,.13,m.trim,0,3.34,
+      z+RABBIT_HUTCH_ROOF.roofDepthM/2));
       for(const x of [-3.40,-1.15,1.15,3.40]){
       hutches.add(box(.14,2.12,.17,m.wood,x,2.36,z+1.44));
       for(const dz of [-1.1,1.10]){
@@ -1429,12 +1437,45 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   }
   const ray=new THREE.Raycaster(),pointerMap=new Map();
   let gestureMoved=false,pinchDistance=null;
-  canvas.addEventListener("pointerdown",e=>{pointerMap.set(e.pointerId,{x:e.clientX,y:e.clientY});gestureMoved=false;canvas.setPointerCapture(e.pointerId);if(pointerMap.size===2){const p=[...pointerMap.values()];pinchDistance=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y)}});
+  canvas.addEventListener("pointerdown",e=>{
+    pointerMap.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    gestureMoved=false;canvas.setPointerCapture(e.pointerId);
+    if(editorEnabled&&pointerMap.size===1){
+      const rect=canvas.getBoundingClientRect();
+      ray.setFromCamera(new THREE.Vector2(
+        (e.clientX-rect.left)/rect.width*2-1,
+        -(e.clientY-rect.top)/rect.height*2+1),camera);
+      const hit=ray.intersectObjects([...selectable],true)[0];
+      const root=editableRoot(hit?.object);
+      if(root){
+        const id=root.userData.editorId;
+        selectVisualObject(id);
+        const floorHit=ray.intersectObject(terrainMesh,true)[0];
+        dragging={id,pointerId:e.pointerId,offsetX:root.position.x-(floorHit?.point.x??root.position.x),
+          offsetZ:root.position.z-(floorHit?.point.z??root.position.z),
+          start:visualLayout(),moved:false};
+      }
+    }
+    if(pointerMap.size===2){dragging=null;const p=[...pointerMap.values()];
+      pinchDistance=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y)}
+  });
   canvas.addEventListener("pointermove",e=>{
     const p=pointerMap.get(e.pointerId);if(!p)return;
     const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
     if(Math.abs(dx)+Math.abs(dy)>1){
       gestureMoved=true;trackedAnimalId=null;
+    }
+    if(dragging && pointerMap.size===1 && dragging.pointerId===e.pointerId){
+      const rect=canvas.getBoundingClientRect();
+      ray.setFromCamera(new THREE.Vector2(
+        (e.clientX-rect.left)/rect.width*2-1,
+        -(e.clientY-rect.top)/rect.height*2+1),camera);
+      const hit=ray.intersectObject(terrainMesh,true)[0];
+      if(hit){
+        const targetX=hit.point.x+dragging.offsetX,targetZ=hit.point.z+dragging.offsetZ;
+        if(moveVisualObject(dragging.id,targetX,targetZ,false))dragging.moved=true;
+      }
+      return;
     }
     if(pointerMap.size===2){
       const pair=[...pointerMap.values()];
@@ -1457,6 +1498,12 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   canvas.addEventListener("pointerup",e=>{
     pointerMap.delete(e.pointerId);
     if(pointerMap.size<2)pinchDistance=null;
+    if(dragging&&dragging.pointerId===e.pointerId){
+      const changed=dragging.moved;
+      if(changed)undoHistory.push(dragging.start);
+      dragging=null;
+      if(changed){onSelect("farm",editableObjects.get(selectedEditId)?.root.userData.label);return}
+    }
     if(gestureMoved)return;
     const r=canvas.getBoundingClientRect(),coords=new THREE.Vector2(
       (e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1
@@ -1467,6 +1514,8 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       let g=hits[0].object;
       while(g&&!g.userData.kind)g=g.parent;
       if(g?.userData.kind){
+        const root=editableRoot(hits[0].object);
+        if(root)selectVisualObject(root.userData.editorId);
         const kind=g.userData.kind;
         if(kind==="chicken"||kind==="rabbit"){
           onSelect("farm",(kind==="chicken"?"Chicken":"Rabbit")+" #"+g.userData.id);
@@ -1475,7 +1524,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       }
     }
   });
-  canvas.addEventListener("pointercancel",e=>{pointerMap.delete(e.pointerId);pinchDistance=null});
+  canvas.addEventListener("pointercancel",e=>{
+    pointerMap.delete(e.pointerId);pinchDistance=null;dragging=null;
+  });
   canvas.addEventListener("wheel",e=>{
     e.preventDefault();trackedAnimalId=null;
     const delta=Math.exp(e.deltaY*.0011);
@@ -1485,6 +1536,198 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   },{passive:false});
 
   [homestead,power,panels,water,tank,barn,animalArea,hutches,trough,garden].forEach(select);
+  // Placement editor: users may move the VISUAL garden and add/change props.
+  // Authoritative equipment, native pens and animal biology are deliberately locked.
+  const editableObjects=new Map([["garden",{root:garden,type:"garden",locked:true}]]);
+  garden.userData.editorId="garden";
+  let editorEnabled=false,selectedEditId="garden",serial=0,dragging=null;
+  const undoHistory=[];
+  const PROP_TYPES=Object.freeze(["planter","compost","fruit-tree","barrel"]);
+  function removeSelectable(group){
+    group.traverse(o=>{if(o.isMesh){
+      const ix=selectable.indexOf(o);if(ix>=0)selectable.splice(ix,1);
+    }});
+  }
+  function visualLayout(){
+    return {garden:{x:garden.position.x,z:garden.position.z,angle:garden.rotation.y},
+      props:[...editableObjects].filter(([id])=>id!=="garden").map(([id,entry])=>({
+        id,type:entry.type,x:entry.root.position.x,z:entry.root.position.z,
+        angle:entry.root.rotation.y}))};
+  }
+  function registerUndo(){undoHistory.push(visualLayout());if(undoHistory.length>35)undoHistory.shift()}
+  function buildVisualProp(group,type){
+    if(!PROP_TYPES.includes(type))throw new RangeError("Unknown visual prop");
+    removeSelectable(group);
+    for(const old of [...group.children]){group.remove(old);old.traverse(child=>{
+      if(child.geometry)child.geometry.dispose();
+    })}
+    if(type==="planter"){
+      group.add(box(1.8,.48,1.1,m.wood,0,.27,0));
+      group.add(box(1.58,.08,.94,m.earth,0,.55,0));
+      for(const x of [-.55,0,.55])for(const z of [-.25,.25])
+        group.add(ell(.22,.24,.22,m.foliage2,x,.78,z));
+    }else if(type==="compost"){
+      group.add(box(1.55,1.05,1.25,m.wood,0,.54,0));
+      for(const x of [-.55,0,.55])
+        group.add(box(.14,.87,.08,m.darkWood,x,.52,.65));
+      const cover=box(1.67,.13,1.36,m.roof,0,1.10,0);
+      cover.rotation.z=-.09;group.add(cover);
+    }else if(type==="fruit-tree"){
+      group.add(cyl(.20,.27,2.8,m.bark,0,1.40,0,8));
+      group.add(ell(1.12,1.16,1.06,m.foliage,0,3.17,0));
+      for(const [x,z] of [[-.63,-.27],[.55,.45],[.30,-.65]])
+        group.add(ell(.16,.16,.16,m.comb,x,3.0,z));
+    }else{
+      group.add(cyl(.67,.70,1.45,m.steel,0,.73,0,18));
+      group.add(cyl(.72,.72,.11,m.metal,0,1.46,0,18));
+      group.add(cyl(.08,.08,.34,m.pipe,.52,.44,0,8));
+    }
+    select(group);
+  }
+  function freshVisualProp(type,id,x,z,angle=0){
+    if(!PROP_TYPES.includes(type))throw new RangeError("Unsupported object type");
+    const root=new THREE.Group();
+    root.position.copy(at(x,z));root.rotation.y=angle;
+    root.userData={kind:"farm",label:"Visual prop "+id,editorId:id,visualOnly:true};
+    buildVisualProp(root,type);scene.add(root);
+    editableObjects.set(id,{root,type,locked:false});
+    return root;
+  }
+  function applyVisualLayout(layout){
+    garden.position.copy(at(layout.garden.x,layout.garden.z));
+    garden.rotation.y=layout.garden.angle;
+    for(const [id,entry] of [...editableObjects]){
+      if(id==="garden")continue;
+      removeSelectable(entry.root);scene.remove(entry.root);
+      entry.root.traverse(o=>{if(o.geometry)o.geometry.dispose()});
+      editableObjects.delete(id);
+    }
+    for(const prop of layout.props)freshVisualProp(prop.type,prop.id,prop.x,prop.z,prop.angle);
+    if(!editableObjects.has(selectedEditId))selectedEditId="garden";
+  }
+  function insidePlacement(root,id){
+    root.updateMatrixWorld(true);
+    const bounds3=new THREE.Box3().setFromObject(root);
+    const b={x0:bounds3.min.x,x1:bounds3.max.x,
+      z0:bounds3.min.z,z1:bounds3.max.z};
+    if(id==="garden"){
+      if(root.position.x<35||root.position.x>46||
+          root.position.z<13||root.position.z>23)return false;
+      if(fenceToGardenClearance(FARM_PERIMETER,b)<=1)return false;
+      if(nativeCoopProof.portal &&
+        (aabbOverlap(b,nativeCoopProof.portal.coop)||
+         aabbOverlap(b,nativeCoopProof.portal.run)))return false;
+    }else if(root.position.x< -58||root.position.x>58||
+             root.position.z< -37||root.position.z>36)return false;
+    for(const other of [homestead,power,panels,water,tank,barn,hutches,trough]){
+      if(new THREE.Box3().setFromObject(other).intersectsBox(bounds3))return false;
+    }
+    for(const [otherId,other] of editableObjects){
+      if(otherId!==id&&new THREE.Box3().setFromObject(other.root).intersectsBox(bounds3))
+        return false;
+    }
+    return true;
+  }
+  function moveVisualObject(id,x,z,record=true){
+    const obj=editableObjects.get(id);
+    if(!obj||!Number.isFinite(x)||!Number.isFinite(z))
+      throw new RangeError("Select an editable object and finite coordinates");
+    const old=obj.root.position.clone();
+    obj.root.position.copy(at(x,z));
+    if(!insidePlacement(obj.root,id)){
+      obj.root.position.copy(old);
+      obj.root.updateMatrixWorld(true);
+      return false;
+    }
+    if(record)undoHistory.push({action:"layout",snapshot:visualLayout(),before:{id,x:old.x,z:old.z}});
+    return true;
+  }
+  function selectVisualObject(id){
+    if(!editableObjects.has(id))throw new RangeError("Unknown editable object");
+    selectedEditId=id;const obj=editableObjects.get(id);
+    return {id,type:obj.type,label:obj.root.userData.label,
+      x:obj.root.position.x,z:obj.root.position.z,angle:obj.root.rotation.y};
+  }
+  function addVisualObject(type){
+    if(!PROP_TYPES.includes(type))throw new RangeError("Invalid object replacement type");
+    registerUndo();
+    const id="prop-"+(++serial);
+    const x=7+(serial%4)*3.5,z=25+Math.floor(serial/4)*3;
+    const root=freshVisualProp(type,id,x,z);
+    if(!insidePlacement(root,id)){
+      removeSelectable(root);scene.remove(root);editableObjects.delete(id);
+      undoHistory.pop();throw new RangeError("No free space at the proposed placement");
+    }
+    return selectVisualObject(id);
+  }
+  function swapVisualObject(type){
+    if(!PROP_TYPES.includes(type))throw new RangeError("Invalid replacement");
+    const obj=editableObjects.get(selectedEditId);
+    if(!obj||obj.locked)throw new RangeError("The native garden cannot be replaced");
+    const before=visualLayout();
+    const prev=obj.type;
+    buildVisualProp(obj.root,type);obj.type=type;
+    if(!insidePlacement(obj.root,selectedEditId)){
+      buildVisualProp(obj.root,prev);obj.type=prev;
+      throw new RangeError("Replacement would collide with another object");
+    }
+    undoHistory.push(before);
+    return selectVisualObject(selectedEditId);
+  }
+  function rotateVisualObject(delta){
+    if(!Number.isFinite(delta))throw new RangeError("Invalid rotation");
+    const obj=editableObjects.get(selectedEditId);
+    if(!obj)throw new RangeError("No object selected");
+    const before=visualLayout(),prior=obj.root.rotation.y;
+    obj.root.rotation.y+=delta;
+    if(!insidePlacement(obj.root,selectedEditId)){
+      obj.root.rotation.y=prior;throw new RangeError("Rotation violates spacing");
+    }
+    undoHistory.push(before);
+    return selectVisualObject(selectedEditId);
+  }
+  function shiftVisualObject(dx,dz){
+    const obj=editableObjects.get(selectedEditId);
+    if(!obj)throw new RangeError("No object selected");
+    const before=visualLayout();
+    if(!moveVisualObject(selectedEditId,obj.root.position.x+dx,
+       obj.root.position.z+dz,false))throw new RangeError("Move blocked by terrain, enclosure or building");
+    undoHistory.push(before);
+    return selectVisualObject(selectedEditId);
+  }
+  function removeVisualObject(){
+    const obj=editableObjects.get(selectedEditId);
+    if(!obj||obj.locked)throw new RangeError("Cannot remove a fixed garden");
+    registerUndo();removeSelectable(obj.root);scene.remove(obj.root);
+    editableObjects.delete(selectedEditId);
+    selectedEditId="garden";
+    return selectVisualObject("garden");
+  }
+  function undoVisualEdit(){
+    const prior=undoHistory.pop();if(!prior)return false;
+    applyVisualLayout(prior.snapshot||prior);return true;
+  }
+  function resetVisualLayout(){
+    undoHistory.length=0;
+    applyVisualLayout({garden:{x:GARDEN_PLAN.x,z:GARDEN_PLAN.z,angle:0},props:[]});
+    serial=0;selectedEditId="garden";
+  }
+  function editableRoot(o){
+    let item=o;while(item && !item.userData.editorId)item=item.parent;
+    return item?.userData.editorId?item:null;
+  }
+  // Inventory/API expose visual scope honestly; physical equipment remains locked.
+  const visualEditor=Object.freeze({
+    setEditMode(on){editorEnabled=Boolean(on);return editorEnabled},
+    list:()=>[...editableObjects].map(([id,e])=>({id,label:e.root.userData.label,
+      type:e.type,locked:e.locked,x:e.root.position.x,z:e.root.position.z,angle:e.root.rotation.y})),
+    selected:()=>selectVisualObject(selectedEditId),
+    select:selectVisualObject,add:addVisualObject,swap:swapVisualObject,
+    move:shiftVisualObject,rotate:rotateVisualObject,remove:removeVisualObject,
+    undo:undoVisualEdit,reset:resetVisualLayout,layout:visualLayout,
+    status:()=>({enabled:editorEnabled,selectedId:selectedEditId,
+      undoCount:undoHistory.length,props:editableObjects.size-1})
+  });
   const observer=new ResizeObserver(()=>{
     const rect=canvas.getBoundingClientRect();
     const width=Math.max(1,rect.width),height=Math.max(1,rect.height);
@@ -1835,7 +2078,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   }
   requestAnimationFrame(animate);
   return {
-    update,go,setVisualClock,setPlayback(on){
+    update,go,setVisualClock,editor:visualEditor,setPlayback(on){
       playing=Boolean(on);
       if(!playing)for(const rig of agents.children){
         const pose=nativeAnimalPoses?.get(String(rig.userData.modelId));
@@ -1850,6 +2093,13 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     },resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
+      visualEditor:visualEditor.status(),
+      visualObjects:visualEditor.list(),
+      solarMount:{supportCount:solarSupportProof.length,
+        minTopClearanceM:Math.min(...solarSupportProof.map(p=>p.clearanceM)),
+        maxAboveUndersideM:Math.max(...solarSupportProof.map(p=>p.postTopM-p.undersideM))},
+      rabbitHutchRoof:{widthOverhangM:(RABBIT_HUTCH_ROOF.roofWidthM-RABBIT_HUTCH_ROOF.cageWidthM)/2,
+        depthOverhangM:(RABBIT_HUTCH_ROOF.roofDepthM-RABBIT_HUTCH_ROOF.cageDepthM)/2},
       plumage:{sharedGeometry:true,sharedFeatherGeometryCount:1,
         chickens:agents.children.filter(a=>a.userData.kind==="chicken").length,
         decorativeFeathers:agents.children.reduce((n,a)=>n+(a.userData.plumageFeathers||0),0)},

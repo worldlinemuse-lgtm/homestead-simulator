@@ -148,3 +148,17 @@ button{transition:background .17s ease,border-color .17s ease,transform .17s eas
  #inspector{bottom:158px;max-height:min(58dvh,470px)}
  #sceneHint{bottom:161px}
 }
+
+/* Moveable visual-only props with touch-friendly accessible editing controls. */
+#inspector .inspector-body{overflow-y:auto;max-height:calc(100dvh - 205px);padding-right:3px}
+.objectEditor{display:flex;flex-direction:column;gap:9px;border-top:1px solid rgba(234,246,235,.18);padding-top:13px}
+.objectEditor h3{font-size:14px;margin:0}
+.objectEditor label,.objectEditor .editorNote{font-size:11px;color:#c6d7cd}
+.objectEditor .editorNote{line-height:1.5;margin:0}
+.objectEditor select{min-height:36px;color:#f4fff8;background:#2a4b45;border:1px solid #648574;border-radius:7px;padding:5px;width:100%}
+.editorCheck{display:flex;gap:8px;align-items:center}
+.editorCheck input{width:18px;height:18px}
+.editorButtons{display:flex;flex-wrap:wrap;gap:6px}
+.editorButtons button{flex:1;min-width:42px;min-height:36px;border-radius:8px;background:#315d51}
+#editStatus{font-size:11px;color:#bfe8ce;line-height:1.4;min-height:24px}
+@media(max-width:650px){#inspector .inspector-body{max-height:calc(58dvh - 62px)}}
