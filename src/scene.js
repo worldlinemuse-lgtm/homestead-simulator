@@ -1363,9 +1363,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   // Waypoints frame locations inside one walkable-looking landscape, not tiles.
   const views={
     overview:{eye:V(16,59,91),look:V(0,1.5,-8)},
-    energy:{eye:V(-29,21,17),look:V(-29,2,-9)},
-    // Inspection-only close camera; also used by automated solar mesh screenshots.
-    solarClose:{eye:V(-40,8,-.5),look:V(-35,2.3,-11)},
+    // User-facing Solar view frames actual panel models at close enough range
+    // for the support geometry to be inspected, including on mobile.
+    energy:{eye:V(-32,16,14),look:V(-32,2,-10)},
     water:{eye:V(17,24,-1),look:V(0,2,-23)},
     farm:{eye:V(46,4.6,14),look:V(39.5,.8,11.1)}
   };
