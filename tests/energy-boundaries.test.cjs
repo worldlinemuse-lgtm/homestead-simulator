@@ -30,3 +30,29 @@ test("reject impossible battery inventories and efficiency coefficients",()=>{
   for(const value of [0,-0.1,1.1,NaN,Infinity])assert.throws(()=>allocate({...good,cfg:{...cfg,[key]:value}}));
  }
 });
+
+test("reject invalid battery reserve, capacity and unknown configuration",()=>{
+ for(const badCfg of [
+  {...cfg,batteryReserveWh:-1},{...cfg,batteryReserveWh:11000},
+  {...cfg,batteryCapacityWh:-1},{...cfg,batteryCapacityWh:NaN},
+  {...cfg,batteryCapacityWh:Infinity}
+ ])assert.throws(()=>allocate({...good,cfg:badCfg}));
+ assert.throws(()=>allocate({...good,cfg:null}),/config/);
+});
+test("reject overflow before energy arithmetic and refuse nonfinite residual",()=>{
+ const huge={...good,pvWh:Number.MAX_VALUE,initialBatteryWh:Number.MAX_VALUE,
+  cfg:{...cfg,batteryCapacityWh:Number.MAX_VALUE,batteryReserveWh:0}};
+ assert.throws(()=>allocate(huge),/overflow/);
+});
+test("returns finite, nonnegative hourly ledger fields",()=>{
+ for(const [pvWh,baseWh,pumpWh,initialBatteryWh] of [
+  [0,300,120,6000],[800,300,120,6000],[800,0,0,6000],[10000,1500,100,9000]
+ ]){
+  const result=allocate({...good,pvWh,baseWh,pumpWh,initialBatteryWh});
+  for(const key of ["batteryWh","servedBaseWh","unservedBaseWh","servedPumpWh",
+    "curtailedWh","chargeLossWh","dischargeLossWh","residualWh"])
+    assert.ok(Number.isFinite(result[key])&&result[key]>=-1e-8,key);
+  assert.ok(result.batteryWh<=cfg.batteryCapacityWh+1e-8);
+  assert.ok(Math.abs(result.residualWh)<1e-5);
+ }
+});
