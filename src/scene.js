@@ -564,8 +564,14 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     const height=2.15;
     const rack=box(5.35,.22,3.00,m.frame,0,height,0);rack.rotation.x=-.34;mount.add(rack);
     const face=box(5.08,.11,2.76,m.solar,0,height+.12,-.04);face.rotation.x=-.34;mount.add(face);
-    for(const dx of [-1.62,0,1.62])mount.add(box(.035,.015,2.7,m.metal,dx,height+.19,-.09));
-    for(const dz of [-.72,.72])mount.add(box(5.07,.025,.035,m.metal,0,height+.20,dz));
+    // Cell separators share the PV face's local tilted coordinate frame.
+    // Unrotated world-horizontal strips previously floated above the glass.
+    const cellTrim=new THREE.Group();
+    cellTrim.position.set(0,height+.19,-.04);
+    cellTrim.rotation.x=-.34;
+    for(const dx of [-1.62,0,1.62])cellTrim.add(box(.035,.015,2.7,m.metal,dx,0,0));
+    for(const dz of [-.72,.72])cellTrim.add(box(5.07,.025,.035,m.metal,0,0,dz));
+    mount.add(cellTrim);
     for(const dx of [-2,2])for(const dz of [-.75,.88]){
       // Posts end BELOW the tilted rack rather than piercing the PV face.
       const floor=terrainY(panels.position.x+x+dx,panels.position.z+z+dz)-panels.position.y;
