@@ -549,10 +549,17 @@ try:
             # Explicitly frame the actual Farm-derived rabbit-hutch bank,
             # rather than accepting chicken-coop images as hutch evidence.
             page.evaluate("window.HomesteadApp.focusHutch()")
-            page.wait_for_timeout(1200)
+            # A view label changes immediately, while the camera eases from its
+            # prior zoomed coop position. Capture only after REAL convergence.
+            page.wait_for_function("""() => {
+                const w=window.HomesteadApp.world(),c=w.camera;
+                return w.view==="hutch" && c.eyeTargetResidualM<0.025 &&
+                    c.lookTargetResidualM<0.025 && c.hutchDecksInFrustum>0;
+            }""", timeout=12000)
             hutch_camera=page.evaluate("window.HomesteadApp.world()")
             assert hutch_camera["view"]=="hutch", hutch_camera["view"]
             assert 3<hutch_camera["camera"]["requestedDistanceM"]<12, hutch_camera["camera"]
+            assert hutch_camera["camera"]["hutchDecksInFrustum"]>0, hutch_camera["camera"]
             assert hutch_camera["nativeHutchMeshContact"]["missing"]==0
             page.screenshot(path=str(out/("mobile-hutch-close.png" if mobile else "desktop-hutch-close.png")))
             if not mobile:
