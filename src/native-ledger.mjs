@@ -13,7 +13,12 @@ export function nativeLedgerRow(snapshot){
   if(!snapshot||snapshot.schema!==1||snapshot.model!=="experimental-coupled-scenario")
     throw new TypeError("Unsupported scenario snapshot");
   const c=snapshot.cumulative||{},clock=snapshot.clock||{},farm=snapshot.farm||{};
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(clock.date))
+  if(typeof clock.date!=="string"||!/^(\d{4})-(\d{2})-(\d{2})$/.test(clock.date))
+    throw new TypeError("Invalid scenario date");
+  const [year,month,day]=clock.date.split("-").map(Number);
+  const calendarDate=new Date(Date.UTC(year,month-1,day));
+  if(year<1||year>9999||calendarDate.getUTCFullYear()!==year||
+     calendarDate.getUTCMonth()+1!==month||calendarDate.getUTCDate()!==day)
     throw new TypeError("Invalid scenario date");
   return [
     snapshot.model,snapshot.schema,clock.date,finite("elapsed_hours",clock.hours),
