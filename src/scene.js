@@ -7,7 +7,7 @@ import {FARM_PERIMETER,GARDEN_PLAN,gardenBounds,fenceToGardenClearance,
   FARM_WATER_SUPPLY_ROUTE,utilityFenceClearance} from "./plot-layout.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
 import {solarPostMount} from "./visual-layout.mjs";
-import {nativeCoopRoofPlacement} from "./coop-roof-geometry.mjs";
+import {nativeCoopRoofPlacement,nativeCoopGableProfile} from "./coop-roof-geometry.mjs";
 
 /**
  * Homestead 3D landscape v2: a single physical site, NOT isolated simulation stages.
@@ -981,6 +981,24 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         roof.name="Native coop pitched roof "+String(c.id);
         nativeCoopHouses.add(roof);
       }
+      // Fill both triangular end openings without altering native Farm walls,
+      // door clearance, or the authoritative agent footprint.
+      const gable=nativeCoopGableProfile(z1-z0,{pitch,thickness:roofThickness});
+      for(const endX of [x0-.09,x1+.09]){
+        const positions=new Float32Array([
+          endX,top+gable.baseY,cz+gable.leftZ,
+          endX,top+gable.baseY,cz+gable.rightZ,
+          endX,top+gable.ridgeY,cz+gable.ridgeZ
+        ]);
+        const geometry=new THREE.BufferGeometry();
+        geometry.setAttribute("position",new THREE.BufferAttribute(positions,3));
+        geometry.computeVertexNormals();
+        const infill=new THREE.Mesh(geometry,m.cedar.clone());
+        infill.material.side=THREE.DoubleSide;
+        infill.castShadow=true;infill.receiveShadow=true;
+        infill.name="Native coop gable infill "+String(c.id);
+        nativeCoopHouses.add(infill);
+      }
     }
     for(const c of comps){
       const footprint=nativeFarmComponentFootprint(c,origin);
@@ -1380,7 +1398,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     water:{eye:V(17,24,-1),look:V(0,2,-23)},
     farm:{eye:V(46,4.6,14),look:V(39.5,.8,11.1)},
     // Dedicated native-hutch inspection framing, derived from Farm footprints.
-    hutch:null
+    hutch:null,
+    // Test-accessible roof side view, computed only after native Farm sync.
+    coopRoof:null
   };
   let view="overview",moving=false,trackedAnimalId=null;
   const eye=views.overview.eye.clone(),focus=views.overview.look.clone();
@@ -1396,6 +1416,19 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       const p=h[0],x=(p.x0+p.x1)/2,z=(p.z0+p.z1)/2;
       views.hutch={eye:V(x-2.4,terrainY(x,z)+2.4,z+3.2),
         look:V(x,terrainY(x,z)+1.0,z)};
+    }
+    if(kind==="coopRoof"){
+      const fp=nativeCoopProof.footprints[0];
+      if(!fp)throw new Error("Native Farm coop footprint unavailable for roof inspection");
+      const cx=(fp.x0+fp.x1)/2,cz=(fp.z0+fp.z1)/2;
+      const roof=nativeCoopHouses.children.find(o=>o.name.startsWith("Native coop pitched roof "));
+      if(!roof)throw new Error("Native Farm coop roof meshes unavailable for inspection");
+      nativeCoopHouses.updateMatrixWorld(true);
+      const bounds=new THREE.Box3().setFromObject(nativeCoopHouses);
+      const targetY=bounds.max.y-.55;
+      // Look along the ridge from the west with both pitched slabs visible.
+      views.coopRoof={eye:V(fp.x0-8,targetY+2.2,cz+4.0),
+        look:V(cx,targetY,cz)};
     }
     view=views[kind]?kind:"overview";trackedAnimalId=null;
     toEye.copy(views[view].eye);toLook.copy(views[view].look);cameraFloor(toEye);
@@ -2098,6 +2131,14 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         chickens:agents.children.filter(a=>a.userData.kind==="chicken").length,
         decorativeFeathers:agents.children.reduce((n,a)=>n+(a.userData.plumageFeathers||0),0)},
       camera:{eyeX:eye.x,eyeTargetResidualM:eye.distanceTo(toEye),lookTargetResidualM:focus.distanceTo(toLook),
+        coopRoofPanelsInFrustum:(()=>{
+          camera.updateMatrixWorld(true);camera.updateProjectionMatrix();
+          const frustum=new THREE.Frustum().setFromProjectionMatrix(
+            new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse));
+          nativeCoopHouses.updateMatrixWorld(true);
+          return nativeCoopHouses.children.filter(o=>
+            o.name.startsWith("Native coop pitched roof ")&&frustum.intersectsObject(o)).length;
+        })(),
         hutchDecksInFrustum:(()=>{
           camera.updateMatrixWorld(true);camera.updateProjectionMatrix();
           const frustum=new THREE.Frustum().setFromProjectionMatrix(

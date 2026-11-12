@@ -573,6 +573,20 @@ try:
                 }"""))
             assert hutch_camera["nativeHutchMeshContact"]["missing"]==0
             page.screenshot(path=str(out/("mobile-hutch-close.png" if mobile else "desktop-hutch-close.png")))
+            # Native Farm coop roof side profile: inspect actual pitched meshes,
+            # not the decorative barn or a farm view cropped below the eaves.
+            page.evaluate("window.HomesteadApp.focusCoopRoof()")
+            page.wait_for_function("""() => {
+                const w=window.HomesteadApp.world(),c=w.camera;
+                return w.view==="coopRoof" && c.eyeTargetResidualM<.025 &&
+                    c.lookTargetResidualM<.025 && c.coopRoofPanelsInFrustum===2;
+            }""", timeout=12000)
+            roof_view=page.evaluate("window.HomesteadApp.world()")
+            assert roof_view["nativeCoopLayout"]["footprints"], (
+                "Native Farm coop footprint missing",mobile)
+            assert roof_view["camera"]["coopRoofPanelsInFrustum"]==2, (
+                "Both actual pitched roof panels must be in camera frustum",mobile,roof_view["camera"])
+            page.screenshot(path=str(out/("mobile-coop-roof-side.png" if mobile else "desktop-coop-roof-side.png")))
             if not mobile:
                 # Reproduce the independent audit's 70-day GPU leak scenario.
                 # Browser actions are genuine model steps, not fake snapshots.
