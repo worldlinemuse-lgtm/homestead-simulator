@@ -21,3 +21,12 @@ test("registry rejects duplicate ids, invalid units and missing contracts",()=>{
  assert.throws(()=>assertUtilityRegistry([{...c,sources:[{...c.sources[0],unit:"kWh"}]}]),/source contract/);
  assert.throws(()=>assertUtilityRegistry([{...c,tests:""}]),/Incomplete/);
 });
+
+test("registry rejects missing or forged model identity and duplicate source domains",()=>{
+ const c=utilityCapability("cross-domain.resource-ledger.csv");
+ for(const model of [undefined,"other-engine",""]){
+  assert.throws(()=>assertUtilityRegistry([{...c,model}]),/Incomplete capability contract/);
+ }
+ assert.throws(()=>assertUtilityRegistry([{...c,sources:[c.sources[0],c.sources[0]]}]),/Duplicate source domain/);
+ assert.equal(assertUtilityRegistry([c]),true);
+});
