@@ -1380,17 +1380,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     water:{eye:V(17,24,-1),look:V(0,2,-23)},
     farm:{eye:V(46,4.6,14),look:V(39.5,.8,11.1)},
     // Dedicated native-hutch inspection framing, derived from Farm footprints.
-    hutch:(()=>{
-      const h=nativeEnclosureFootprints.filter(p=>p.type==="hutch");
-      if(!h.length)return {eye:V(46,4.6,14),look:V(39.5,.8,11.1)};
-      // Frame one actual enclosure, not the midpoint of a potentially
-      // dispersed bank: that midpoint can point straight at the chicken coop.
-      const p=h[0],x=(p.x0+p.x1)/2,z=(p.z0+p.z1)/2;
-      // Approach from the west: the native chicken coop is east of the
-      // rabbit bank and must not occupy the foreground inspection view.
-      return {eye:V(x-2.4,terrainY(x,z)+2.4,z+3.2),
-        look:V(x,terrainY(x,z)+1.0,z)};
-    })()
+    hutch:null
   };
   let view="overview",moving=false,trackedAnimalId=null;
   const eye=views.overview.eye.clone(),focus=views.overview.look.clone();
@@ -1398,6 +1388,15 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   camera.position.copy(eye);camera.lookAt(focus);
   function cameraFloor(pos){pos.y=Math.max(pos.y,terrainY(pos.x,pos.z)+.75);return pos}
   function go(kind){
+    // Native Farm footprints are populated asynchronously after scene creation.
+    // Compute the hutch waypoint at navigation time, never from the empty startup list.
+    if(kind==="hutch"){
+      const h=nativeEnclosureFootprints.filter(p=>p.type==="hutch");
+      if(!h.length)throw new Error("Native Farm hutch footprints unavailable for camera focus");
+      const p=h[0],x=(p.x0+p.x1)/2,z=(p.z0+p.z1)/2;
+      views.hutch={eye:V(x-2.4,terrainY(x,z)+2.4,z+3.2),
+        look:V(x,terrainY(x,z)+1.0,z)};
+    }
     view=views[kind]?kind:"overview";trackedAnimalId=null;
     toEye.copy(views[view].eye);toLook.copy(views[view].look);cameraFloor(toEye);
   }
