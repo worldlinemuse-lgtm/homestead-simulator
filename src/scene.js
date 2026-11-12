@@ -1048,19 +1048,6 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       nativeEnclosureCount++;
       nativeEnclosureFootprints.push(footprint);
       if(c.type==="hutch"){
-        // Raised hutch decks need visible load-bearing posts. Every post
-        // terminates on the same terrain sampler as the model-aligned deck.
-        // Supports are illustrative, never Farm collision obstacles.
-        for(const [px,pz] of [[x0+.09,z0+.09],[x1-.09,z0+.09],
-          [x1-.09,z1-.09],[x0+.09,z1-.09]]){
-          const bottom=terrainY(px,pz)-.04;
-          const top=terrainY(px,pz)+NATIVE_HUTCH_FLOOR_M;
-          const leg=box(.105,top-bottom,.105,m.wood,px,(bottom+top)/2,pz);
-          leg.name="Native raised hutch support "+String(c.id);
-          leg.userData={nativeComponentId:c.id,visualOnly:true,
-            groundY:terrainY(px,pz),baseY:bottom,topY:top};
-          nativeHutchSupports.add(leg);
-        }
         // A real raised floor, following the SAME triangulated terrain sampler
         // under the native rabbit rigs. Mesh and wire are illustrative; no
         // model fixture levels or animal health outcomes are inferred.
@@ -1079,6 +1066,24 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         deck.position.set(cx,0,cz);deck.rotation.x=-Math.PI/2;
         deck.receiveShadow=true;deck.castShadow=false;
         nativeHutchFloors.add(deck);
+        // Supports terminate on the actual triangulated deck surface, not on
+        // independently sampled nonlinear terrain. Raycast the rendered mesh
+        // at each support center to avoid interpolation gaps on slopes.
+        deck.updateMatrixWorld(true);
+        const deckRaycaster=new THREE.Raycaster();
+        for(const [px,pz] of [[x0+.09,z0+.09],[x1-.09,z0+.09],
+          [x1-.09,z1-.09],[x0+.09,z1-.09]]){
+          const bottom=terrainY(px,pz)-.04;
+          deckRaycaster.set(V(px,10000,pz),V(0,-1,0));
+          const hits=deckRaycaster.intersectObject(deck,false);
+          if(!hits.length)throw new Error("Native hutch support misses deck "+String(c.id));
+          const top=hits[0].point.y;
+          const leg=box(.105,top-bottom,.105,m.wood,px,(bottom+top)/2,pz);
+          leg.name="Native raised hutch support "+String(c.id);
+          leg.userData={nativeComponentId:c.id,visualOnly:true,
+            groundY:terrainY(px,pz),baseY:bottom,topY:top};
+          nativeHutchSupports.add(leg);
+        }
         const segments=[];
         const line=(xA,zA,xB,zB)=>{
           segments.push(xA,terrainY(xA,zA)+NATIVE_HUTCH_FLOOR_M+.008,zA,
