@@ -1386,7 +1386,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       // Frame one actual enclosure, not the midpoint of a potentially
       // dispersed bank: that midpoint can point straight at the chicken coop.
       const p=h[0],x=(p.x0+p.x1)/2,z=(p.z0+p.z1)/2;
-      return {eye:V(x+2.4,terrainY(x,z)+2.4,z+3.2),
+      // Approach from the west: the native chicken coop is east of the
+      // rabbit bank and must not occupy the foreground inspection view.
+      return {eye:V(x-2.4,terrainY(x,z)+2.4,z+3.2),
         look:V(x,terrainY(x,z)+1.0,z)};
     })()
   };
