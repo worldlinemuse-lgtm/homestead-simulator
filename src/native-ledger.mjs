@@ -13,7 +13,7 @@ export function nativeLedgerRow(snapshot){
   if(!snapshot||snapshot.schema!==1||snapshot.model!=="experimental-coupled-scenario")
     throw new TypeError("Unsupported scenario snapshot");
   const c=snapshot.cumulative||{},clock=snapshot.clock||{},farm=snapshot.farm||{};
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(clock.date))
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(clock.date))
     throw new TypeError("Invalid scenario date");
   return [
     snapshot.model,snapshot.schema,clock.date,finite("elapsed_hours",clock.hours),
@@ -27,5 +27,5 @@ export function nativeLedgerRow(snapshot){
 }
 export function nativeLedgerCsv(snapshot){
   const values=nativeLedgerRow(snapshot);
-  return LEDGER_COLUMNS.map(csvCell).join(",")+"\\r\\n"+values.map(csvCell).join(",")+"\\r\\n";
+  return LEDGER_COLUMNS.map(csvCell).join(",")+"\r\n"+values.map(csvCell).join(",")+"\r\n";
 }
