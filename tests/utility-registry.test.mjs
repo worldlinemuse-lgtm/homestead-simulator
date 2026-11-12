@@ -30,3 +30,35 @@ test("registry rejects missing or forged model identity and duplicate source dom
  assert.throws(()=>assertUtilityRegistry([{...c,sources:[c.sources[0],c.sources[0]]}]),/Duplicate source domain/);
  assert.equal(assertUtilityRegistry([c]),true);
 });
+
+test("capability metadata must contain nonblank strings, not merely truthy values",()=>{
+ const c=utilityCapability("cross-domain.resource-ledger.csv");
+ for(const field of ["kind","implementation","entrypoint","ui","tests","limitations"]){
+  for(const value of [undefined,null,0,123,false,[],{}," ","\n\t"]){
+   assert.throws(()=>assertUtilityRegistry([{...c,[field]:value}]),/Incomplete capability contract/,
+     `${field} must reject ${String(value)}`);
+  }
+ }
+});
+
+test("source metadata requires valid objects with nonblank string interfaces and fidelity",()=>{
+ const c=utilityCapability("cross-domain.resource-ledger.csv"),source=c.sources[0];
+ for(const invalid of [null,undefined,0,17,false,"solar",[],{}]){
+  assert.throws(()=>assertUtilityRegistry([{...c,sources:[invalid]}]),/Invalid source contract/,
+    `source must reject ${String(invalid)}`);
+ }
+ for(const field of ["interface","fidelity"]){
+  for(const value of [undefined,null,23,false,[],{}," ","\n"]){
+   assert.throws(()=>assertUtilityRegistry([{...c,sources:[{...source,[field]:value}]}]),
+     /Invalid source contract/,`${field} must reject ${String(value)}`);
+  }
+ }
+});
+
+test("failed validation does not rewrite user-supplied registry",()=>{
+ const c=utilityCapability("cross-domain.resource-ledger.csv");
+ const entry={...c,sources:[{...c.sources[0],fidelity:" ",unit:"Wh"}]};
+ const before=JSON.stringify(entry);
+ assert.throws(()=>assertUtilityRegistry([entry]),/Invalid source contract/);
+ assert.equal(JSON.stringify(entry),before);
+});
