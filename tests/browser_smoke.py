@@ -189,8 +189,11 @@ try:
                       s.min.y>-.5;
                   });
             }"""), ("Raised native hutch floors do not match Farm footprints",mobile)
-            # Four terrain-embedded load-bearing supports per authoritative
-            # hutch footprint. Prevent a floating-deck visual regression.
+            # Four terrain-embedded supports per native hutch footprint.
+            # The deck is triangulated: its interpolated surface is not equal
+            # to an independent terrainY sample at every support center.
+            # Require positive, bounded height; source regression guards
+            # require raycasting the actual deck mesh for contact.
             assert page.evaluate("""() => {
                 const w=window.HomesteadApp.world();
                 const h=w.nativeHutchSupports;
@@ -206,7 +209,8 @@ try:
                       leg.x>=f.x0-eps && leg.x<=f.x1+eps &&
                       leg.z>=f.z0-eps && leg.z<=f.z1+eps &&
                       leg.baseY<=leg.groundY &&
-                      Math.abs(leg.topY-leg.groundY-2.05*0.3048)<1e-9;
+                      leg.topY>leg.groundY &&
+                      leg.topY-leg.groundY<1.5;
                   });
             }"""), ("Native hutch deck supports float or leave Farm footprints",mobile)
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
