@@ -2095,7 +2095,15 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       plumage:{sharedGeometry:true,sharedFeatherGeometryCount:1,
         chickens:agents.children.filter(a=>a.userData.kind==="chicken").length,
         decorativeFeathers:agents.children.reduce((n,a)=>n+(a.userData.plumageFeathers||0),0)},
-      camera:{requestedDistanceM:toEye.distanceTo(toLook),actualDistanceM:eye.distanceTo(focus),
+      camera:{eyeTargetResidualM:eye.distanceTo(toEye),lookTargetResidualM:focus.distanceTo(toLook),
+        hutchDecksInFrustum:(()=>{
+          camera.updateMatrixWorld(true);camera.updateProjectionMatrix();
+          const frustum=new THREE.Frustum().setFromProjectionMatrix(
+            new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse));
+          nativeHutchFloors.updateMatrixWorld(true);
+          return nativeHutchFloors.children.filter(deck=>frustum.intersectsObject(deck)).length;
+        })(),
+        requestedDistanceM:toEye.distanceTo(toLook),actualDistanceM:eye.distanceTo(focus),
         heightAboveGroundM:eye.y-terrainY(eye.x,eye.z),
         requestedHeightAboveGroundM:toEye.y-terrainY(toEye.x,toEye.z),
         followAnimalId:trackedAnimalId},
