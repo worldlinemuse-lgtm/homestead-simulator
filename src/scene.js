@@ -2120,6 +2120,26 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
             min:{x:b.min.x,y:b.min.y,z:b.min.z},
             max:{x:b.max.x,y:b.max.y,z:b.max.z}};
         })},
+      nativeHutchMeshContact:(()=>{
+        // Independent acceptance probe: intersect the actual world-space deck
+        // from each rendered support top, rather than trusting placement metadata.
+        nativeHutchFloors.updateMatrixWorld(true);
+        nativeHutchSupports.updateMatrixWorld(true);
+        const ray=new THREE.Raycaster(),down=V(0,-1,0);
+        let measured=0,missing=0,maxGapM=0;
+        for(const leg of nativeHutchSupports.children){
+          const deck=nativeHutchFloors.children.find(o=>
+            o.userData.nativeComponentId===leg.userData.nativeComponentId);
+          if(!deck){missing++;continue;}
+          const top=leg.localToWorld(V(0,leg.geometry.parameters.height/2,0));
+          ray.set(V(top.x,top.y+1,top.z),down);
+          const hit=ray.intersectObject(deck,false)[0];
+          if(!hit){missing++;continue;}
+          maxGapM=Math.max(maxGapM,Math.abs(hit.point.y-top.y));
+          measured++;
+        }
+        return {measured,missing,maxGapM};
+      })(),
       nativeHutchSupports:{count:nativeHutchSupports.children.length,
         legs:nativeHutchSupports.children.map(o=>({
           componentId:o.userData.nativeComponentId,visualOnly:true,
