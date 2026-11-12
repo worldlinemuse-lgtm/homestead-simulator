@@ -566,7 +566,11 @@ try:
                 const w=window.HomesteadApp.world();
                 const h=w.nativeEnclosureLayout.footprints.find(f=>f.type==="hutch");
                 return !!h && w.camera.eyeX < (h.x0+h.x1)/2-1.5;
-            }"""), ("Hutch camera is on chicken-coop side",mobile)
+            }"""), ("Hutch camera is on chicken-coop side",mobile,
+                page.evaluate("""() => {
+                    const w=window.HomesteadApp.world();
+                    return {camera:w.camera, hutch:w.nativeEnclosureLayout.footprints.find(f=>f.type==="hutch")};
+                }"""))
             assert hutch_camera["nativeHutchMeshContact"]["missing"]==0
             page.screenshot(path=str(out/("mobile-hutch-close.png" if mobile else "desktop-hutch-close.png")))
             if not mobile:
