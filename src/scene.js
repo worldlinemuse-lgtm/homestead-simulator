@@ -1383,10 +1383,11 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     hutch:(()=>{
       const h=nativeEnclosureFootprints.filter(p=>p.type==="hutch");
       if(!h.length)return {eye:V(46,4.6,14),look:V(39.5,.8,11.1)};
-      const x=(Math.min(...h.map(p=>p.x0))+Math.max(...h.map(p=>p.x1)))/2;
-      const z=(Math.min(...h.map(p=>p.z0))+Math.max(...h.map(p=>p.z1)))/2;
-      return {eye:V(x+4.5,terrainY(x,z)+3.0,z+5.5),
-        look:V(x,terrainY(x,z)+.85,z)};
+      // Frame one actual enclosure, not the midpoint of a potentially
+      // dispersed bank: that midpoint can point straight at the chicken coop.
+      const p=h[0],x=(p.x0+p.x1)/2,z=(p.z0+p.z1)/2;
+      return {eye:V(x+2.4,terrainY(x,z)+2.4,z+3.2),
+        look:V(x,terrainY(x,z)+1.0,z)};
     })()
   };
   let view="overview",moving=false,trackedAnimalId=null;
