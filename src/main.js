@@ -1,4 +1,5 @@
 import {makeScene} from "./scene.js";
+import {nativeLedgerCsv} from "./native-ledger.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
 import {ScenarioTimeline,formatHour} from "./sim-clock.mjs";
 const $=id=>document.getElementById(id);
@@ -242,6 +243,16 @@ $("objectRotate").addEventListener("click",()=>runEdit(()=>scene.editor.rotate(M
 for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*100,0)+"%"],["houseLoad","houseLoadOut","backgroundLoadW",x=>fmt(x,0)+" W"],["pumpLoad","pumpLoadOut","pumpElectricalW",x=>fmt(x,0)+" W"]]){
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
 }
+$("ledgerCsvBtn").addEventListener("click",()=>{
+ try{
+  const snapshot=coordinator.snapshot();
+  const csv=nativeLedgerCsv(snapshot);
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download="homestead-resource-ledger-"+snapshot.clock.date+".csv";
+  a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }catch(e){fail(e)}
+});
 $("exportBtn").addEventListener("click",()=>{
  const payload=coordinator.snapshot();
  payload.visualLayout=scene?.editor?.layout()||null;

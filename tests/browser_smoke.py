@@ -406,6 +406,22 @@ try:
             assert .04<=proof["minActualGapM"]<=proof["maxActualGapM"]<.07,proof
             proof=page.evaluate("window.HomesteadApp.world().rabbitHutchRoof")
             assert proof["source"]=="native-farm-components" and proof["decorativeCount"]==0,proof
+            # Native utility must produce a genuine browser download in both layouts.
+            # CSV numbers must match the current model snapshot without advancing time.
+            csv_before=page.evaluate("window.HomesteadApp.snapshot()")
+            with page.expect_download() as download_event:
+                page.locator("#ledgerCsvBtn").click()
+            download=download_event.value
+            assert download.suggested_filename.startswith("homestead-resource-ledger-")
+            csv_text=download.path().read_text(encoding="utf-8")
+            import csv, io
+            records=list(csv.reader(io.StringIO(csv_text)))
+            assert len(records)==2,records
+            fields=dict(zip(records[0],records[1]))
+            assert float(fields["pv_generated_Wh"])==csv_before["cumulative"]["pvWh"]
+            assert float(fields["water_stored_L"])==csv_before["waterStoredL"]
+            assert int(fields["farm_animals"])==csv_before["farm"]["counts"]["n"]
+            assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==csv_before["clock"]["hours"]
             page.locator("#closeInspector").click()
             page.locator("#stepBtn").click()
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==1
