@@ -15,3 +15,11 @@ test("hutch diagnostics derive their west boundary from native component footpri
   assert.match(scene,/nativeEnclosureFootprints\.filter\(p=>p\.type==="hutch"\)/);
   assert.doesNotMatch(scene,/hutchWestWorldX:hutches\.position/);
 });
+
+test("hutch support tops intersect the rendered triangulated deck rather than raw terrain",()=>{
+  assert.match(scene,/deck\.updateMatrixWorld\(true\)/);
+  assert.match(scene,/deckRaycaster\.intersectObject\(deck,false\)/);
+  assert.match(scene,/if\(!hits\.length\)throw new Error\("Native hutch support misses deck "/);
+  assert.match(scene,/const top=hits\[0\]\.point\.y/);
+  assert.doesNotMatch(scene,/const top=terrainY\(px,pz\)\+NATIVE_HUTCH_FLOOR_M/);
+});
