@@ -14,3 +14,11 @@ export function nativeCoopRoofPlacement(depth, {pitch=0.34, thickness=0.13, over
     thickness/(2*Math.cos(pitch));
   return {panelDepth,pitch,thickness,centerAboveWall};
 }
+
+// Gable infill spans the wall-top chord to the underside ridge. Coordinates
+// are relative to the native footprint's wall top, not terrain or an art offset.
+export function nativeCoopGableProfile(depth, options={}) {
+  const {pitch}=nativeCoopRoofPlacement(depth,options);
+  const rise=Math.tan(pitch)*depth/2;
+  return {leftZ:-depth/2,ridgeZ:0,rightZ:depth/2,baseY:0,ridgeY:rise};
+}
