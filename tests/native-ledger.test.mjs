@@ -12,7 +12,7 @@ test("native ledger preserves source units and exact coordinator totals",()=>{
  assert.equal(row[LEDGER_COLUMNS.indexOf("water_treated_L")],60);
  assert.equal(row[LEDGER_COLUMNS.indexOf("farm_animals")],8);
  assert.match(nativeLedgerCsv(s),/^"model","schema"/);
- assert.equal(nativeLedgerCsv(s).trim().split("\\r\\n").length,2);
+ assert.equal(nativeLedgerCsv(s).trim().split("\r\n").length,2);
 });
 test("inspection never mutates the coordinator snapshot",()=>{
  const s=snapshot(),before=JSON.stringify(s);
