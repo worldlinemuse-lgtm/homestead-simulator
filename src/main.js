@@ -271,6 +271,7 @@ window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),
  editSwap:type=>scene.editor.swap(type),
  editUndo:()=>scene.editor.undo(),
  reset:()=>{stop();return resetScenario()},
+ focusHutch:()=>scene?.go("hutch"),
  world:()=>({...scene?.stats(),nativeFarm:farmVisual.stats(),farmWorldOriginM})});
 
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(console.warn));

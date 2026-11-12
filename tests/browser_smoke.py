@@ -206,9 +206,21 @@ try:
                       leg.x>=f.x0-eps && leg.x<=f.x1+eps &&
                       leg.z>=f.z0-eps && leg.z<=f.z1+eps &&
                       leg.baseY<=leg.groundY &&
-                      Math.abs(leg.topY-leg.groundY-2.05*0.3048)<1e-9;
+                      leg.topY>leg.groundY &&
+                      leg.topY-leg.groundY<1.5;
                   });
             }"""), ("Native hutch deck supports float or leave Farm footprints",mobile)
+            # Independently raycast the ACTUAL rendered deck from each rendered
+            # support top. A metadata-only height assertion misses mesh gaps.
+            contact=page.evaluate("""() => {
+                const w=window.HomesteadApp.world();
+                return { ...w.nativeHutchMeshContact,
+                    supports:w.nativeHutchSupports.count };
+            }""")
+            assert (contact["measured"]==contact["supports"] and
+                    contact["supports"]>=8 and contact["missing"]==0 and
+                    contact["maxGapM"]<1e-5), (
+                "Rendered rabbit hutch support-to-deck contact failure",mobile,contact)
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
             # Visual sun and shadows are driven by coordinator hour, never
             # fed back into the Solar energy ledger. Check actual UI steps.
@@ -534,6 +546,33 @@ try:
             assert zoom["requestedHeightAboveGroundM"]>=.74, zoom
             assert zoom["heightAboveGroundM"]>=.74, zoom
             page.screenshot(path=str(out/("mobile-farm-close.png" if mobile else "desktop-farm-close.png")))
+            # Explicitly frame the actual Farm-derived rabbit-hutch bank,
+            # rather than accepting chicken-coop images as hutch evidence.
+            page.evaluate("window.HomesteadApp.focusHutch()")
+            # A view label changes immediately, while the camera eases from its
+            # prior zoomed coop position. Capture only after REAL convergence.
+            page.wait_for_function("""() => {
+                const w=window.HomesteadApp.world(),c=w.camera;
+                return w.view==="hutch" && c.eyeTargetResidualM<0.025 &&
+                    c.lookTargetResidualM<0.025 && c.hutchDecksInFrustum>0;
+            }""", timeout=12000)
+            hutch_camera=page.evaluate("window.HomesteadApp.world()")
+            assert hutch_camera["view"]=="hutch", hutch_camera["view"]
+            assert 3<hutch_camera["camera"]["requestedDistanceM"]<12, hutch_camera["camera"]
+            assert hutch_camera["camera"]["hutchDecksInFrustum"]>0, hutch_camera["camera"]
+            # Regression: the east-side camera allowed the chicken coop to
+            # obscure the hutch despite passing all frustum assertions.
+            assert page.evaluate("""() => {
+                const w=window.HomesteadApp.world();
+                const h=w.nativeEnclosureLayout.footprints.find(f=>f.type==="hutch");
+                return !!h && w.camera.eyeX < (h.x0+h.x1)/2-1.5;
+            }"""), ("Hutch camera is on chicken-coop side",mobile,
+                page.evaluate("""() => {
+                    const w=window.HomesteadApp.world();
+                    return {camera:w.camera, hutch:w.nativeEnclosureLayout.footprints.find(f=>f.type==="hutch")};
+                }"""))
+            assert hutch_camera["nativeHutchMeshContact"]["missing"]==0
+            page.screenshot(path=str(out/("mobile-hutch-close.png" if mobile else "desktop-hutch-close.png")))
             if not mobile:
                 # Reproduce the independent audit's 70-day GPU leak scenario.
                 # Browser actions are genuine model steps, not fake snapshots.

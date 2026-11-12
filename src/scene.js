@@ -1048,19 +1048,6 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       nativeEnclosureCount++;
       nativeEnclosureFootprints.push(footprint);
       if(c.type==="hutch"){
-        // Raised hutch decks need visible load-bearing posts. Every post
-        // terminates on the same terrain sampler as the model-aligned deck.
-        // Supports are illustrative, never Farm collision obstacles.
-        for(const [px,pz] of [[x0+.09,z0+.09],[x1-.09,z0+.09],
-          [x1-.09,z1-.09],[x0+.09,z1-.09]]){
-          const bottom=terrainY(px,pz)-.04;
-          const top=terrainY(px,pz)+NATIVE_HUTCH_FLOOR_M;
-          const leg=box(.105,top-bottom,.105,m.wood,px,(bottom+top)/2,pz);
-          leg.name="Native raised hutch support "+String(c.id);
-          leg.userData={nativeComponentId:c.id,visualOnly:true,
-            groundY:terrainY(px,pz),baseY:bottom,topY:top};
-          nativeHutchSupports.add(leg);
-        }
         // A real raised floor, following the SAME triangulated terrain sampler
         // under the native rabbit rigs. Mesh and wire are illustrative; no
         // model fixture levels or animal health outcomes are inferred.
@@ -1079,6 +1066,24 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         deck.position.set(cx,0,cz);deck.rotation.x=-Math.PI/2;
         deck.receiveShadow=true;deck.castShadow=false;
         nativeHutchFloors.add(deck);
+        // Supports terminate on the actual triangulated deck surface, not on
+        // independently sampled nonlinear terrain. Raycast the rendered mesh
+        // at each support center to avoid interpolation gaps on slopes.
+        deck.updateMatrixWorld(true);
+        const deckRaycaster=new THREE.Raycaster();
+        for(const [px,pz] of [[x0+.09,z0+.09],[x1-.09,z0+.09],
+          [x1-.09,z1-.09],[x0+.09,z1-.09]]){
+          const bottom=terrainY(px,pz)-.04;
+          deckRaycaster.set(V(px,10000,pz),V(0,-1,0));
+          const hits=deckRaycaster.intersectObject(deck,false);
+          if(!hits.length)throw new Error("Native hutch support misses deck "+String(c.id));
+          const top=hits[0].point.y;
+          const leg=box(.105,top-bottom,.105,m.wood,px,(bottom+top)/2,pz);
+          leg.name="Native raised hutch support "+String(c.id);
+          leg.userData={nativeComponentId:c.id,visualOnly:true,
+            groundY:terrainY(px,pz),baseY:bottom,topY:top};
+          nativeHutchSupports.add(leg);
+        }
         const segments=[];
         const line=(xA,zA,xB,zB)=>{
           segments.push(xA,terrainY(xA,zA)+NATIVE_HUTCH_FLOOR_M+.008,zA,
@@ -1373,7 +1378,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     // for the support geometry to be inspected, including on mobile.
     energy:{eye:V(-32,16,14),look:V(-32,2,-10)},
     water:{eye:V(17,24,-1),look:V(0,2,-23)},
-    farm:{eye:V(46,4.6,14),look:V(39.5,.8,11.1)}
+    farm:{eye:V(46,4.6,14),look:V(39.5,.8,11.1)},
+    // Dedicated native-hutch inspection framing, derived from Farm footprints.
+    hutch:null
   };
   let view="overview",moving=false,trackedAnimalId=null;
   const eye=views.overview.eye.clone(),focus=views.overview.look.clone();
@@ -1381,6 +1388,15 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   camera.position.copy(eye);camera.lookAt(focus);
   function cameraFloor(pos){pos.y=Math.max(pos.y,terrainY(pos.x,pos.z)+.75);return pos}
   function go(kind){
+    // Native Farm footprints are populated asynchronously after scene creation.
+    // Compute the hutch waypoint at navigation time, never from the empty startup list.
+    if(kind==="hutch"){
+      const h=nativeEnclosureFootprints.filter(p=>p.type==="hutch");
+      if(!h.length)throw new Error("Native Farm hutch footprints unavailable for camera focus");
+      const p=h[0],x=(p.x0+p.x1)/2,z=(p.z0+p.z1)/2;
+      views.hutch={eye:V(x-2.4,terrainY(x,z)+2.4,z+3.2),
+        look:V(x,terrainY(x,z)+1.0,z)};
+    }
     view=views[kind]?kind:"overview";trackedAnimalId=null;
     toEye.copy(views[view].eye);toLook.copy(views[view].look);cameraFloor(toEye);
   }
@@ -2081,7 +2097,15 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       plumage:{sharedGeometry:true,sharedFeatherGeometryCount:1,
         chickens:agents.children.filter(a=>a.userData.kind==="chicken").length,
         decorativeFeathers:agents.children.reduce((n,a)=>n+(a.userData.plumageFeathers||0),0)},
-      camera:{requestedDistanceM:toEye.distanceTo(toLook),actualDistanceM:eye.distanceTo(focus),
+      camera:{eyeX:eye.x,eyeTargetResidualM:eye.distanceTo(toEye),lookTargetResidualM:focus.distanceTo(toLook),
+        hutchDecksInFrustum:(()=>{
+          camera.updateMatrixWorld(true);camera.updateProjectionMatrix();
+          const frustum=new THREE.Frustum().setFromProjectionMatrix(
+            new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse));
+          nativeHutchFloors.updateMatrixWorld(true);
+          return nativeHutchFloors.children.filter(deck=>frustum.intersectsObject(deck)).length;
+        })(),
+        requestedDistanceM:toEye.distanceTo(toLook),actualDistanceM:eye.distanceTo(focus),
         heightAboveGroundM:eye.y-terrainY(eye.x,eye.z),
         requestedHeightAboveGroundM:toEye.y-terrainY(toEye.x,toEye.z),
         followAnimalId:trackedAnimalId},
@@ -2115,6 +2139,26 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
             min:{x:b.min.x,y:b.min.y,z:b.min.z},
             max:{x:b.max.x,y:b.max.y,z:b.max.z}};
         })},
+      nativeHutchMeshContact:(()=>{
+        // Independent acceptance probe: intersect the actual world-space deck
+        // from each rendered support top, rather than trusting placement metadata.
+        nativeHutchFloors.updateMatrixWorld(true);
+        nativeHutchSupports.updateMatrixWorld(true);
+        const ray=new THREE.Raycaster(),down=V(0,-1,0);
+        let measured=0,missing=0,maxGapM=0;
+        for(const leg of nativeHutchSupports.children){
+          const deck=nativeHutchFloors.children.find(o=>
+            o.userData.nativeComponentId===leg.userData.nativeComponentId);
+          if(!deck){missing++;continue;}
+          const top=leg.localToWorld(V(0,leg.geometry.parameters.height/2,0));
+          ray.set(V(top.x,top.y+1,top.z),down);
+          const hit=ray.intersectObject(deck,false)[0];
+          if(!hit){missing++;continue;}
+          maxGapM=Math.max(maxGapM,Math.abs(hit.point.y-top.y));
+          measured++;
+        }
+        return {measured,missing,maxGapM};
+      })(),
       nativeHutchSupports:{count:nativeHutchSupports.children.length,
         legs:nativeHutchSupports.children.map(o=>({
           componentId:o.userData.nativeComponentId,visualOnly:true,
