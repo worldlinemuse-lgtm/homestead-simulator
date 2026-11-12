@@ -546,6 +546,15 @@ try:
             assert zoom["requestedHeightAboveGroundM"]>=.74, zoom
             assert zoom["heightAboveGroundM"]>=.74, zoom
             page.screenshot(path=str(out/("mobile-farm-close.png" if mobile else "desktop-farm-close.png")))
+            # Explicitly frame the actual Farm-derived rabbit-hutch bank,
+            # rather than accepting chicken-coop images as hutch evidence.
+            page.evaluate("window.HomesteadApp.focusHutch()")
+            page.wait_for_timeout(1200)
+            hutch_camera=page.evaluate("window.HomesteadApp.world()")
+            assert hutch_camera["view"]=="hutch", hutch_camera["view"]
+            assert 3<hutch_camera["camera"]["requestedDistanceM"]<12, hutch_camera["camera"]
+            assert hutch_camera["nativeHutchMeshContact"]["missing"]==0
+            page.screenshot(path=str(out/("mobile-hutch-close.png" if mobile else "desktop-hutch-close.png")))
             if not mobile:
                 # Reproduce the independent audit's 70-day GPU leak scenario.
                 # Browser actions are genuine model steps, not fake snapshots.
