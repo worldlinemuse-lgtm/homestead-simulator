@@ -1,28 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import {nativeCoopRoofPlacement} from '../src/coop-roof-geometry.mjs';
 
-// Regression for issue #23: check all four transformed bottom corners,
-// rather than assuming a fixed roof elevation works at every coop depth.
-const scene = readFileSync(new URL('../src/scene.js', import.meta.url), 'utf8');
-test('native coop roof elevation uses footprint-dependent pitch clearance', () => {
-  assert.match(scene, /const roofCenterY=top\+eaveDrop\+\.03/);
-  assert.match(scene, /Math\.sin\(pitch\)\*roofDepth\/2/);
-  assert.match(scene, /Math\.cos\(pitch\)\*roofThickness\/2/);
-  for (const depth of [0.5, 1, 2, 4, 8, 12]) {
-    const pitch = 0.34, thickness = 0.13;
-    const roofDepth = depth / 2 + 0.25;
-    const center = Math.sin(pitch) * roofDepth / 2 +
-      Math.cos(pitch) * thickness / 2 + 0.03;
-    for (const side of [-1, 1]) {
-      for (const z of [-roofDepth / 2, roofDepth / 2]) {
-        for (const y of [-thickness / 2, thickness / 2]) {
-          const transformedY = center + y * Math.cos(side * pitch) -
-            z * Math.sin(side * pitch);
-          assert.ok(transformedY >= 0.03 - 1e-12,
-            `roof corner below wall clearance: depth=${depth}, side=${side}`);
-        }
-      }
+test('native coop roof underside seats on both support walls for varied depths', () => {
+  for (const depth of [0.5,1,2,4,8,12]) {
+    const {panelDepth,pitch,thickness,centerAboveWall}=nativeCoopRoofPlacement(depth);
+    for (const side of [-1,1]) {
+      // Inverse rotation: at the wall line, the lower surface has local y=-t/2.
+      const supportZ=side*depth/4;
+      const localY=-thickness/2;
+      const localZ=(supportZ-localY*Math.sin(side*pitch))/Math.cos(pitch);
+      assert.ok(Math.abs(localZ)<=panelDepth/2,
+        'support line must intersect the actual roof panel');
+      const underside=centerAboveWall+
+        localY*Math.cos(pitch)-localZ*Math.sin(side*pitch);
+      assert.ok(Math.abs(underside)<1e-10,
+        `support gap depth=${depth} side=${side}: ${underside}`);
+      // The outer eave must project beyond the support, not penetrate the wall.
+      assert.ok(panelDepth/2*Math.cos(pitch)>depth/4,
+        `missing overhang depth=${depth}`);
     }
+  }
+});
+
+test('reject invalid roof dimensions', () => {
+  for (const depth of [0,-1,NaN,Infinity]) {
+    assert.throws(()=>nativeCoopRoofPlacement(depth),RangeError);
   }
 });
