@@ -560,6 +560,13 @@ try:
             assert hutch_camera["view"]=="hutch", hutch_camera["view"]
             assert 3<hutch_camera["camera"]["requestedDistanceM"]<12, hutch_camera["camera"]
             assert hutch_camera["camera"]["hutchDecksInFrustum"]>0, hutch_camera["camera"]
+            # Regression: the east-side camera allowed the chicken coop to
+            # obscure the hutch despite passing all frustum assertions.
+            assert page.evaluate("""() => {
+                const w=window.HomesteadApp.world();
+                const h=w.nativeEnclosureLayout.footprints.find(f=>f.type==="hutch");
+                return !!h && w.camera.eyeX < (h.x0+h.x1)/2-1.5;
+            }"""), ("Hutch camera is on chicken-coop side",mobile)
             assert hutch_camera["nativeHutchMeshContact"]["missing"]==0
             page.screenshot(path=str(out/("mobile-hutch-close.png" if mobile else "desktop-hutch-close.png")))
             if not mobile:
