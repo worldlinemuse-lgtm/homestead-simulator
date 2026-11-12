@@ -210,6 +210,16 @@ try:
                       leg.topY-leg.groundY<1.5;
                   });
             }"""), ("Native hutch deck supports float or leave Farm footprints",mobile)
+            # Independently raycast the ACTUAL rendered deck from each rendered
+            # support top. A metadata-only height assertion misses mesh gaps.
+            contact=page.evaluate("""() => {
+                const w=window.HomesteadApp.world();
+                return { ...w.nativeHutchMeshContact,
+                    supports:w.nativeHutchSupports.count };
+            }""")
+            assert contact["measured"]==contact["supports"] and contact["supports"]>=8 and \\
+                contact["missing"]==0 and contact["maxGapM"]<1e-5, (\\
+                "Rendered rabbit hutch support-to-deck contact failure",mobile,contact)
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
             # Visual sun and shadows are driven by coordinator hour, never
             # fed back into the Solar energy ledger. Check actual UI steps.
