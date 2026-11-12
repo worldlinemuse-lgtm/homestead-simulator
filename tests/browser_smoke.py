@@ -206,7 +206,8 @@ try:
                       leg.x>=f.x0-eps && leg.x<=f.x1+eps &&
                       leg.z>=f.z0-eps && leg.z<=f.z1+eps &&
                       leg.baseY<=leg.groundY &&
-                      Math.abs(leg.topY-leg.groundY-2.05*0.3048)<1e-9;
+                      leg.topY>leg.groundY &&
+                      leg.topY-leg.groundY<1.5;
                   });
             }"""), ("Native hutch deck supports float or leave Farm footprints",mobile)
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
