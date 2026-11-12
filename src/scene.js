@@ -7,7 +7,7 @@ import {FARM_PERIMETER,GARDEN_PLAN,gardenBounds,fenceToGardenClearance,
   FARM_WATER_SUPPLY_ROUTE,utilityFenceClearance} from "./plot-layout.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
 import {solarPostMount} from "./visual-layout.mjs";
-import {nativeCoopRoofPlacement} from "./coop-roof-geometry.mjs";
+import {nativeCoopRoofPlacement,nativeCoopGableProfile} from "./coop-roof-geometry.mjs";
 
 /**
  * Homestead 3D landscape v2: a single physical site, NOT isolated simulation stages.
@@ -980,6 +980,24 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         roof.rotation.x=side*pitch;
         roof.name="Native coop pitched roof "+String(c.id);
         nativeCoopHouses.add(roof);
+      }
+      // Fill both triangular end openings without altering native Farm walls,
+      // door clearance, or the authoritative agent footprint.
+      const gable=nativeCoopGableProfile(z1-z0,{pitch,thickness:roofThickness});
+      for(const endX of [x0-.09,x1+.09]){
+        const positions=new Float32Array([
+          endX,top+gable.baseY,cz+gable.leftZ,
+          endX,top+gable.baseY,cz+gable.rightZ,
+          endX,top+gable.ridgeY,cz+gable.ridgeZ
+        ]);
+        const geometry=new THREE.BufferGeometry();
+        geometry.setAttribute("position",new THREE.BufferAttribute(positions,3));
+        geometry.computeVertexNormals();
+        const infill=new THREE.Mesh(geometry,m.cedar.clone());
+        infill.material.side=THREE.DoubleSide;
+        infill.castShadow=true;infill.receiveShadow=true;
+        infill.name="Native coop gable infill "+String(c.id);
+        nativeCoopHouses.add(infill);
       }
     }
     for(const c of comps){
