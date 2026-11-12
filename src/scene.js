@@ -7,6 +7,7 @@ import {FARM_PERIMETER,GARDEN_PLAN,gardenBounds,fenceToGardenClearance,
   FARM_WATER_SUPPLY_ROUTE,utilityFenceClearance} from "./plot-layout.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
 import {solarPostMount} from "./visual-layout.mjs";
+import {nativeCoopRoofPlacement} from "./coop-roof-geometry.mjs";
 
 /**
  * Homestead 3D landscape v2: a single physical site, NOT isolated simulation stages.
@@ -968,10 +969,15 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         // Lintel above the native shared-door route; birds stay at ground level.
         wall(.09,p1-p0,x1+.045,(p0+p1)/2,"portal lintel",base+1.22,top);
       }else wall(.09,z1-z0+.16,x1+.045,cz,"east wall");
+      // Align the roof underside with the actual north/south wall supports.
+      // The eaves extend below the wall top outside the footprint by design.
+      const {panelDepth:roofDepth,pitch,thickness:roofThickness,
+        centerAboveWall}=nativeCoopRoofPlacement(z1-z0);
+      const roofCenterY=top+centerAboveWall;
       for(const side of [-1,1]){
-        const roof=box(x1-x0+.35,.13,(z1-z0)/2+.25,m.roof,
-          cx,top+.14,cz+side*(z1-z0)/4);
-        roof.rotation.x=side*.34;
+        const roof=box(x1-x0+.35,roofThickness,roofDepth,m.roof,
+          cx,roofCenterY,cz+side*(z1-z0)/4);
+        roof.rotation.x=side*pitch;
         roof.name="Native coop pitched roof "+String(c.id);
         nativeCoopHouses.add(roof);
       }
