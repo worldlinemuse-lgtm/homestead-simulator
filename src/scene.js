@@ -1378,7 +1378,16 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     // for the support geometry to be inspected, including on mobile.
     energy:{eye:V(-32,16,14),look:V(-32,2,-10)},
     water:{eye:V(17,24,-1),look:V(0,2,-23)},
-    farm:{eye:V(46,4.6,14),look:V(39.5,.8,11.1)}
+    farm:{eye:V(46,4.6,14),look:V(39.5,.8,11.1)},
+    // Dedicated native-hutch inspection framing, derived from Farm footprints.
+    hutch:(()=>{
+      const h=nativeEnclosureFootprints.filter(p=>p.type==="hutch");
+      if(!h.length)return {eye:V(46,4.6,14),look:V(39.5,.8,11.1)};
+      const x=(Math.min(...h.map(p=>p.x0))+Math.max(...h.map(p=>p.x1)))/2;
+      const z=(Math.min(...h.map(p=>p.z0))+Math.max(...h.map(p=>p.z1)))/2;
+      return {eye:V(x+4.5,terrainY(x,z)+3.0,z+5.5),
+        look:V(x,terrainY(x,z)+.85,z)};
+    })()
   };
   let view="overview",moving=false,trackedAnimalId=null;
   const eye=views.overview.eye.clone(),focus=views.overview.look.clone();
