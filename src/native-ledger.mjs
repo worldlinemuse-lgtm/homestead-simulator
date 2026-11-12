@@ -16,7 +16,9 @@ export function nativeLedgerRow(snapshot){
   if(typeof clock.date!=="string"||!/^(\d{4})-(\d{2})-(\d{2})$/.test(clock.date))
     throw new TypeError("Invalid scenario date");
   const [year,month,day]=clock.date.split("-").map(Number);
-  const calendarDate=new Date(Date.UTC(year,month-1,day));
+  const calendarDate=new Date(0);
+  calendarDate.setUTCHours(0,0,0,0);
+  calendarDate.setUTCFullYear(year,month-1,day);
   if(year<1||year>9999||calendarDate.getUTCFullYear()!==year||
      calendarDate.getUTCMonth()+1!==month||calendarDate.getUTCDate()!==day)
     throw new TypeError("Invalid scenario date");
