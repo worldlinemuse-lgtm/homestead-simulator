@@ -12,6 +12,10 @@
 .solarNativeFields label{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--border);border-radius:9px;font-size:12px}
 .solarNativeFields input,.solarNativeFields select{width:100%;min-height:44px;background:#172e3d;color:#f0f6f8;border:1px solid #5d7c8d;border-radius:7px;padding:7px;font:inherit}
 .solarNativeFields label:focus-within{border-color:#b4e9cc}
+.solarSourceChart{max-width:100%;height:auto;display:block;margin:12px 0}
+.solarSourceTable{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:12px}
+.solarSourceTable th,.solarSourceTable td{padding:8px 6px;border-bottom:1px solid #4a6271;text-align:right}
+.solarSourceTable th:first-child,.solarSourceTable td:first-child{text-align:left}
 </style>
 <link rel="stylesheet" href="src/ui-polish.css">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script></head><body>
@@ -67,8 +71,8 @@
 <label for="solarBatteryBankAh">Nominal bank capacity (Ah)<input id="solarBatteryBankAh" type="number" inputmode="decimal" min="1" max="10000" step="1" value="100"></label>
 <label for="solarBatteryHeatMode">LiTime self-heating assumption<select id="solarBatteryHeatMode"><option value="off" selected>Off · no heater</option><option value="fast">Fast rate (source-derived)</option><option value="mid">Middle rate (estimated)</option><option value="slow">Slow rate (source-derived)</option></select></label>
 </div>
-<div class="waterUtilityActions"><button id="solarBatteryRun" type="button">Run original battery calculation</button><button id="solarBatteryFocus" type="button">Find battery in 3D</button><button id="solarBatteryReturn" type="button" hidden>Return to selected battery</button></div>
-<div id="solarBatteryReport" class="editorNote" role="status" tabindex="-1" aria-live="polite" data-result-state="none">No battery study yet. Select original Solar parameters and run this isolated calculation.</div>
+<div class="waterUtilityActions"><button id="solarBatteryRun" type="button">Run original battery calculation</button><button id="solarBatterySweepRun" type="button">Compare original AGM discharge table</button><button id="solarBatteryFocus" type="button">Find battery in 3D</button><button id="solarBatteryReturn" type="button" hidden>Return to selected battery</button></div>
+<div id="solarBatteryReport" class="editorNote" role="status" tabindex="-1" aria-live="polite" data-result-state="none">No battery study yet. Select original Solar parameters and run this isolated calculation.</div><div id="solarBatterySweepReport" class="editorNote" role="status" tabindex="-1" aria-live="polite" data-result-state="none">Original AGM discharge comparison has not been run.</div>
 <p class="caution">No off-grid electrical certification. AGM capacity includes a source table and temperature assumptions; the original LFP model makes no rate/temperature capacity correction. The live Solar dispatch still uses an experimental envelope and is not changed by this tool.</p>
 </section>
 <section class="setting utilitySection" id="waterPresetUtility" tabindex="-1" aria-label="Original Water preset engineering evaluator">
