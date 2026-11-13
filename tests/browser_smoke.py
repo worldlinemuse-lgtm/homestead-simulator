@@ -128,6 +128,26 @@ try:
             assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
                 "Edited native Water controls unexpectedly mutated the live model",mobile)
             page.screenshot(path=str(preview_shots/("mobile-water-native-controls.png" if mobile else "desktop-water-native-controls.png")))
+            # Native time-to-volume action must execute in a real browser on both
+            # viewports, produce a source-engine result, and never mutate live state.
+            before_time=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#waterTargetLiters").fill("10")
+            page.locator("#waterTimeRun").click()
+            report=page.locator("#waterTimeReport")
+            assert report.get_attribute("data-result-state") in ("flow","no-flow"), (
+                "Water target action failed",mobile,report.inner_text())
+            assert "No target-volume estimate yet" not in report.inner_text()
+            assert "Original" in report.inner_text()
+            assert before_time==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
+                "Target-volume calculation mutated live state",mobile)
+            page.screenshot(path=str(preview_shots/("mobile-water-time-result.png" if mobile else "desktop-water-time-result.png")))
+            # Reject invalid values in the actual UI; do not display stale success.
+            page.locator("#waterTargetLiters").fill("-1")
+            page.locator("#waterTimeRun").click()
+            assert report.get_attribute("data-result-state")=="error",report.inner_text()
+            assert "Target volume" in report.inner_text()
+            assert before_time==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#waterTargetLiters").fill("10")
             # Tank startup is a source-native storage setting on preset D.
             page.locator("#waterPresetSelect").select_option("D")
             tank=page.locator('#waterNativeControls [data-native-key="b"][data-native-field="init"]')
