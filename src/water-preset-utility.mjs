@@ -86,6 +86,9 @@ export function evaluateWaterTimeToVolume(engine,{preset="E",liters=10,scenario=
   throw new RangeError("Target volume must be finite and between 0 and 10000 L");
  if(!WATER_PRESET_SCENARIOS.includes(scenario))
   throw new RangeError("Water source scenario must be 0, 1 or 2");
+ // Upstream timeTo uses a 0.01 L absolute completion tolerance; smaller
+ // targets can falsely succeed with zero physical outlet production.
+ if(liters<=0.01)throw new RangeError("Target volume must exceed original solver 0.01 L resolution");
  const {world,edits}=buildEditedSourceWorld(engine,preset,componentEdits);
  const result=engine.timeTo(world,liters,scenario,24);
  if(!result||!(result.min===null||(typeof result.min==="number"&&
