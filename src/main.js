@@ -287,7 +287,13 @@ $("nativeUtilitySearch").addEventListener("keydown",event=>{
   if(first){event.preventDefault();first.click();}
  }
 });
-$("utilitiesBtn").addEventListener("click",()=>jumpToUtility("utilityHub"));
+$("utilitiesBtn").addEventListener("click",()=>{
+ // The global directory is object-independent; retain the selected scene asset
+ // but clear a previous source-study role so unrelated tools are not filtered.
+ selectedWaterRole=null;
+ $("waterAssetReturn").hidden=true;
+ jumpToUtility("utilityHub");
+});
 $("utilityLiveShortcut").addEventListener("click",()=>jumpToUtility("scenarioControls"));
 $("utilityLayoutShortcut").addEventListener("click",()=>jumpToUtility("objectEditor"));
 $("inspectBtn").addEventListener("click",()=>setInspectorOpen(!$("inspector").classList.contains("open")));
