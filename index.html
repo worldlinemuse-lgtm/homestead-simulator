@@ -8,6 +8,10 @@
 .waterNativeField{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--border);border-radius:9px;font-size:12px}
 .waterNativeField input,.waterNativeField select{width:100%;min-height:42px;background:#172e3d;color:var(--text);border:1px solid #5d7c8d;border-radius:7px;padding:7px;font:inherit}
 .waterNativeField:focus-within{border-color:var(--accent)}
+.solarNativeFields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:10px;margin:12px 0}
+.solarNativeFields label{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--border);border-radius:9px;font-size:12px}
+.solarNativeFields input,.solarNativeFields select{width:100%;min-height:44px;background:#172e3d;color:#f0f6f8;border:1px solid #5d7c8d;border-radius:7px;padding:7px;font:inherit}
+.solarNativeFields label:focus-within{border-color:#b4e9cc}
 </style>
 <link rel="stylesheet" href="src/ui-polish.css">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script></head><body>
@@ -49,6 +53,24 @@
 <div class="setting"><div class="value"><label for="houseLoad">Background household demand</label><output id="houseLoadOut">85 W</output></div><input type="range" id="houseLoad" min="0" max="800" step="5" value="85"></div>
 <div class="setting"><div class="value"><label for="pumpLoad">Assumed pump electrical input</label><output id="pumpLoadOut">120 W</output></div><input type="range" id="pumpLoad" min="30" max="500" step="10" value="120"></div>
 </section>
+
+<section class="utilitySection" id="solarBatteryUtility" tabindex="-1" aria-labelledby="solarBatteryHeading">
+<h3 id="solarBatteryHeading">Original Solar battery engineering study</h3>
+<p class="utilityScope">INDEPENDENT STUDY · solar-sandbox battery.js · No changes to live Homestead dispatch</p>
+<p class="utilityHelp">Calculate original Solar battery discharge-rate and temperature adjustments, AGM/LFP bulk/absorption charging behavior and optional LiTime self-heating timing. The original Solar model provides manufacturer-table measurements plus clearly identified assumptions. These controls do not configure the live 3D battery.</p>
+<div class="solarNativeFields" role="group" aria-label="Source-native Solar battery study inputs">
+<label for="solarBatteryChem">Source chemistry<select id="solarBatteryChem"><option value="agm" selected>Renogy AGM lead-acid</option><option value="lfp">LiFePO4 (LFP)</option></select></label>
+<label for="solarBatteryCurrentA">Discharge current per parallel string (A)<input id="solarBatteryCurrentA" type="number" inputmode="decimal" min="0" max="300" step="1" value="10"></label>
+<label for="solarBatteryTempC">Battery temperature (°C)<input id="solarBatteryTempC" type="number" inputmode="decimal" min="-30" max="60" step="1" value="20"></label>
+<label for="solarBatterySoc">State of charge (%)<input id="solarBatterySoc" type="number" inputmode="decimal" min="0" max="100" step="1" value="50"></label>
+<label for="solarBatteryAbsMin">Time in absorption stage (min)<input id="solarBatteryAbsMin" type="number" inputmode="numeric" min="0" max="1440" step="1" value="0"></label>
+<label for="solarBatteryBankAh">Nominal bank capacity (Ah)<input id="solarBatteryBankAh" type="number" inputmode="decimal" min="1" max="10000" step="1" value="100"></label>
+<label for="solarBatteryHeatMode">LiTime self-heating assumption<select id="solarBatteryHeatMode"><option value="off" selected>Off · no heater</option><option value="fast">Fast rate (source-derived)</option><option value="mid">Middle rate (estimated)</option><option value="slow">Slow rate (source-derived)</option></select></label>
+</div>
+<div class="waterUtilityActions"><button id="solarBatteryRun" type="button">Run original battery calculation</button><button id="solarBatteryReturn" type="button" hidden>Return to selected battery</button></div>
+<div id="solarBatteryReport" class="editorNote" role="status" tabindex="-1" aria-live="polite" data-result-state="none">No battery study yet. Select original Solar parameters and run this isolated calculation.</div>
+<p class="caution">No off-grid electrical certification. AGM capacity includes a source table and temperature assumptions; the original LFP model makes no rate/temperature capacity correction. The live Solar dispatch still uses an experimental envelope and is not changed by this tool.</p>
+</section>
 <section class="setting utilitySection" id="waterPresetUtility" tabindex="-1" aria-label="Original Water preset engineering evaluator">
 <h3>Water design calculator</h3>
 <p class="utilityScope">INDEPENDENT STUDY · Original Water engine · Does not change your live Homestead</p>
@@ -69,5 +91,5 @@
 <button id="exportBtn">Export scenario JSON</button><button id="ledgerCsvBtn" aria-label="Export native energy water and farm ledger CSV">Export resource ledger CSV</button>
 </section></div></aside>
 <div id="errors" role="alert"></div><div id="sceneHint" aria-hidden="true">Drag to orbit · Scroll to zoom · Select equipment</div><div id="toolbar" class="glass"><div class="toolbar-info"><div id="simDate" class="clock">—</div><div id="simPhase" class="status">Synchronized simulation time</div></div><div class="controls"><button id="playBtn" class="primary">▶ Play</button><button id="minuteBtn">+1 min</button><button id="quarterBtn">+15 min</button><button id="stepBtn">+1 hour</button><button id="dayBtn">+1 day</button><button id="resetBtn">↺ Reset</button><span class="legend"><span class="swatch" style="background:#ecb756"></span>Electrical <span class="swatch" style="background:#54b5e9"></span>Hydraulic</span></div><div id="timeTools"><label for="timeSlider">Time of day <output id="timeValue">09:00</output></label><input id="timeSlider" aria-label="Preview time of day without advancing the model" type="range" min="0" max="1439" step="1" value="540"><label for="speedSelect">Playback speed</label><select id="speedSelect" aria-label="Simulated minutes per real second"><option value="0.25">¼ min/s</option><option value="1">1 min/s</option><option value="5" selected>5 min/s</option><option value="15">15 min/s</option><option value="60">60 min/s</option><option value="120">120 min/s</option></select><button id="timeResume">Return to model time</button><span id="timeMode" role="status">Model steps hourly · lighting moves every minute</span></div></div></main>
-<script src="vendor/solar-next-core.js"></script><script src="vendor/water-engine.js"></script><script src="vendor/farm-core.js"></script><script src="src/resource-contract.js"></script><script src="src/coordinator.js"></script><script type="module" src="src/main.js"></script>
+<script src="vendor/solar-next-core.js"></script><script src="vendor/solar-battery-native.js"></script><script src="vendor/water-engine.js"></script><script src="vendor/farm-core.js"></script><script src="src/resource-contract.js"></script><script src="src/coordinator.js"></script><script type="module" src="src/main.js"></script>
 </body></html>
