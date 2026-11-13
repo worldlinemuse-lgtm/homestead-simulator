@@ -105,10 +105,25 @@ try:
             assert water_eval["producedL"]>=0 and water_eval["estimatedPartsUSD"]>=0,water_eval
             assert water_eval["source"]["path"]=="source/engine.js",water_eval
             assert "Not a potable-water" in page.locator("#waterPresetReport").inner_text()
+            assert page.locator("#waterPresetReport .utilityResultSummary strong").inner_text().endswith(" L"), (
+                "Source output summary must show liters",mobile)
+            assert page.locator("#waterPresetReport .utilityResultsDetails dt").count()>=9
+            assert "not certification" in page.locator("#waterPresetReport").inner_text().lower()
             preview_shots=ROOT/"tests"/"artifacts";preview_shots.mkdir(parents=True,exist_ok=True)
             page.screenshot(path=str(preview_shots/("mobile-water-preset.png" if mobile else "desktop-water-preset.png")))
             assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
                 "Water engineering preview mutated the live model",mobile)
+            # Editing a source input must invalidate the prior result immediately:
+            # stale engineering outputs must never appear to match new settings.
+            page.locator("#waterPresetDuration").select_option("300")
+            assert page.evaluate("window.HomesteadApp.waterPreset()") is None
+            assert page.locator("#waterPresetReport").get_attribute("data-result-state")=="none"
+            assert "Inputs changed" in page.locator("#waterPresetReport").inner_text()
+            page.locator("#waterPresetRun").click()
+            new_eval=page.evaluate("window.HomesteadApp.waterPreset()")
+            assert new_eval and new_eval["seconds"]==300
+            assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
+                "Recomputed Water study mutated the live Homestead resources",mobile)
             page.locator("#closeInspector").click()
             assert page.evaluate("window.HomesteadApp.world().animals") > 0
             # Native Farm enclosure footprints are mapped from the original
