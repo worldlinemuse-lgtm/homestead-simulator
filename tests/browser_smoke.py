@@ -269,6 +269,19 @@ try:
             assert page.locator("#solarBatteryReport").get_attribute("data-result-state")=="complete"
             assert before_solar==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
             page.screenshot(path=str(preview_shots/("mobile-solar-battery-result.png" if mobile else "desktop-solar-battery-result.png")))
+            page.locator("#solarBatterySweepRun").click()
+            agm=page.evaluate("window.HomesteadApp.solarAgmSweep()")
+            assert agm and len(agm["points"])==page.evaluate("window.BATTMODEL.AGM_RATE.length")
+            assert agm["source"]["path"]=="source/battery.js"
+            for point in agm["points"]:
+                direct=page.evaluate("(a) => window.BATTMODEL.drainMult('agm',a,20).m",point["currentA"])
+                assert point["drainMultiplier"]==direct
+            assert page.locator("#solarBatterySweepReport").get_attribute("data-result-state")=="complete"
+            assert page.locator("#solarBatterySweepReport svg[role='img']").count()==1
+            assert page.locator("#solarBatterySweepReport tbody tr").count()==len(agm["points"])
+            assert before_solar==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.screenshot(path=str(preview_shots/("mobile-solar-agm-plot.png" if mobile else "desktop-solar-agm-plot.png")))
+
             page.locator("#solarBatteryCurrentA").fill("-1")
             assert page.evaluate("window.HomesteadApp.solarBattery()") is None
             page.locator("#solarBatteryRun").click()
