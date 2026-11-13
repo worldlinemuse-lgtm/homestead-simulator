@@ -147,6 +147,15 @@ try:
             assert report.get_attribute("data-result-state")=="error",report.inner_text()
             assert "Target volume" in report.inner_text()
             assert before_time==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            # The original timeTo solver uses a 0.01 L absolute completion
+            # tolerance. The visible HTML constraint must agree with the
+            # adapter: 0.01 L can falsely count as produced with zero outlet.
+            assert page.locator("#waterTargetLiters").get_attribute("min")=="0.02"
+            page.locator("#waterTargetLiters").fill("0.01")
+            page.locator("#waterTimeRun").click()
+            assert report.get_attribute("data-result-state")=="error",report.inner_text()
+            assert "resolution" in report.inner_text().lower()
+            assert before_time==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
             page.locator("#waterTargetLiters").fill("10")
             # Tank startup is a source-native storage setting on preset D.
             page.locator("#waterPresetSelect").select_option("D")
