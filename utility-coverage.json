@@ -61,6 +61,40 @@
       ]
     },
     {
+      "id": "water.preset.source-comparison",
+      "domain": "water",
+      "status": "integrated",
+      "sourcePath": "source/engine.js",
+      "upstreamRevision": "bd1bfedc8e53d71792f532c5a89d80a33dcf6700",
+      "sourceInterface": "buildPreset/analyze/step for source designs A–H, isolated fresh worlds",
+      "adapter": "src/water-preset-utility.mjs",
+      "ui": "waterCompareRun",
+      "uiAccess": "Utilities → Compare eight source Water designs; selecting 3D Water treatment or tank → same Water utility controls",
+      "units": {
+        "inputs": {
+          "scenario": "index (0–2)",
+          "seconds": "s"
+        },
+        "outputs": {
+          "outlet": "L",
+          "costEstimate": "USD"
+        }
+      },
+      "scope": "independent isolated engineering comparison; does not advance Homestead clock or change live water/energy",
+      "tests": [
+        "tests/water-preset-comparison.test.mjs",
+        "tests/browser_smoke.py",
+        "tests/utility-registry.test.mjs"
+      ],
+      "fidelity": "original-vendored-hydraulic-solver-A-to-H",
+      "gaps": [
+        "Comparative results are not a ranking of potable-water safety or guaranteed field yield",
+        "No native editable Water schematic or component property editor",
+        "Independent comparison cannot update the coupled live network",
+        "Native Solar dispatcher and Farm planner are separate missing integrations"
+      ]
+    },
+    {
       "id": "water.source-time-to-volume",
       "domain": "water",
       "status": "not-integrated",
