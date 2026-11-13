@@ -18,6 +18,7 @@ let selected="overview",playing=false,scene;
 const timeline=new ScenarioTimeline(5);
 let previousFrame=null,lastClockPaint=0;
 let selectedAsset=null;
+let selectedWaterRole=null;
 function fail(e){playing=false;scene?.setPlayback(false);$("playBtn").textContent="▶ Play";$("errors").textContent="Simulation stopped: "+(e?.message||e);$("errors").style.display="block";console.error(e);}
 const descriptions={
  overview:["Whole homestead","Energy production, water treatment and animal demand connected through one chronological ledger."],
@@ -418,6 +419,31 @@ $("waterPresetRun").addEventListener("click",()=>{
    :"This design yielded no outlet volume for the selected conditions. Review the source no-flow diagnostic and treatment warnings below; the live Homestead was not changed.";
   report.append(intro);
 
+  // Selected 3D equipment drills into actual original-engine component snapshots.
+  // The selected object is a role, not a fabricated one-to-one source part ID.
+  const componentTypes=selectedWaterRole==="treatment"
+   ?new Set(["pump_sky","ro","uf","media","mission","sawyer","bleach","boil"])
+   :selectedWaterRole==="storage"?new Set(["barrel50","bucket","outlet"]):null;
+  if(componentTypes){
+   const matching=result.components.filter(p=>componentTypes.has(p.type));
+   const heading=document.createElement("strong");
+   heading.textContent="Selected 3D "+(selectedWaterRole==="treatment"?"treatment equipment":"storage equipment")+" · original source components";
+   report.append(heading);
+   const componentList=document.createElement("dl");
+   componentList.className="utilityResultsDetails";
+   for(const component of matching){
+    const item=document.createElement("div");
+    const name=document.createElement("dt");name.textContent=component.name+" ("+component.type+")";
+    const value=document.createElement("dd");
+    value.textContent="Volume "+fmt(component.volumeL,2)+" L · throughput "+fmt(component.throughputL,2)+" L · flow "+fmt(component.flowLpm,2)+" L/min · source parameters "+JSON.stringify(component.params);
+    item.append(name,value);componentList.append(item);
+   }
+   if(!matching.length){
+    const note=document.createElement("p");
+    note.textContent="This original preset contains no matching component for the selected equipment. Choose another source design.";
+    report.append(note);
+   }else report.append(componentList);
+  }
   const readouts=[
    ["Water source design",result.name],
    ["Hydraulic conditions",["Low","Reference","High"][result.scenario]],
@@ -491,6 +517,7 @@ try{scene=makeScene($("world"),(kind,label)=>{
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
   renderAsset(coordinator.snapshot());refreshObjectEditor();
   const selectedWater=kind==="water"&&Boolean(label);
+  selectedWaterRole=selectedWater?(label==="Treated-water storage tank"?"storage":"treatment"):null;
   $("waterAssetReturn").hidden=!selectedWater;
   if(selectedWater)jumpToUtility("waterPresetUtility");
   else setInspectorOpen(true);
