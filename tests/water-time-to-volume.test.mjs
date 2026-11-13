@@ -58,3 +58,34 @@ test("invalid volumes, forged identities and scenarios fail closed",()=>{
  assert.throws(()=>evaluateWaterTimeToVolume(engine,{componentEdits:[{key:"forged",field:"psi",value:10}]}),/Unknown Water source/);
  assert.throws(()=>evaluateWaterTimeToVolume({},{}),/Original Water timeTo/);
 });
+
+test("native unreachable diagnostics are nonblank and source ETA respects 24-hour horizon",()=>{
+ const live=engine.buildPreset("E"),before=JSON.stringify(live);
+ for(const output of [
+  {min:null,steps:1,why:""},
+  {min:null,steps:1,why:" \t \n "},
+  {min:null,steps:1,why:0},
+  {min:null,steps:1,why:undefined},
+  {min:1440.0001,steps:7},
+  {min:Infinity,steps:7},
+  {min:-0.1,steps:7}
+ ]){
+  let calls=0;
+  const mocked={...engine,timeTo(){calls++;return output;}};
+  assert.throws(()=>evaluateWaterTimeToVolume(mocked,{preset:"E",liters:10,scenario:1}),
+   /Original Water time-to-volume result is invalid/,
+   "Malformed native source result must never become an authoritative ETA");
+  assert.equal(calls,1,"Each valid study runs exactly one source solver");
+  assert.equal(JSON.stringify(live),before,"Bad results cannot mutate external live world");
+ }
+ for(const output of [
+  {min:null,steps:1,why:"No outlet flow"},
+  {min:1440,steps:12}
+ ]){
+  const mocked={...engine,timeTo(){return output;}};
+  const value=evaluateWaterTimeToVolume(mocked,{preset:"E",liters:10,scenario:1});
+  assert.equal(value.minutes,output.min);
+  assert.equal(value.reason,output.min===null?output.why:null);
+  assert.equal(value.maxHours,24);
+ }
+});
