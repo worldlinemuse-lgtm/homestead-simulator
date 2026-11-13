@@ -344,6 +344,12 @@ for(const id of solarInputIds){
  $(id).addEventListener("change",invalidateSolarBatteryStudy);
 }
 $("solarBatteryReturn").addEventListener("click",()=>jumpToUtility("assetReadout"));
+$("solarBatteryFocus").addEventListener("click",()=>{
+ if(!scene)throw new Error("3D battery scene is not initialized");
+ scene.go("battery");
+ setInspectorOpen(false);
+ $("sceneHint").textContent="3D battery in view · Tap the battery enclosure to open its original Solar engineering controls";
+});
 $("solarBatteryRun").addEventListener("click",()=>{
  const report=$("solarBatteryReport");
  try{
