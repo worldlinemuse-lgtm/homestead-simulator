@@ -15,7 +15,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          files=(src/*.js vendor/*.js)
+          files=(src/*.js src/*.mjs vendor/*.js)
           if (( ${#files[@]} == 0 )); then
             echo 'No JavaScript sources found' >&2
             exit 1
@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          tests=(tests/*.test.cjs)
+          tests=(tests/*.test.cjs tests/*.test.mjs)
           if (( ${#tests[@]} == 0 )); then
             echo 'No model test files found' >&2
             exit 1

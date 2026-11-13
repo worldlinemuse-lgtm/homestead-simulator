@@ -25,6 +25,65 @@ try:
                 # only an opaque forty-second readiness timeout.
                 raise AssertionError(f"Homestead startup failed (mobile={mobile}); page errors={errors!r}; url={page.url}") from exc
             assert page.locator("#world").is_visible()
+            # UTILITY NAVIGATION REGRESSION: the source-native tools must be
+            # discoverable without first traversing the long Details inspector.
+            assert page.locator("#utilitiesBtn").is_visible()
+            assert page.locator("#utilitiesBtn").get_attribute("aria-expanded")=="false"
+            nav_box=page.locator("#utilitiesBtn").bounding_box()
+            assert nav_box and nav_box["x"]>=0 and nav_box["x"]+nav_box["width"]<=page.viewport_size["width"]+1
+            before_tool_navigation=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#utilitiesBtn").click()
+            assert page.locator("#inspector").is_visible()
+            assert page.locator("#utilitiesBtn").get_attribute("aria-expanded")=="true"
+            assert page.locator("#inspectBtn").get_attribute("aria-expanded")=="true"
+            assert page.evaluate("document.activeElement.id")=="utilityHub"
+            available=page.locator("#nativeUtilityList button[data-utility-id]")
+            assert available.count()>=3,available.all_text_contents()
+            assert page.locator('[data-utility-id="water.preset.source-comparison"]').count()==1
+            assert available.first.get_attribute("data-utility-id").startswith("water.preset."), (
+                "Water evaluator should be first in native utility directory",mobile)
+            assert page.locator('[data-utility-id="water.preset.native-evaluator"]').count()==1
+            assert page.locator('[data-utility-id="cross-domain.resource-ledger.csv"]').count()==1
+            assert "not available" in page.locator("#utilityHub").inner_text().lower() or (
+                "not yet" in page.locator("#utilityHub").inner_text().lower())
+            utility_shots=ROOT/"tests"/"artifacts"
+            utility_shots.mkdir(parents=True,exist_ok=True)
+            page.screenshot(path=str(utility_shots/("mobile-utility-hub.png" if mobile else "desktop-utility-hub.png")))
+            # Search works by category/purpose, includes explicit empty state and
+            # supports keyboard Enter to directly navigate to the first result.
+            page.locator("#nativeUtilitySearch").fill("no such simulator")
+            assert available.count()==0
+            assert page.locator("#nativeUtilityEmpty").is_visible()
+            page.locator("#nativeUtilitySearch").fill("csv")
+            assert available.count()==1
+            page.locator("#nativeUtilitySearch").press("Enter")
+            assert page.evaluate("document.activeElement.id")=="utilityExports"
+            assert page.locator("#ledgerCsvBtn").is_visible()
+            assert page.locator("#utilitiesBtn").get_attribute("aria-expanded")=="true"
+            # The top-level utilities button always returns to the directory,
+            # even after a deep link inside the inspector.
+            page.locator("#utilitiesBtn").click()
+            page.locator("#nativeUtilitySearch").fill("")
+            page.locator('[data-utility-id="water.preset.native-evaluator"]').click()
+            assert page.evaluate("document.activeElement.id")=="waterPresetUtility"
+            assert page.evaluate("""() => {
+                const a=document.querySelector("#inspector .inspector-body").getBoundingClientRect();
+                const b=document.querySelector("#waterPresetUtility").getBoundingClientRect();
+                return b.top>=a.top-5 && b.top<a.bottom-30;
+            }"""), "Water utility is not reachable within the inspector viewport"
+            assert "independent study" in page.locator("#waterPresetUtility").inner_text().lower()
+            page.screenshot(path=str(utility_shots/("mobile-water-utility-guide.png" if mobile else "desktop-water-utility-guide.png")))
+            page.locator("#utilitiesBtn").click()
+            page.locator("#utilityLiveShortcut").click()
+            assert page.evaluate("document.activeElement.id")=="scenarioControls"
+            assert "change the connected experimental" in page.locator("#scenarioControls").inner_text().lower()
+            page.locator("#utilitiesBtn").click()
+            page.locator("#utilityLayoutShortcut").click()
+            assert page.evaluate("document.activeElement.id")=="objectEditor"
+            assert before_tool_navigation==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
+                "Utility navigation changed numerical scenario state",mobile)
+            page.locator("#closeInspector").click()
+            assert page.locator("#utilitiesBtn").get_attribute("aria-expanded")=="false"
             if mobile:
                 assert page.evaluate("document.getElementById('summary').classList.contains('collapsed')")
                 page.locator("#hudToggle").click()
@@ -34,7 +93,135 @@ try:
             page.locator("#inspectBtn").click()
             assert page.evaluate("getComputedStyle(document.querySelector('#inspector')).display") == "block"
             assert page.locator("#assetReadout").is_visible()
+            # Native Water preset evaluator runs real vendored source hydraulics in an
+            # isolated world; neither the shared scenario nor its clock may advance.
+            prior_source_eval=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#waterPresetSelect").select_option("E")
+            page.locator("#waterPresetScenario").select_option("1")
+            page.locator("#waterPresetDuration").select_option("60")
+            page.locator("#waterPresetRun").click()
+            water_eval=page.evaluate("window.HomesteadApp.waterPreset()")
+            assert water_eval is not None and water_eval["preset"]=="E",water_eval
+            assert water_eval["schema"]==1 and water_eval["seconds"]==60,water_eval
+            assert water_eval["producedL"]>=0 and water_eval["estimatedPartsUSD"]>=0,water_eval
+            assert water_eval["source"]["path"]=="source/engine.js",water_eval
+            assert "Not a potable-water" in page.locator("#waterPresetReport").inner_text()
+            assert page.locator("#waterPresetReport .utilityResultSummary strong").inner_text().endswith(" L"), (
+                "Source output summary must show liters",mobile)
+            assert page.locator("#waterPresetReport .utilityResultsDetails dt").count()>=9
+            assert "not certification" in page.locator("#waterPresetReport").inner_text().lower()
+            preview_shots=ROOT/"tests"/"artifacts";preview_shots.mkdir(parents=True,exist_ok=True)
+            page.screenshot(path=str(preview_shots/("mobile-water-preset.png" if mobile else "desktop-water-preset.png")))
+            assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
+                "Water engineering preview mutated the live model",mobile)
+            # Original pump and RO parameters must affect the actual source world.
+            pump_field=page.locator('#waterNativeControls [data-native-key="p"][data-native-field="psi"]')
+            ro_field=page.locator('#waterNativeControls [data-native-key="r"][data-native-field="drain"]')
+            assert pump_field.count()==1 and ro_field.count()==1,(mobile,"Original controls not found")
+            pump_field.fill("40")
+            ro_field.fill("3")
+            assert page.evaluate("window.HomesteadApp.waterPreset()") is None
+            page.locator("#waterPresetRun").click()
+            edited=page.evaluate("window.HomesteadApp.waterPreset()")
+            assert edited and next(c for c in edited["components"] if c["sourceKey"]=="p")["params"]["psi"]==40
+            assert next(c for c in edited["components"] if c["sourceKey"]=="r")["params"]["drain"]==3
+            assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
+                "Edited native Water controls unexpectedly mutated the live model",mobile)
+            page.screenshot(path=str(preview_shots/("mobile-water-native-controls.png" if mobile else "desktop-water-native-controls.png")))
+            # Tank startup is a source-native storage setting on preset D.
+            page.locator("#waterPresetSelect").select_option("D")
+            tank=page.locator('#waterNativeControls [data-native-key="b"][data-native-field="init"]')
+            assert tank.count()==1
+            tank.fill("0")
+            page.locator("#waterPresetRun").click()
+            dry=page.evaluate("window.HomesteadApp.waterPreset()")
+            assert dry and next(c for c in dry["components"] if c["sourceKey"]=="b")["volumeL"]==0
+            assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#waterPresetSelect").select_option("E")
+            # Editing a source input must invalidate the prior result immediately:
+            # stale engineering outputs must never appear to match new settings.
+            page.locator("#waterPresetDuration").select_option("300")
+            assert page.evaluate("window.HomesteadApp.waterPreset()") is None
+            assert page.locator("#waterPresetReport").get_attribute("data-result-state")=="none"
+            assert "Inputs changed" in page.locator("#waterPresetReport").inner_text()
+            page.locator("#waterPresetRun").click()
+            new_eval=page.evaluate("window.HomesteadApp.waterPreset()")
+            assert new_eval and new_eval["seconds"]==300
+            assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
+                "Recomputed Water study mutated the live Homestead resources",mobile)
+            # The directory and the real source comparison must expose the
+            # same executable native Water controls on desktop and mobile.
+            before_comparison=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#utilitiesBtn").click()
+            comparison_entry=page.locator('[data-utility-id="water.preset.source-comparison"]')
+            assert comparison_entry.count()==1, ("Source comparison missing from Utilities",mobile)
+            comparison_entry.click()
+            assert page.evaluate("document.activeElement.id")=="waterPresetUtility"
+            page.locator("#waterPresetDuration").select_option("60")
+            page.locator("#waterPresetScenario").select_option("1")
+            page.locator("#waterCompareRun").click()
+            comparison=page.evaluate("window.HomesteadApp.waterComparison()")
+            assert comparison and len(comparison["results"])==8, ("Missing original A-H results",mobile)
+            assert [r["preset"] for r in comparison["results"]]==list("ABCDEFGH")
+            assert comparison["source"]["path"]=="source/engine.js"
+            assert page.locator("#waterComparisonReport").get_attribute("data-result-state")=="comparison"
+            assert page.locator("#waterComparisonReport tbody tr").count()==8
+            assert "not a yield estimate" in page.locator("#waterComparisonReport").inner_text()
+            assert before_comparison==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
+                "Original Water A-H comparison mutated live Homestead state",mobile)
+            page.screenshot(path=str(preview_shots/(
+                "mobile-water-comparison.png" if mobile else "desktop-water-comparison.png")))
+            page.locator("#waterComparisonReport tbody tr").first.locator("button").click()
+            selected=page.evaluate("window.HomesteadApp.waterPreset()")
+            assert selected and selected["preset"]=="A"
+            assert page.evaluate("document.activeElement.id")=="waterPresetReport"
+            assert before_comparison==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#waterPresetScenario").select_option("2")
+            assert page.evaluate("window.HomesteadApp.waterComparison()") is None
+            assert page.locator("#waterComparisonReport").is_hidden()
+            assert before_comparison==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
             page.locator("#closeInspector").click()
+            # Real Three.js raycast acceptance: selecting water hardware from the
+            # rendered canvas reaches the exact source-native component input.
+            before_3d_selection=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator('nav [data-view="water"]').click()
+            page.wait_for_function("""() => {
+                const c=window.HomesteadApp.world().camera;
+                return c.eyeTargetResidualM<0.15 && c.lookTargetResidualM<0.15;
+            }""",timeout=30000)
+            evidence=page.evaluate("window.HomesteadApp.world()")
+            assert evidence["waterPickable"]=={"pump":True,"ro":True,"tank":True},(
+                "Main Water equipment missing from Three.js raycast targets",mobile,evidence["waterPickable"])
+            for role,label,field in [
+                ("pump","Water pressure pump","psi"),
+                ("ro","Reverse-osmosis treatment stage","drain")]:
+                target=next(t for t in page.evaluate("window.HomesteadApp.world().waterPickTargets")
+                            if t["role"]==role)
+                assert target["inView"],("Water object not in camera view",mobile,target)
+                page.mouse.click(target["x"],target["y"])
+                assert page.locator("#inspectTitle").inner_text()==label,(
+                    "3D water raycast missed original hardware",mobile,role,target,
+                    page.locator("#inspectTitle").inner_text())
+                assert page.locator('#waterNativeControls [data-native-field="'+field+'"]').count()==1
+                assert page.evaluate("document.activeElement.dataset.nativeField")==field
+                assert page.locator("#waterPresetSelect").input_value()=="E"
+                assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"),(
+                    "3D equipment selection mutated live simulation",mobile,role)
+                page.screenshot(path=str(preview_shots/(
+                    ("mobile" if mobile else "desktop")+"-water-3d-"+role+".png")))
+                page.locator("#closeInspector").click()
+            # The top-level source-native directory resets object-specific
+            # filtering while calling the SAME original executable evaluator.
+            page.locator("#utilitiesBtn").click()
+            page.locator('[data-utility-id="water.preset.native-evaluator"]').click()
+            page.locator("#waterPresetRun").click()
+            assert "Selected 3D" not in page.locator("#waterPresetReport").inner_text()
+            assert page.evaluate("window.HomesteadApp.waterPreset()") is not None
+            assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#closeInspector").click()
+            # Returning to whole property must not mutate the model or playback.
+            page.locator('nav [data-view="overview"]').click()
+            assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
             assert page.evaluate("window.HomesteadApp.world().animals") > 0
             # Native Farm enclosure footprints are mapped from the original
             # model's feet coordinates, not authored freehand in Three.js.
@@ -636,6 +823,25 @@ try:
             assert metrics["nativeSteps"]>=0 and metrics["enclosureCount"]>=3
             print(f"3D visual performance mobile={mobile}: {metrics}",flush=True)
             page.close()
+        # NARROW UTILITY DISCOVERY REGRESSION: six top-level actions remain
+        # independently tappable at a 320 px viewport without clipped text.
+        narrow=browser.new_page(viewport={"width":320,"height":720},device_scale_factor=1)
+        narrow.goto("http://127.0.0.1:%d/"%server.server_port,wait_until="load")
+        narrow.wait_for_function("window.HomesteadApp && window.HomesteadApp.snapshot().farm.counts.n>0",timeout=40000)
+        buttons=narrow.locator("header nav button")
+        assert buttons.count()==6
+        for i in range(buttons.count()):
+            rect=buttons.nth(i).bounding_box()
+            assert rect and rect["x"]>=-1 and rect["x"]+rect["width"]<=321, (
+                "Narrow utility navigation is clipped",i,rect)
+            assert rect["height"]>=40,("Narrow navigation tap targets too short",i,rect)
+        narrow.locator("#utilitiesBtn").click()
+        assert narrow.locator("#inspector").is_visible()
+        assert narrow.locator("#nativeUtilityList button").first.get_attribute("data-utility-id").startswith(
+            "water.preset.")
+        (ROOT/"tests"/"artifacts").mkdir(parents=True,exist_ok=True)
+        narrow.screenshot(path=str(ROOT/"tests"/"artifacts"/"narrow-utility-hub.png"))
+        narrow.close()
         browser.close()
     print("PASS: unified 3D site runs, both layouts step 25 model hours, no page exceptions")
 finally:
