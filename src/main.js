@@ -1,5 +1,6 @@
 import {makeScene} from "./scene.js";
 import {nativeLedgerCsv} from "./native-ledger.mjs";
+import {evaluateNativeSolarBattery} from "./solar-battery-utility.mjs";
 import {evaluateWaterPreset,evaluateWaterPresetComparison,evaluateWaterTimeToVolume,waterPresetNativeControls} from "./water-preset-utility.mjs";
 import {UTILITY_CAPABILITIES,assertUtilityRegistry} from "./utility-registry.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
@@ -58,6 +59,11 @@ function renderAsset(s){
     ["PV power envelope",l?fmt(l.pv.envelopeW,0)+" W":"No interval simulated"],
     ["Modeled supplied energy",l?fmt(e.pvWh,0)+" Wh this hour":"—"],
     ["Authority","Published-reference upper bound; delivered power is assumption-adjusted"]
+  ],
+  "Battery storage module":[
+    ["Battery energy",fmt(s.batteryWh/1000,2)+" kWh (experimental live model)"],
+    ["Live dispatch","Experimental; not original Solar battery characterization"],
+    ["Engineering controls","Select source AGM/LFP charging and discharge study below"]
   ],
   "Solar inverter and battery":[
     ["Battery energy",fmt(s.batteryWh/1000,2)+" kWh"],
@@ -292,6 +298,7 @@ $("utilitiesBtn").addEventListener("click",()=>{
  // but clear a previous source-study role so unrelated tools are not filtered.
  selectedWaterRole=null;
  $("waterAssetReturn").hidden=true;
+ $("solarBatteryReturn").hidden=true;
  jumpToUtility("utilityHub");
 });
 $("utilityLiveShortcut").addEventListener("click",()=>jumpToUtility("scenarioControls"));
@@ -322,6 +329,68 @@ $("objectRotate").addEventListener("click",()=>runEdit(()=>scene.editor.rotate(M
 for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*100,0)+"%"],["houseLoad","houseLoadOut","backgroundLoadW",x=>fmt(x,0)+" W"],["pumpLoad","pumpLoadOut","pumpElectricalW",x=>fmt(x,0)+" W"]]){
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
 }
+
+let lastSolarBatteryStudy=null;
+const solarInputIds=["solarBatteryChem","solarBatteryCurrentA","solarBatteryTempC","solarBatterySoc",
+ "solarBatteryAbsMin","solarBatteryBankAh","solarBatteryHeatMode"];
+function invalidateSolarBatteryStudy(){
+ lastSolarBatteryStudy=null;
+ const panel=$("solarBatteryReport");
+ panel.dataset.resultState="none";
+ panel.textContent="Battery inputs changed. Run the original Solar calculation; live Homestead resources are unchanged.";
+}
+for(const id of solarInputIds){
+ $(id).addEventListener("input",invalidateSolarBatteryStudy);
+ $(id).addEventListener("change",invalidateSolarBatteryStudy);
+}
+$("solarBatteryReturn").addEventListener("click",()=>jumpToUtility("assetReadout"));
+$("solarBatteryRun").addEventListener("click",()=>{
+ const report=$("solarBatteryReport");
+ try{
+  const num=id=>{const raw=$(id).value.trim();return raw===""?NaN:Number(raw)};
+  const result=evaluateNativeSolarBattery(window.BATTMODEL,{
+   chem:$("solarBatteryChem").value,
+   currentA:num("solarBatteryCurrentA"),tempC:num("solarBatteryTempC"),
+   socPercent:num("solarBatterySoc"),absorptionMinutes:num("solarBatteryAbsMin"),
+   bankAh:num("solarBatteryBankAh"),heatMode:$("solarBatteryHeatMode").value
+  });
+  lastSolarBatteryStudy=result;
+  report.replaceChildren();report.dataset.resultState="complete";
+  const h=document.createElement("h4");h.textContent="Original Solar battery model results";report.append(h);
+  const details=document.createElement("dl");details.className="utilityResultsDetails";
+  const rows=[
+   ["Source chemistry",result.inputs.chem==="agm"?"Renogy AGM":"LFP (source has no rate/temperature capacity derating)"],
+   ["Source drain multiplier",fmt(result.discharge.m,4)+" ×"],
+   ["Current-rate factor",fmt(result.discharge.rate,4)+" ×"],
+   ["Temperature factor",fmt(result.discharge.temp,4)+" ×"],
+   ["AGM capacity at selected discharge",result.agmAtCurrent?fmt(result.agmAtCurrent.ah,2)+" Ah":"Not characterized in source LFP model"],
+   ["Charging phase",result.charging.phase],
+   ["Charging-current multiplier",fmt(result.charging.mult,4)+" ×"],
+   ["Absorption hold limit",result.charging.limit==null?"No source-defined limit":fmt(result.charging.limit,1)+" min"],
+   ["Self-heating time to 5 °C",result.heating?fmt(result.heating.minutesTo5C,1)+" min":"Heater not selected"],
+   ["Source revision",result.source.path+" @ "+result.source.revision.slice(0,12)]
+  ];
+  for(const [key,value] of rows){
+   const dt=document.createElement("dt");dt.textContent=key;
+   const dd=document.createElement("dd");dd.textContent=value;
+   details.append(dt,dd);
+  }
+  report.append(details);
+  const note=document.createElement("p");note.className="utilityResultCaution";
+  note.textContent="Independent source-model calculation; live battery Wh, electrical dispatch, water and timeline are unchanged.";
+  report.append(note);
+  if(result.warnings.length){
+   const list=document.createElement("ul");
+   for(const warning of result.warnings){
+    const item=document.createElement("li");item.textContent=warning;list.append(item);
+   }
+   report.append(list);
+  }
+ }catch(error){
+  lastSolarBatteryStudy=null;report.dataset.resultState="error";
+  report.textContent="Original Solar battery study rejected: "+(error?.message||error);
+ }
+});
 let lastWaterPreset=null,lastWaterComparison=null;
 function invalidateWaterStudy(){
  lastWaterPreset=null;
@@ -619,6 +688,8 @@ try{scene=makeScene($("world"),(kind,label)=>{
    label==="Water pressure pump"?"pump":
    label==="Reverse-osmosis treatment stage"?"ro":"treatment"):null;
   $("waterAssetReturn").hidden=!selectedWater;
+  const selectedBattery=kind==="energy"&&(label==="Battery storage module"||label==="Solar inverter and battery");
+  $("solarBatteryReturn").hidden=!selectedBattery;
   if(selectedWater){
    // A source reference study, not an edit to the coupled equipment inventory.
    $("waterPresetSelect").value=selectedWaterRole==="storage"?"D":"E";
@@ -627,10 +698,15 @@ try{scene=makeScene($("world"),(kind,label)=>{
    const field=selectedWaterRole==="storage"?"init":selectedWaterRole==="ro"?"drain":"psi";
    $("waterNativeControls").querySelector('[data-native-field="'+field+'"]')?.focus({preventScroll:true});
   }
+  else if(selectedBattery){
+   jumpToUtility("solarBatteryUtility");
+   $("solarBatteryCurrentA").focus({preventScroll:true});
+  }
   else setInspectorOpen(true);
 },farmVisual);selectArea("overview");redraw(coordinator.snapshot());
  refreshObjectEditor()}catch(e){fail(e)}
 window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),
+ solarBattery:()=>lastSolarBatteryStudy,
  waterPreset:()=>lastWaterPreset,
  waterComparison:()=>lastWaterComparison,
  step:()=>{stop();advanceMinutes(60)},advanceMinutes:minutes=>{stop();advanceMinutes(minutes)},
