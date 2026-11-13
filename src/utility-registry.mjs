@@ -55,9 +55,13 @@ export function assertUtilityRegistry(registry=UTILITY_CAPABILITIES){
       "inspection-export":"experimental-coupled-scenario",
       "isolated-water-preset":"water-source-preset-evaluation"
     }[c.kind];
+    const categoryForKind={
+      "inspection-export":"Exports",
+      "isolated-water-preset":"Water"
+    }[c.kind];
     if(!modelForKind||!Number.isSafeInteger(c.version)||c.version<1||
        ![c.kind,c.implementation,c.entrypoint,c.ui,c.uiSection,c.title,c.category,c.purpose,c.scope,c.tests,c.limitations].every(nonBlankString)||
-       !["Solar","Water","Farm","Exports"].includes(c.category)||!/^[-a-zA-Z0-9]+$/.test(c.uiSection)||
+       c.category!==categoryForKind||!/^[-a-zA-Z0-9]+$/.test(c.uiSection)||
        c.model!==modelForKind||c.snapshotSchema!==1||c.mutatesModel!==false||
        c.advancesClock!==false||!Array.isArray(c.sources)||c.sources.length===0)
       throw new TypeError("Incomplete capability contract: "+c.id);
