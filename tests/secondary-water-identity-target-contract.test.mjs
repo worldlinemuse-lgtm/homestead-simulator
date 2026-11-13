@@ -63,6 +63,10 @@ test("time-to-volume registry declares actual executable units, not copied prese
  const c=utilityCapability("water.preset.time-to-volume");
  assert.ok(c);
  assert.equal(c.entrypoint,"evaluateWaterTimeToVolume");
+ assert.equal(c.sources?.[0]?.interface,"HomesteadWaterCore.buildPreset/timeTo",
+  "Time-to-volume provenance must name the original timeTo solver, not the unrelated analyze/step preview");
+ assert.equal(c.sourcePath,"source/engine.js");
+ assert.equal(c.sourceRevision,"bd1bfedc8e53d71792f532c5a89d80a33dcf6700");
  assert.equal(c.inputUnits?.liters,"L");
  assert.equal(c.inputUnits?.scenario,"index");
  assert.equal(c.inputUnits?.preset,"source-key");
