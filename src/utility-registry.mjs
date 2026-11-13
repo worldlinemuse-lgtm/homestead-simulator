@@ -6,7 +6,10 @@ const capabilities=[
   {
     id:"cross-domain.resource-ledger.csv",version:1,kind:"inspection-export",
     implementation:"src/native-ledger.mjs",entrypoint:"nativeLedgerCsv",
-    ui:"ledgerCsvBtn",model:"experimental-coupled-scenario",snapshotSchema:1,
+    ui:"ledgerCsvBtn",uiSection:"utilityExports",
+    title:"Export resource ledger CSV",category:"Exports",
+    purpose:"Download a read-only snapshot of modeled Solar, Water and Farm resource totals.",
+    scope:"Live snapshot · no model change",model:"experimental-coupled-scenario",snapshotSchema:1,
     sources:Object.freeze([
       Object.freeze({domain:"solar",interface:"coordinator.cumulative.pvWh",unit:"Wh",fidelity:"experimental-assumption-adjusted"}),
       Object.freeze({domain:"water",interface:"coordinator.cumulative.treatedL",unit:"L",fidelity:"original-hydraulic-solver-coupled"}),
@@ -18,7 +21,11 @@ const capabilities=[
   {
     id:"water.preset.native-evaluator",version:1,kind:"isolated-water-preset",
     implementation:"src/water-preset-utility.mjs",entrypoint:"evaluateWaterPreset",
-    ui:"waterPresetRun",model:"water-source-preset-evaluation",snapshotSchema:1,
+    ui:"waterPresetRun",uiSection:"waterPresetUtility",
+    title:"Water design calculator",category:"Water",
+    purpose:"Compare the original Water hydraulic designs, modeled output, and diagnostic warnings.",
+    scope:"Independent study · live Homestead resources unchanged",
+    model:"water-source-preset-evaluation",snapshotSchema:1,
     sources:Object.freeze([
       Object.freeze({domain:"water",interface:"HomesteadWaterCore.buildPreset/analyze/step",
         unit:"L",fidelity:"original-hydraulic-solver-isolated"})
@@ -49,7 +56,8 @@ export function assertUtilityRegistry(registry=UTILITY_CAPABILITIES){
       "isolated-water-preset":"water-source-preset-evaluation"
     }[c.kind];
     if(!modelForKind||!Number.isSafeInteger(c.version)||c.version<1||
-       ![c.kind,c.implementation,c.entrypoint,c.ui,c.tests,c.limitations].every(nonBlankString)||
+       ![c.kind,c.implementation,c.entrypoint,c.ui,c.uiSection,c.title,c.category,c.purpose,c.scope,c.tests,c.limitations].every(nonBlankString)||
+       !["Water","Exports"].includes(c.category)||!/^[-a-zA-Z0-9]+$/.test(c.uiSection)||
        c.model!==modelForKind||c.snapshotSchema!==1||c.mutatesModel!==false||
        c.advancesClock!==false||!Array.isArray(c.sources)||c.sources.length===0)
       throw new TypeError("Incomplete capability contract: "+c.id);
