@@ -67,7 +67,7 @@
 <label for="solarBatteryBankAh">Nominal bank capacity (Ah)<input id="solarBatteryBankAh" type="number" inputmode="decimal" min="1" max="10000" step="1" value="100"></label>
 <label for="solarBatteryHeatMode">LiTime self-heating assumption<select id="solarBatteryHeatMode"><option value="off" selected>Off · no heater</option><option value="fast">Fast rate (source-derived)</option><option value="mid">Middle rate (estimated)</option><option value="slow">Slow rate (source-derived)</option></select></label>
 </div>
-<div class="waterUtilityActions"><button id="solarBatteryRun" type="button">Run original battery calculation</button><button id="solarBatteryReturn" type="button" hidden>Return to selected battery</button></div>
+<div class="waterUtilityActions"><button id="solarBatteryRun" type="button">Run original battery calculation</button><button id="solarBatteryFocus" type="button">Find battery in 3D</button><button id="solarBatteryReturn" type="button" hidden>Return to selected battery</button></div>
 <div id="solarBatteryReport" class="editorNote" role="status" tabindex="-1" aria-live="polite" data-result-state="none">No battery study yet. Select original Solar parameters and run this isolated calculation.</div>
 <p class="caution">No off-grid electrical certification. AGM capacity includes a source table and temperature assumptions; the original LFP model makes no rate/temperature capacity correction. The live Solar dispatch still uses an experimental envelope and is not changed by this tool.</p>
 </section>
