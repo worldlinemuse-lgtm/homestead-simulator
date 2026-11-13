@@ -97,7 +97,13 @@ test("source utility cannot forge revision, physical units or coupled-model iden
 
 test("directory metadata makes every executable utility findable and differentiates state scope",()=>{
  assert.equal(assertUtilityRegistry(),true);
- assert.deepEqual(UTILITY_CAPABILITIES.map(c=>c.category),["Exports","Water"]);
+ for(const category of ["Exports","Water"])
+  assert.ok(UTILITY_CAPABILITIES.some(c=>c.category===category),"Missing executable "+category+" utility");
+ const comparison=utilityCapability("water.preset.source-comparison");
+ assert.ok(comparison,"Original A–H Water comparison is not discoverable");
+ assert.equal(comparison.entrypoint,"evaluateWaterPresetComparison");
+ assert.equal(comparison.ui,"waterCompareRun");
+ assert.equal(comparison.uiSection,"waterPresetUtility");
  const entries=new Set();
  for(const c of UTILITY_CAPABILITIES){
   assert.ok(c.title.trim().length>5);
