@@ -25,6 +25,62 @@ try:
                 # only an opaque forty-second readiness timeout.
                 raise AssertionError(f"Homestead startup failed (mobile={mobile}); page errors={errors!r}; url={page.url}") from exc
             assert page.locator("#world").is_visible()
+            # UTILITY NAVIGATION REGRESSION: the source-native tools must be
+            # discoverable without first traversing the long Details inspector.
+            assert page.locator("#utilitiesBtn").is_visible()
+            assert page.locator("#utilitiesBtn").get_attribute("aria-expanded")=="false"
+            nav_box=page.locator("#utilitiesBtn").bounding_box()
+            assert nav_box and nav_box["x"]>=0 and nav_box["x"]+nav_box["width"]<=page.viewport_size["width"]+1
+            before_tool_navigation=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#utilitiesBtn").click()
+            assert page.locator("#inspector").is_visible()
+            assert page.locator("#utilitiesBtn").get_attribute("aria-expanded")=="true"
+            assert page.locator("#inspectBtn").get_attribute("aria-expanded")=="true"
+            assert page.evaluate("document.activeElement.id")=="utilityHub"
+            available=page.locator("#nativeUtilityList button[data-utility-id]")
+            assert available.count()==2,available.all_text_contents()
+            assert page.locator('[data-utility-id="water.preset.native-evaluator"]').count()==1
+            assert page.locator('[data-utility-id="cross-domain.resource-ledger.csv"]').count()==1
+            assert "not available" in page.locator("#utilityHub").inner_text().lower() or (
+                "not yet" in page.locator("#utilityHub").inner_text().lower())
+            utility_shots=ROOT/"tests"/"artifacts"
+            utility_shots.mkdir(parents=True,exist_ok=True)
+            page.screenshot(path=str(utility_shots/("mobile-utility-hub.png" if mobile else "desktop-utility-hub.png")))
+            # Search works by category/purpose, includes explicit empty state and
+            # supports keyboard Enter to directly navigate to the first result.
+            page.locator("#nativeUtilitySearch").fill("no such simulator")
+            assert available.count()==0
+            assert page.locator("#nativeUtilityEmpty").is_visible()
+            page.locator("#nativeUtilitySearch").fill("csv")
+            assert available.count()==1
+            page.locator("#nativeUtilitySearch").press("Enter")
+            assert page.evaluate("document.activeElement.id")=="utilityExports"
+            assert page.locator("#ledgerCsvBtn").is_visible()
+            assert page.locator("#utilitiesBtn").get_attribute("aria-expanded")=="true"
+            # The top-level utilities button always returns to the directory,
+            # even after a deep link inside the inspector.
+            page.locator("#utilitiesBtn").click()
+            page.locator("#nativeUtilitySearch").fill("")
+            page.locator('[data-utility-id="water.preset.native-evaluator"]').click()
+            assert page.evaluate("document.activeElement.id")=="waterPresetUtility"
+            assert page.evaluate("""() => {
+                const a=document.querySelector("#inspector .inspector-body").getBoundingClientRect();
+                const b=document.querySelector("#waterPresetUtility").getBoundingClientRect();
+                return b.top>=a.top-5 && b.top<a.bottom-30;
+            }"""), "Water utility is not reachable within the inspector viewport"
+            assert "independent study" in page.locator("#waterPresetUtility").inner_text().lower()
+            page.screenshot(path=str(utility_shots/("mobile-water-utility-guide.png" if mobile else "desktop-water-utility-guide.png")))
+            page.locator("#utilitiesBtn").click()
+            page.locator("#utilityLiveShortcut").click()
+            assert page.evaluate("document.activeElement.id")=="scenarioControls"
+            assert "change the connected experimental" in page.locator("#scenarioControls").inner_text().lower()
+            page.locator("#utilitiesBtn").click()
+            page.locator("#utilityLayoutShortcut").click()
+            assert page.evaluate("document.activeElement.id")=="objectEditor"
+            assert before_tool_navigation==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
+                "Utility navigation changed numerical scenario state",mobile)
+            page.locator("#closeInspector").click()
+            assert page.locator("#utilitiesBtn").get_attribute("aria-expanded")=="false"
             if mobile:
                 assert page.evaluate("document.getElementById('summary').classList.contains('collapsed')")
                 page.locator("#hudToggle").click()
