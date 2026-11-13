@@ -1,6 +1,6 @@
 import {makeScene} from "./scene.js";
 import {nativeLedgerCsv} from "./native-ledger.mjs";
-import {evaluateNativeSolarBattery} from "./solar-battery-utility.mjs";
+import {evaluateNativeSolarBattery,evaluateNativeSolarAgmSweep} from "./solar-battery-utility.mjs";
 import {evaluateWaterPreset,evaluateWaterPresetComparison,evaluateWaterTimeToVolume,waterPresetNativeControls} from "./water-preset-utility.mjs";
 import {UTILITY_CAPABILITIES,assertUtilityRegistry} from "./utility-registry.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
@@ -330,11 +330,13 @@ for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
 }
 
-let lastSolarBatteryStudy=null;
+let lastSolarBatteryStudy=null,lastSolarSweep=null;
 const solarInputIds=["solarBatteryChem","solarBatteryCurrentA","solarBatteryTempC","solarBatterySoc",
  "solarBatteryAbsMin","solarBatteryBankAh","solarBatteryHeatMode"];
 function invalidateSolarBatteryStudy(){
- lastSolarBatteryStudy=null;
+ lastSolarBatteryStudy=null;lastSolarSweep=null;
+ $("solarBatterySweepReport").dataset.resultState="none";
+ $("solarBatterySweepReport").textContent="Source-table inputs changed. Run the AGM comparison again.";
  const panel=$("solarBatteryReport");
  panel.dataset.resultState="none";
  panel.textContent="Battery inputs changed. Run the original Solar calculation; live Homestead resources are unchanged.";
@@ -343,6 +345,71 @@ for(const id of solarInputIds){
  $(id).addEventListener("input",invalidateSolarBatteryStudy);
  $(id).addEventListener("change",invalidateSolarBatteryStudy);
 }
+
+$("solarBatterySweepRun").addEventListener("click",()=>{
+ const panel=$("solarBatterySweepReport");
+ try{
+  const raw=$("solarBatteryTempC").value.trim();
+  const tempC=raw===""?NaN:Number(raw);
+  const result=evaluateNativeSolarAgmSweep(window.BATTMODEL,{tempC});
+  lastSolarSweep=result;panel.replaceChildren();
+  panel.dataset.resultState="complete";
+  const heading=document.createElement("h4");
+  heading.textContent="Original Renogy AGM table · "+fmt(tempC,1)+" °C";
+  panel.append(heading);
+  const subtitle=document.createElement("p");
+  subtitle.textContent="Every point is an original Solar model evaluation at a manufacturer table current, not a newly fitted curve.";
+  panel.append(subtitle);
+  const svgNs="http://www.w3.org/2000/svg";
+  const plot=document.createElementNS(svgNs,"svg");
+  plot.setAttribute("class","solarSourceChart");
+  plot.setAttribute("viewBox","0 0 350 176");
+  plot.setAttribute("role","img");
+  plot.setAttribute("aria-label","Source AGM drain multiplier by discharge current in amperes");
+  const maxCurrent=Math.max(...result.points.map(p=>p.currentA));
+  const minCurrent=Math.min(...result.points.map(p=>p.currentA));
+  const maxMultiplier=Math.max(1,...result.points.map(p=>p.drainMultiplier));
+  const position=p=>({
+   x:25+300*(p.currentA-minCurrent)/Math.max(.001,maxCurrent-minCurrent),
+   y:145-110*p.drainMultiplier/maxMultiplier
+  });
+  const line=document.createElementNS(svgNs,"polyline");
+  line.setAttribute("fill","none");line.setAttribute("stroke","#b4e9cc");
+  line.setAttribute("stroke-width","2.5");
+  line.setAttribute("points",result.points.map(p=>{const t=position(p);return t.x+","+t.y}).join(" "));
+  plot.append(line);
+  for(const p of result.points){
+   const t=position(p),circle=document.createElementNS(svgNs,"circle");
+   circle.setAttribute("cx",String(t.x));circle.setAttribute("cy",String(t.y));
+   circle.setAttribute("r","4");circle.setAttribute("fill","#ebc76c");
+   const title=document.createElementNS(svgNs,"title");
+   title.textContent=p.currentA+" A → "+fmt(p.drainMultiplier,3)+"×";
+   circle.append(title);plot.append(circle);
+  }
+  const caption=document.createElementNS(svgNs,"text");
+  caption.setAttribute("x","175");caption.setAttribute("y","167");
+  caption.setAttribute("fill","#d7e5ea");caption.setAttribute("text-anchor","middle");
+  caption.setAttribute("font-size","12");
+  caption.textContent="Discharge current (A) →";plot.append(caption);panel.append(plot);
+  const table=document.createElement("table");table.className="solarSourceTable";
+  const head=document.createElement("thead"),headRow=document.createElement("tr");
+  for(const label of ["Current (A)","Source rated (h)","Capacity (Ah)","Drain multiplier"]){
+   const th=document.createElement("th");th.textContent=label;headRow.append(th);
+  }head.append(headRow);table.append(head);
+  const body=document.createElement("tbody");
+  for(const p of result.points){
+   const row=document.createElement("tr");
+   for(const value of [fmt(p.currentA,2),fmt(p.sourceRatedHours,2),fmt(p.availableAh,2),fmt(p.drainMultiplier,4)+"×"]){
+    const cell=document.createElement("td");cell.textContent=value;row.append(cell);
+   }body.append(row);
+  }table.append(body);panel.append(table);
+  const limit=document.createElement("p");limit.className="utilityResultCaution";
+  limit.textContent=result.limitations.join(" ");panel.append(limit);
+ }catch(error){
+  lastSolarSweep=null;panel.dataset.resultState="error";
+  panel.textContent="Original AGM table comparison rejected: "+(error?.message||error);
+ }
+});
 $("solarBatteryReturn").addEventListener("click",()=>jumpToUtility("assetReadout"));
 $("solarBatteryFocus").addEventListener("click",()=>{
  if(!scene)throw new Error("3D battery scene is not initialized");
@@ -713,6 +780,7 @@ try{scene=makeScene($("world"),(kind,label)=>{
  refreshObjectEditor()}catch(e){fail(e)}
 window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),
  solarBattery:()=>lastSolarBatteryStudy,
+ solarAgmSweep:()=>lastSolarSweep,
  waterPreset:()=>lastWaterPreset,
  waterComparison:()=>lastWaterComparison,
  step:()=>{stop();advanceMinutes(60)},advanceMinutes:minutes=>{stop();advanceMinutes(minutes)},
