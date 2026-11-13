@@ -39,6 +39,17 @@ export function evaluateWaterPreset(engine,{preset="E",seconds=60,scenario=1}={}
  }
  if(Math.abs(world.t-seconds)>1e-6||Math.abs(elapsed-seconds)>1e-6)
   throw new Error("Water preview clock failed conservation check");
+ // Preserve source-native component identity and post-step runtime measurements.
+ // These are isolated engineering-study components, never coupled-world objects.
+ const components=Object.freeze(world.parts.map(part=>Object.freeze({
+  type:part.type,
+  name:String(engine.DEF?.[part.type]?.name||part.type),
+  kind:String(engine.DEF?.[part.type]?.kind||"unknown"),
+  params:Object.freeze(JSON.parse(JSON.stringify(part.params))),
+  volumeL:finite("component volumeL",part.rt.vol),
+  throughputL:finite("component throughputL",part.rt.thru),
+  flowLpm:finite("component flowLpm",part.rt.Q)
+ })));
  const producedL=finite("producedL",world.produced);
  const spilledL=finite("spilledL",world.spilled);
  const drainedL=finite("drainedL",world.drained);
@@ -49,7 +60,7 @@ export function evaluateWaterPreset(engine,{preset="E",seconds=60,scenario=1}={}
  return Object.freeze({
   schema:1,kind:"isolated-water-source-evaluation",preset,
   name:engine.PRESETS[preset].name,scenario,seconds,
-  source:WATER_PRESET_SOURCE,
+  source:WATER_PRESET_SOURCE,components,
   producedL,spilledL,drainedL,divertedL,estimatedPartsUSD,
   unpricedConnections:finite("unpricedConnections",study.unpriced),
   safetyScreen:study.safety.title,
