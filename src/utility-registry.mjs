@@ -50,6 +50,18 @@ capabilities.push(Object.freeze({
  purpose:"Run original Water designs A–H using identical conditions and inspect each original solver diagnostic.",
  tests:"tests/water-preset-comparison.test.mjs"
 }));
+capabilities.push(Object.freeze({
+ ...capabilities[1],
+ id:"water.preset.time-to-volume",
+ entrypoint:"evaluateWaterTimeToVolume",
+ ui:"waterTimeRun",
+ title:"Water outlet time to target volume",
+ purpose:"Use the original Water solver to estimate time to a requested outlet volume or explain why it cannot be reached.",
+ inputUnits:Object.freeze({preset:"source-key",seconds:"s",scenario:"index",liters:"L"}),
+ outputUnits:Object.freeze({produced:"L",spilled:"L",drained:"L",estimatedParts:"USD",minutes:"min"}),
+ tests:"tests/water-time-to-volume.test.mjs",
+ limitations:"24-hour source-model horizon; no guarantee of flow, water quality, electrical availability or field performance"
+}));
 export const UTILITY_CAPABILITIES=Object.freeze(capabilities.map(c=>Object.freeze(c)));
 export function utilityCapability(id){
   if(typeof id!=="string")throw new TypeError("Capability id must be a string");
