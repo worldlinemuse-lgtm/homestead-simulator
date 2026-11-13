@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "coverage": "partial-source-audit",
-  "auditDate": "2026-11-12",
+  "auditDate": "2026-11-13",
   "scope": "Authoritative originals preserved; this is a traced subset, not a comprehensive upstream feature inventory",
   "upstreams": {
     "solar": {
@@ -36,6 +36,136 @@
       "gaps": [
         "Single cumulative snapshot only",
         "Solar dispatch and Farm shortage feedback are experimental"
+      ]
+    },
+    {
+      "id": "farm.native-agent-geometry",
+      "domain": "farm",
+      "status": "partial",
+      "sourcePath": "source/src/world/agents.js",
+      "upstreamRevision": "d6614d7981535fa2b74be86e0c5356af57b56e3b",
+      "sourceInterface": "original world agents",
+      "adapter": "src/scene.js",
+      "ui": "farm",
+      "tests": [
+        "tests/browser_smoke.py"
+      ],
+      "fidelity": "source-derived-scenes-partial",
+      "gaps": [
+        "Additional object/animal interactions and geometry require audit"
+      ]
+    },
+    {
+      "id": "farm.native-range-check",
+      "domain": "farm",
+      "status": "not-integrated",
+      "sourcePath": "source/src/planner/planner.js",
+      "upstreamRevision": "d6614d7981535fa2b74be86e0c5356af57b56e3b",
+      "sourceInterface": "runRange / planGap / healthParts (10 seeded 2-year source runs, restores S)",
+      "adapter": null,
+      "ui": null,
+      "tests": [],
+      "fidelity": "original-source-range-check-not-vendored",
+      "gaps": [
+        "Original Monte Carlo range check not yet ported into an isolated safe Farm context",
+        "Homestead Farm singleton state requires strict state isolation to prevent changing live biological RNG/state"
+      ]
+    },
+    {
+      "id": "farm.native-year-planner",
+      "domain": "farm",
+      "status": "not-integrated",
+      "sourcePath": "source/src/planner/planner.js",
+      "upstreamRevision": "d6614d7981535fa2b74be86e0c5356af57b56e3b",
+      "sourceInterface": "makePlan / planClimate / planRabbits / planChickens / planMoney and planner scenario options",
+      "adapter": null,
+      "ui": null,
+      "tests": [],
+      "fidelity": "original-source-planner-not-vendored",
+      "gaps": [
+        "Original expected-year 365-day planner and its scenario/weather/lighting settings not exposed in Homestead",
+        "Source planner depends on native settings, world pens, climate and biology helpers requiring isolated source execution"
+      ]
+    },
+    {
+      "id": "farm.original-daily-biology",
+      "domain": "farm",
+      "status": "partial",
+      "sourcePath": null,
+      "upstreamRevision": "d6614d7981535fa2b74be86e0c5356af57b56e3b",
+      "sourceInterface": "HomesteadFarmCore.advanceDay/snapshot",
+      "adapter": "src/coordinator.js",
+      "ui": "farm",
+      "tests": [
+        "tests/engine.test.cjs"
+      ],
+      "fidelity": "original-seeded-biology-daily",
+      "gaps": [
+        "Deficit response not coupled to biological outcomes",
+        "Daily loads are redistributed hourly"
+      ]
+    },
+    {
+      "id": "solar.full-dispatch-controls",
+      "domain": "solar",
+      "status": "not-integrated",
+      "sourcePath": "source/sim.js; source/battery.js; source/elec.js",
+      "upstreamRevision": "871dd8c0ef03a05feb339c9761ead900875f16b5",
+      "sourceInterface": "Original Solar dispatch and BMS/electrical topology controls, not the SolarNextCore.shadowPv reference envelope",
+      "adapter": null,
+      "ui": null,
+      "tests": [],
+      "fidelity": "not-integrated-original-dispatcher",
+      "gaps": [
+        "Original sim.js dispatcher and electrical decision logic are not exposed in Homestead",
+        "Original battery.js and elec.js native battery / topology options are not callable from Homestead Utilities",
+        "Current coordinator uses experimental SolarNextCore.shadowPv reference PV upper-envelope with synthetic irradiance and assumed utilization"
+      ]
+    },
+    {
+      "id": "solar.original-tmy-hourly-weather",
+      "domain": "solar",
+      "status": "not-integrated",
+      "sourcePath": "source/tmy.js",
+      "upstreamRevision": "871dd8c0ef03a05feb339c9761ead900875f16b5",
+      "sourceInterface": "TMY.meta plus dn/df W/m², ta °C × 10, ws m/s × 10, alb × 1000 indexed as hourly local standard time",
+      "adapter": null,
+      "ui": null,
+      "tests": [],
+      "fidelity": "source-weather-not-integrated",
+      "gaps": [
+        "Original 8760-hour local-standard-time weather series not exposed to Homestead Solar simulation",
+        "Synthetic horizon has no date-specific chronology or real-weather dispatcher integration"
+      ]
+    },
+    {
+      "id": "water.preset.native-component-controls",
+      "domain": "water",
+      "status": "partial",
+      "sourcePath": "source/engine.js; source/ui.js",
+      "upstreamRevision": "bd1bfedc8e53d71792f532c5a89d80a33dcf6700",
+      "sourceInterface": "DEF/PRESETS → buildPreset → per-component params → analyze/step; source UI parameter fields",
+      "adapter": "src/water-preset-utility.mjs",
+      "ui": "waterNativeControls",
+      "uiAccess": "3D pump/RO/tank object selection → source-native specific field, or Utilities → Water design calculator",
+      "units": {
+        "pressure": "psi",
+        "reverseOsmosisDrain": "L waste / L product",
+        "storageInitialFraction": "0 or 1",
+        "flow": "L/min",
+        "volume": "L"
+      },
+      "scope": "isolated source-preset engineering study; live model and clock unchanged",
+      "tests": [
+        "tests/water-native-component-controls.test.mjs",
+        "tests/browser_smoke.py"
+      ],
+      "fidelity": "original-vendored-hydraulic-solver-select-component-controls",
+      "gaps": [
+        "Only pump_sky psi, RO drain ratio, barrel50 init/stand, bucket init in supported presets",
+        "Model-specific source identity refers to the isolated preset, not a one-to-one live 3D component",
+        "Complete source editor including plumbing topology, filter media catalog and live electrical dispatch not yet integrated",
+        "No potable-water or field performance certification"
       ]
     },
     {
@@ -113,49 +243,41 @@
       ]
     },
     {
-      "id": "water.preset.native-component-controls",
+      "id": "water.preset.time-to-volume",
       "domain": "water",
-      "status": "partial",
-      "sourcePath": "source/engine.js; source/ui.js",
-      "upstreamRevision": "bd1bfedc8e53d71792f532c5a89d80a33dcf6700",
-      "sourceInterface": "DEF/PRESETS → buildPreset → per-component params → analyze/step; source UI parameter fields",
-      "adapter": "src/water-preset-utility.mjs",
-      "ui": "waterNativeControls",
-      "uiAccess": "3D pump/RO/tank object selection → source-native specific field, or Utilities → Water design calculator",
-      "units": {
-        "pressure": "psi",
-        "reverseOsmosisDrain": "L waste / L product",
-        "storageInitialFraction": "0 or 1",
-        "flow": "L/min",
-        "volume": "L"
-      },
-      "scope": "isolated source-preset engineering study; live model and clock unchanged",
-      "tests": [
-        "tests/water-native-component-controls.test.mjs",
-        "tests/browser_smoke.py"
-      ],
-      "fidelity": "original-vendored-hydraulic-solver-select-component-controls",
-      "gaps": [
-        "Only pump_sky psi, RO drain ratio, barrel50 init/stand, bucket init in supported presets",
-        "Model-specific source identity refers to the isolated preset, not a one-to-one live 3D component",
-        "Complete source editor including plumbing topology, filter media catalog and live electrical dispatch not yet integrated",
-        "No potable-water or field performance certification"
-      ]
-    },
-    {
-      "id": "water.source-time-to-volume",
-      "domain": "water",
-      "status": "not-integrated",
+      "status": "integrated",
       "sourcePath": "source/engine.js",
       "upstreamRevision": "bd1bfedc8e53d71792f532c5a89d80a33dcf6700",
-      "sourceInterface": "timeTo/timeToGen",
-      "adapter": null,
-      "ui": null,
-      "tests": [],
-      "fidelity": "not-evaluated",
+      "sourceInterface": "buildPreset/timeTo/timeToGen (original source timeTo invoked; 24 modeled-hour horizon)",
+      "adapter": "src/water-preset-utility.mjs",
+      "ui": "waterTimeRun",
+      "tests": [
+        "tests/water-time-to-volume.test.mjs",
+        "tests/secondary-water-identity-target-contract.test.mjs",
+        "tests/secondary-native-cross-domain-parity.test.cjs",
+        "tests/browser_smoke.py"
+      ],
+      "fidelity": "original-vendored-hydraulic-timeTo-isolated-source-preset",
       "gaps": [
-        "Source function not exposed by current vendored Homestead wrapper"
-      ]
+        "Source simulation uses a 24-hour horizon and 0.01 L numerical completion tolerance; sub-resolution requests are rejected",
+        "Native 3D Water equipment maps to an isolated A–H source world rather than physically reconnecting the live homestead network",
+        "No guarantee of potability, manufacturer pump power requirements or measured field yields",
+        "No full interactive original Water topology editor or coupling into live electrical load"
+      ],
+      "uiAccess": "Main Utilities → Water outlet time to target volume → source A–H selection → native pump/RO/storage edits → run → reachable ETA / no-flow diagnostic; also reached from selected 3D Water hardware",
+      "scope": "Independent engineering study; never mutates coupled Water, Solar, Farm, clock, or shared resource ledger",
+      "units": {
+        "inputs": {
+          "targetOutlet": "L (0.01 L absolute source completion tolerance; accepted targets >0.01 L)",
+          "sourcePreset": "A–H source-key",
+          "scenario": "index 0–2"
+        },
+        "outputs": {
+          "estimatedCompletion": "min (up to 1440)",
+          "nativeSolverSteps": "count",
+          "diagnostic": "nonempty string on unreachable"
+        }
+      }
     },
     {
       "id": "water.source-visual-network-editor",
@@ -170,57 +292,6 @@
       "fidelity": "not-evaluated",
       "gaps": [
         "Native source UI and editable hydraulic network not ported"
-      ]
-    },
-    {
-      "id": "solar.full-dispatch-controls",
-      "domain": "solar",
-      "status": "not-integrated",
-      "sourcePath": null,
-      "upstreamRevision": "871dd8c0ef03a05feb339c9761ead900875f16b5",
-      "sourceInterface": null,
-      "adapter": null,
-      "ui": null,
-      "tests": [],
-      "fidelity": "not-audited",
-      "gaps": [
-        "Original dispatcher source entrypoint requires source inspection",
-        "Current coordinator uses experimental PV envelope and battery ledger"
-      ]
-    },
-    {
-      "id": "farm.original-daily-biology",
-      "domain": "farm",
-      "status": "partial",
-      "sourcePath": null,
-      "upstreamRevision": "d6614d7981535fa2b74be86e0c5356af57b56e3b",
-      "sourceInterface": "HomesteadFarmCore.advanceDay/snapshot",
-      "adapter": "src/coordinator.js",
-      "ui": "farm",
-      "tests": [
-        "tests/engine.test.cjs"
-      ],
-      "fidelity": "original-seeded-biology-daily",
-      "gaps": [
-        "Deficit response not coupled to biological outcomes",
-        "Daily loads are redistributed hourly"
-      ]
-    },
-    {
-      "id": "farm.native-agent-geometry",
-      "domain": "farm",
-      "status": "partial",
-      "sourcePath": "source/src/world/agents.js",
-      "upstreamRevision": "d6614d7981535fa2b74be86e0c5356af57b56e3b",
-      "sourceInterface": "original world agents",
-      "adapter": "src/scene.js",
-      "ui": "farm",
-      "tests": [
-        "tests/browser_smoke.py"
-      ],
-      "fidelity": "source-derived-scenes-partial",
-      "gaps": [
-        "Additional object/animal interactions and geometry require audit"
       ]
     }
   ]

@@ -580,5 +580,5 @@ function buildPreset(key) {
 }
 if (typeof module !== 'undefined') module.exports = { timeToGen, DEF, MEDIA, PRESETS, PIPE, buildPreset, analyze, timeTo, step, solveState, diagnose, chainsOf, graph, mkPart, freshWorld, cloneWorld, pipeAdapters, portConn, LPG, M_PER_PSI };
 
-return Object.freeze({buildPreset,analyze,step,solveState,diagnose,cloneWorld,freshWorld,DEF,PRESETS});
+return Object.freeze({buildPreset,analyze,step,timeTo,timeToGen,solveState,diagnose,cloneWorld,freshWorld,DEF,PRESETS});
 })();
