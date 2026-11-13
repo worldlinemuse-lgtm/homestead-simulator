@@ -305,6 +305,14 @@ for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
 }
 let lastWaterPreset=null;
+for(const id of ["waterPresetSelect","waterPresetScenario","waterPresetDuration"]){
+ $(id).addEventListener("change",()=>{
+  // Never leave a previous result visible beneath new, uncomputed inputs.
+  lastWaterPreset=null;
+  $("waterPresetReport").dataset.resultState="none";
+  $("waterPresetReport").textContent="Inputs changed. Choose Evaluate to calculate this Water setup. Your live Homestead model is unchanged.";
+ });
+}
 $("waterPresetRun").addEventListener("click",()=>{
  const report=$("waterPresetReport");
  try{
@@ -318,34 +326,74 @@ $("waterPresetRun").addEventListener("click",()=>{
    throw new Error("Isolated Water preview unexpectedly changed the coupled scenario");
   lastWaterPreset=result;
   report.replaceChildren();
-  const rows=[
-   ["Preset",result.name],
-   ["Hydraulic scenario",String(result.scenario)],
-   ["Original solver output",fmt(result.producedL,2)+" L in "+result.seconds+" s"],
+  report.dataset.resultState=result.producedL>0?"flow":"no-flow";
+
+  const overview=document.createElement("div");
+  overview.className="utilityResultSummary";
+  const eyebrow=document.createElement("small");
+  eyebrow.textContent="ORIGINAL WATER SOLVER · INDEPENDENT PREVIEW";
+  const amount=document.createElement("strong");
+  amount.textContent=fmt(result.producedL,2)+" L";
+  amount.setAttribute("aria-label","Modeled outlet quantity "+fmt(result.producedL,2)+" liters");
+  const status=document.createElement("span");
+  status.textContent=result.producedL>0
+   ?"Modeled water reached the outlet over "+result.seconds+" seconds"
+   :"No modeled water reached the outlet over "+result.seconds+" seconds";
+  overview.append(eyebrow,amount,status);
+  report.append(overview);
+
+  const intro=document.createElement("p");
+  intro.className="utilityInterpretation";
+  intro.textContent=result.producedL>0
+   ?"This is the original engine's calculated outlet quantity, not a guaranteed field yield. The live Homestead water inventory was not changed."
+   :"This design yielded no outlet volume for the selected conditions. Review the source no-flow diagnostic and treatment warnings below; the live Homestead was not changed.";
+  report.append(intro);
+
+  const readouts=[
+   ["Water source design",result.name],
+   ["Hydraulic conditions",["Low","Reference","High"][result.scenario]],
+   ["Elapsed source-engine time",result.seconds+" s"],
    ["Spill / drain / diversion",fmt(result.spilledL,2)+" / "+fmt(result.drainedL,2)+" / "+fmt(result.divertedL,2)+" L"],
-   ["Estimated source parts",fmt(result.estimatedPartsUSD,2)+" USD (research estimate)"],
+   ["Research parts estimate",fmt(result.estimatedPartsUSD,2)+" USD (not a live price quote)"],
    ["Unpriced connections",String(result.unpricedConnections)],
-   ["Source screening",result.safetyScreen],
-   ["Germ coverage gaps",result.treatmentGaps.join("; ")||"None identified by source screening"],
-   ["Chemical coverage gaps",result.chemicalGaps.join("; ")||"None identified by source screening"],
-   ["No-flow diagnostic",result.noFlowReason||"Not reported"]
+   ["Source treatment screening",result.safetyScreen+" (not certification)"],
+   ["Germ coverage gaps",result.treatmentGaps.join("; ")||"None flagged by this source screening"],
+   ["Chemical coverage gaps",result.chemicalGaps.join("; ")||"None flagged by this source screening"],
+   ["No-flow diagnostic",result.noFlowReason||"No reason reported by original source engine"]
   ];
-  for(const [name,value] of rows){
-   const p=document.createElement("p");
-   p.textContent=name+": "+value;
-   report.append(p);
+  const details=document.createElement("dl");
+  details.className="utilityResultsDetails";
+  for(const [name,value] of readouts){
+   const item=document.createElement("div");
+   const title=document.createElement("dt");
+   title.textContent=name;
+   const answer=document.createElement("dd");
+   answer.textContent=value;
+   item.append(title,answer);
+   details.append(item);
   }
+  report.append(details);
   if(result.warnings.length){
-   const p=document.createElement("p");
-   p.textContent="Source warnings: "+result.warnings.slice(0,4).join("; ")+
-     (result.warnings.length>4?" (and "+(result.warnings.length-4)+" more)":"");
-   report.append(p);
+   const title=document.createElement("p");
+   title.className="utilityWarningTitle";
+   title.textContent="Source warnings ("+result.warnings.length+")";
+   report.append(title);
+   const items=document.createElement("ul");
+   items.className="utilityWarningList";
+   for(const warning of result.warnings){
+    const item=document.createElement("li");
+    item.textContent=warning;
+    items.append(item);
+   }
+   report.append(items);
   }
   const caution=document.createElement("p");
+  caution.className="utilityResultCaution";
   caution.textContent="Independent source-engine calculation, NOT transferred into the live Homestead model. Not a potable-water or electrical certification.";
   report.append(caution);
  }catch(error){
   lastWaterPreset=null;
+  report.dataset.resultState="error";
   report.textContent="Water source evaluation failed: "+(error?.message||error);
   console.error("Isolated Water preset failure",error);
  }
