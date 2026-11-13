@@ -607,6 +607,8 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   water.add(box(9,.3,5.8,m.concrete,-.5,.18,0));
   water.add(box(2.8,1.0,2.0,m.steel,-.4,.88,-1.7));
   const motor=cyl(.75,.75,2.3,m.metal,-.4,1.65,-1.7);motor.rotation.z=Math.PI/2;water.add(motor);
+  // This visible pump body maps to source preset E part p, not a decorative proxy.
+  motor.userData={kind:"water",label:"Water pressure pump",sourcePreset:"E",sourcePartKey:"p"};
   water.add(cyl(.29,.29,.6,m.steel,.7,1.45,-1.7));
   const pumpLight=new THREE.PointLight(0x8bcbd5,0,6);pumpLight.position.set(-.4,1.9,-1.6);water.add(pumpLight);
   // Water Simulator source/ui.js buildPart('pump'/'ro'): upgrade its simple
@@ -668,6 +670,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     const x=2.1+i*1.75;
     const cartridge=cyl(.52,.52,2.85,roShell,x,1.90,-1.0,28);
     water.add(cartridge);skids.push(cartridge);
+    cartridge.userData={kind:"water",label:"Reverse-osmosis treatment stage",sourcePreset:"E",sourcePartKey:"r"};
     water.add(cyl(.60,.60,.27,roCollar,x,3.47,-1.0,28));
     water.add(cyl(.60,.60,.25,roCollar,x,.39,-1.0,28));
     water.add(cyl(.17,.17,.19,brass,x,3.66,-1.0,12));
@@ -1441,6 +1444,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     toLook.set(p.x,p.y+Math.max(.24,scale*.75),p.z);
     toEye.set(p.x+2.2,p.y+1.8,p.z+3.0);cameraFloor(toEye);
   }
+  // Main Water equipment must actually participate in raycast selection.
+  // Previously only newly edited visual props were registered as selectable.
+  select(water);select(tank);
   const ray=new THREE.Raycaster(),pointerMap=new Map();
   let gestureMoved=false,pinchDistance=null;
   canvas.addEventListener("pointerdown",e=>{
