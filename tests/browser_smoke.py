@@ -114,6 +114,30 @@ try:
             page.screenshot(path=str(preview_shots/("mobile-water-preset.png" if mobile else "desktop-water-preset.png")))
             assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
                 "Water engineering preview mutated the live model",mobile)
+            # Original pump and RO parameters must affect the actual source world.
+            pump_field=page.locator('#waterNativeControls [data-native-key="p"][data-native-field="psi"]')
+            ro_field=page.locator('#waterNativeControls [data-native-key="r"][data-native-field="drain"]')
+            assert pump_field.count()==1 and ro_field.count()==1,(mobile,"Original controls not found")
+            pump_field.fill("40")
+            ro_field.fill("3")
+            assert page.evaluate("window.HomesteadApp.waterPreset()") is None
+            page.locator("#waterPresetRun").click()
+            edited=page.evaluate("window.HomesteadApp.waterPreset()")
+            assert edited and next(c for c in edited["components"] if c["sourceKey"]=="p")["params"]["psi"]==40
+            assert next(c for c in edited["components"] if c["sourceKey"]=="r")["params"]["drain"]==3
+            assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
+                "Edited native Water controls unexpectedly mutated the live model",mobile)
+            page.screenshot(path=str(preview_shots/("mobile-water-native-controls.png" if mobile else "desktop-water-native-controls.png")))
+            # Tank startup is a source-native storage setting on preset D.
+            page.locator("#waterPresetSelect").select_option("D")
+            tank=page.locator('#waterNativeControls [data-native-key="b"][data-native-field="init"]')
+            assert tank.count()==1
+            tank.fill("0")
+            page.locator("#waterPresetRun").click()
+            dry=page.evaluate("window.HomesteadApp.waterPreset()")
+            assert dry and next(c for c in dry["components"] if c["sourceKey"]=="b")["volumeL"]==0
+            assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#waterPresetSelect").select_option("E")
             # Editing a source input must invalidate the prior result immediately:
             # stale engineering outputs must never appear to match new settings.
             page.locator("#waterPresetDuration").select_option("300")
