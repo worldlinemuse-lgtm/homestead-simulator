@@ -120,7 +120,7 @@ test("native utility directory rejects invalid labels, categories, and UI naviga
    assert.throws(()=>assertUtilityRegistry([{...water,[field]:value}]),/Incomplete capability contract/);
   }
  }
- for(const category of [undefined,null,0,"", "fictitious"]){
+ for(const category of [undefined,null,0,"", "fictitious","Solar","Farm","Exports"]){
   assert.throws(()=>assertUtilityRegistry([{...water,category}]),/Incomplete capability contract/);
  }
  for(const uiSection of ["../unsafe","#water","water section"]){
