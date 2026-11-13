@@ -94,3 +94,36 @@ test("source utility cannot forge revision, physical units or coupled-model iden
  assert.throws(()=>assertUtilityRegistry([{...c,advancesClock:true}]),/Incomplete capability/);
  assert.throws(()=>assertUtilityRegistry([{...c,model:"experimental-coupled-scenario"}]),/Incomplete capability/);
 });
+
+test("directory metadata makes every executable utility findable and differentiates state scope",()=>{
+ assert.equal(assertUtilityRegistry(),true);
+ assert.deepEqual(UTILITY_CAPABILITIES.map(c=>c.category),["Exports","Water"]);
+ const entries=new Set();
+ for(const c of UTILITY_CAPABILITIES){
+  assert.ok(c.title.trim().length>5);
+  assert.ok(c.purpose.trim().length>20);
+  assert.ok(c.scope.trim().length>12);
+  assert.match(c.uiSection,/^[a-zA-Z][a-zA-Z0-9-]*$/);
+  assert.ok(!entries.has(c.id)); entries.add(c.id);
+ }
+ const water=utilityCapability("water.preset.native-evaluator");
+ assert.equal(water.uiSection,"waterPresetUtility");
+ assert.match(water.scope,/independent/i);
+ assert.match(water.scope,/unchanged/i);
+ assert.equal(utilityCapability("cross-domain.resource-ledger.csv").uiSection,"utilityExports");
+});
+
+test("native utility directory rejects invalid labels, categories, and UI navigation contracts",()=>{
+ const water=utilityCapability("water.preset.native-evaluator");
+ for(const field of ["title","purpose","scope","uiSection"]){
+  for(const value of [undefined,null,"", " \t ",{},42]){
+   assert.throws(()=>assertUtilityRegistry([{...water,[field]:value}]),/Incomplete capability contract/);
+  }
+ }
+ for(const category of [undefined,null,0,"", "fictitious"]){
+  assert.throws(()=>assertUtilityRegistry([{...water,category}]),/Incomplete capability contract/);
+ }
+ for(const uiSection of ["../unsafe","#water","water section"]){
+  assert.throws(()=>assertUtilityRegistry([{...water,uiSection}]),/Incomplete capability contract/);
+ }
+});
