@@ -124,6 +124,37 @@ try:
             assert new_eval and new_eval["seconds"]==300
             assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
                 "Recomputed Water study mutated the live Homestead resources",mobile)
+            # The directory and the real source comparison must expose the
+            # same executable native Water controls on desktop and mobile.
+            before_comparison=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#utilitiesBtn").click()
+            comparison_entry=page.locator('[data-utility-id="water.preset.source-comparison"]')
+            assert comparison_entry.count()==1, ("Source comparison missing from Utilities",mobile)
+            comparison_entry.click()
+            assert page.evaluate("document.activeElement.id")=="waterPresetUtility"
+            page.locator("#waterPresetDuration").select_option("60")
+            page.locator("#waterPresetScenario").select_option("1")
+            page.locator("#waterCompareRun").click()
+            comparison=page.evaluate("window.HomesteadApp.waterComparison()")
+            assert comparison and len(comparison["results"])==8, ("Missing original A-H results",mobile)
+            assert [r["preset"] for r in comparison["results"]]==list("ABCDEFGH")
+            assert comparison["source"]["path"]=="source/engine.js"
+            assert page.locator("#waterComparisonReport").get_attribute("data-result-state")=="comparison"
+            assert page.locator("#waterComparisonReport tbody tr").count()==8
+            assert "not a yield estimate" in page.locator("#waterComparisonReport").inner_text()
+            assert before_comparison==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
+                "Original Water A-H comparison mutated live Homestead state",mobile)
+            page.screenshot(path=str(preview_shots/(
+                "mobile-water-comparison.png" if mobile else "desktop-water-comparison.png")))
+            page.locator("#waterComparisonReport tbody tr").first.locator("button").click()
+            selected=page.evaluate("window.HomesteadApp.waterPreset()")
+            assert selected and selected["preset"]=="A"
+            assert page.evaluate("document.activeElement.id")=="waterPresetReport"
+            assert before_comparison==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#waterPresetScenario").select_option("2")
+            assert page.evaluate("window.HomesteadApp.waterComparison()") is None
+            assert page.locator("#waterComparisonReport").is_hidden()
+            assert before_comparison==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
             page.locator("#closeInspector").click()
             assert page.evaluate("window.HomesteadApp.world().animals") > 0
             # Native Farm enclosure footprints are mapped from the original
