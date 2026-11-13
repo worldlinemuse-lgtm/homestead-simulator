@@ -60,3 +60,26 @@ export function evaluateWaterPreset(engine,{preset="E",seconds=60,scenario=1}={}
   assumptions:"Source model preset only: pump energy availability, rain input, manufacturer accuracy and potability are not verified. No resource transfer into Homestead."
  });
 }
+
+
+// Reuse the same source-native A–H calculations for a comparative engineering study.
+// No simplified flow estimate, shared-world mutation, or independent physics.
+export const WATER_SOURCE_PRESET_IDS=Object.freeze(["A","B","C","D","E","F","G","H"]);
+export function evaluateWaterPresetComparison(engine,{seconds=60,scenario=1}={}){
+ // Validate the shared request before any source-world construction.
+ if(!WATER_PRESET_DURATIONS.includes(seconds))
+  throw new RangeError("Water preview duration must be 60, 300 or 900 seconds");
+ if(!WATER_PRESET_SCENARIOS.includes(scenario))
+  throw new RangeError("Water source scenario must be 0, 1 or 2");
+ if(!engine||!engine.PRESETS||WATER_SOURCE_PRESET_IDS.some(id=>!Object.hasOwn(engine.PRESETS,id)))
+  throw new TypeError("Original Water engine must provide all eight source designs");
+ // evaluateWaterPreset creates a new private original world for every design.
+ // Returning each unmodified source result preserves diagnostics and provenance.
+ const results=Object.freeze(WATER_SOURCE_PRESET_IDS.map(preset=>
+  evaluateWaterPreset(engine,{preset,seconds,scenario})));
+ return Object.freeze({
+  schema:1,kind:"isolated-water-source-comparison",seconds,scenario,
+  source:WATER_PRESET_SOURCE,results,
+  assumptions:"The eight original source designs are evaluated independently using identical scenario and duration. Not a certified field yield, relative ranking, or live Homestead transaction."
+ });
+}
