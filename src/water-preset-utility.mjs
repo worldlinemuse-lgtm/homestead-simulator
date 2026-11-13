@@ -70,6 +70,17 @@ function buildEditedSourceWorld(engine,preset,componentEdits){
  const edits=validateWaterNativeEdits(controls,componentEdits);
  const world=engine.buildPreset(preset);
  const keys=Object.keys(engine.PRESETS[preset].parts);
+ // Original buildPreset preserves keyed insertion order, but parts carry
+ // no source key. Verify source-defined coordinates/elevation to prevent
+ // silently assigning two same-type components to the wrong source key.
+ if(!Array.isArray(world.parts)||world.parts.length!==keys.length)
+  throw new Error("Original Water source component identity mapping mismatch");
+ for(let i=0;i<keys.length;i++){
+  const spec=engine.PRESETS[preset].parts[keys[i]],part=world.parts[i];
+  if(!part||part.type!==spec.type||part.x!==spec.x||part.z!==spec.z||
+     (spec.o?.elev!==undefined&&part.elev!==spec.o.elev))
+   throw new Error("Original Water source component identity mapping mismatch");
+ }
  for(const edit of edits){
   const index=keys.indexOf(edit.key),part=world.parts[index];
   if(index<0||!part||part.type!==engine.PRESETS[preset].parts[edit.key]?.type)
