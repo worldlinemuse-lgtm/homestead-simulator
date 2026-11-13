@@ -1,6 +1,6 @@
 import {makeScene} from "./scene.js";
 import {nativeLedgerCsv} from "./native-ledger.mjs";
-import {evaluateWaterPreset} from "./water-preset-utility.mjs";
+import {evaluateWaterPreset,evaluateWaterPresetComparison} from "./water-preset-utility.mjs";
 import {UTILITY_CAPABILITIES,assertUtilityRegistry} from "./utility-registry.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
 import {ScenarioTimeline,formatHour} from "./sim-clock.mjs";
@@ -304,7 +304,7 @@ $("objectRotate").addEventListener("click",()=>runEdit(()=>scene.editor.rotate(M
 for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*100,0)+"%"],["houseLoad","houseLoadOut","backgroundLoadW",x=>fmt(x,0)+" W"],["pumpLoad","pumpLoadOut","pumpElectricalW",x=>fmt(x,0)+" W"]]){
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
 }
-let lastWaterPreset=null;
+let lastWaterPreset=null,lastWaterComparison=null;
 for(const id of ["waterPresetSelect","waterPresetScenario","waterPresetDuration"]){
  $(id).addEventListener("change",()=>{
   // Never leave a previous result visible beneath new, uncomputed inputs.
@@ -313,6 +313,75 @@ for(const id of ["waterPresetSelect","waterPresetScenario","waterPresetDuration"
   $("waterPresetReport").textContent="Inputs changed. Choose Evaluate to calculate this Water setup. Your live Homestead model is unchanged.";
  });
 }
+// Both source preview modes are independent of the coupled Homestead chronology.
+for(const id of ["waterPresetScenario","waterPresetDuration"]){
+ $(id).addEventListener("change",()=>{
+  lastWaterComparison=null;
+  $("waterComparisonReport").hidden=true;
+  $("waterComparisonReport").replaceChildren();
+ });
+}
+$("waterAssetReturn").addEventListener("click",()=>jumpToUtility("assetReadout"));
+$("waterCompareRun").addEventListener("click",()=>{
+ const host=$("waterComparisonReport");
+ host.hidden=false;
+ try{
+  const before=JSON.stringify(coordinator.snapshot());
+  const comparison=evaluateWaterPresetComparison(window.HomesteadWaterCore,{
+   scenario:Number($("waterPresetScenario").value),
+   seconds:Number($("waterPresetDuration").value)
+  });
+  if(JSON.stringify(coordinator.snapshot())!==before)
+   throw new Error("Source comparison unexpectedly changed the coupled scenario");
+  lastWaterComparison=comparison;
+  host.replaceChildren();
+  host.dataset.resultState="comparison";
+  const heading=document.createElement("strong");
+  heading.textContent="Eight original Water designs · "+comparison.seconds+" s · "+["low","reference","high"][comparison.scenario]+" hydraulic conditions";
+  host.append(heading);
+  const intro=document.createElement("p");
+  intro.textContent="Each row is independently calculated by the original Water engine, not a yield estimate or potable-water ranking. Select a row to inspect its original diagnostics and treatment gaps.";
+  host.append(intro);
+  const scroller=document.createElement("div");
+  scroller.className="nativeCompareScroll";
+  const table=document.createElement("table");
+  table.className="nativeCompareTable";
+  const head=document.createElement("thead");
+  const hr=document.createElement("tr");
+  for(const label of ["Source design","Outlet (L)","Warnings","Source diagnostics"]){
+   const th=document.createElement("th");th.scope="col";th.textContent=label;hr.append(th);
+  }
+  head.append(hr);table.append(head);
+  const body=document.createElement("tbody");
+  for(const result of comparison.results){
+   const tr=document.createElement("tr");
+   const title=document.createElement("th");title.scope="row";title.textContent=result.preset+" · "+result.name;
+   const quantity=document.createElement("td");quantity.textContent=fmt(result.producedL,2);
+   const warnings=document.createElement("td");warnings.textContent=String(result.warnings.length);
+   const actions=document.createElement("td");
+   const inspect=document.createElement("button");inspect.type="button";
+   inspect.textContent="Inspect "+result.preset;
+   inspect.setAttribute("aria-label","Inspect original source diagnostics for "+result.name);
+   inspect.addEventListener("click",()=>{
+    $("waterPresetSelect").value=result.preset;
+    $("waterPresetSelect").dispatchEvent(new Event("change",{bubbles:true}));
+    $("waterPresetRun").click();
+    $("waterPresetReport").scrollIntoView({block:"nearest",behavior:"auto"});
+    $("waterPresetReport").focus({preventScroll:true});
+   });
+   actions.append(inspect);tr.append(title,quantity,warnings,actions);body.append(tr);
+  }
+  table.append(body);scroller.append(table);host.append(scroller);
+  const note=document.createElement("p");note.className="utilityResultCaution";
+  note.textContent="Source analysis is a research screening only. No comparison transfers water, electricity, money, or time into the live Homestead model.";
+  host.append(note);
+ }catch(error){
+  lastWaterComparison=null;
+  host.dataset.resultState="error";
+  host.textContent="Original Water design comparison failed: "+(error?.message||error);
+  console.error("Water source comparison failure",error);
+ }
+});
 $("waterPresetRun").addEventListener("click",()=>{
  const report=$("waterPresetReport");
  try{
@@ -421,11 +490,15 @@ try{scene=makeScene($("world"),(kind,label)=>{
   $("inspectTitle").textContent=selectedAsset||descriptions[kind][0];
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
   renderAsset(coordinator.snapshot());refreshObjectEditor();
-  setInspectorOpen(true);
+  const selectedWater=kind==="water"&&Boolean(label);
+  $("waterAssetReturn").hidden=!selectedWater;
+  if(selectedWater)jumpToUtility("waterPresetUtility");
+  else setInspectorOpen(true);
 },farmVisual);selectArea("overview");redraw(coordinator.snapshot());
  refreshObjectEditor()}catch(e){fail(e)}
 window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),
  waterPreset:()=>lastWaterPreset,
+ waterComparison:()=>lastWaterComparison,
  step:()=>{stop();advanceMinutes(60)},advanceMinutes:minutes=>{stop();advanceMinutes(minutes)},
  previewTime:minute=>{stop();timeline.preview(minute);updateVisibleClock()},
  resumeTime:()=>{timeline.resume();updateVisibleClock()},
