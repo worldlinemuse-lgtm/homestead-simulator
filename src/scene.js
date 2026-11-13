@@ -621,6 +621,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   const brass=mat(0xb99c62,{metalness:.68,roughness:.31});
   const motorFins=new THREE.Group();
   motorFins.position.set(-.4,1.65,-1.7);
+  motorFins.userData={kind:"water",label:"Water pressure pump",sourcePreset:"E",sourcePartKey:"p"};
   // Fins follow the existing horizontal motor silhouette without changing the pump curve.
   for(let i=0;i<11;i++){
     const x=-.95+i*.19;
@@ -632,6 +633,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   }
   water.add(motorFins);
   const pumpFan=new THREE.Group();pumpFan.position.set(-1.60,1.65,-1.7);
+  pumpFan.userData={kind:"water",label:"Water pressure pump",sourcePreset:"E",sourcePartKey:"p"};
   pumpFan.add(cyl(.18,.18,.10,motorEnd,0,0,0,16));
   for(let k=0;k<7;k++){
     const blade=box(.08,.39,.07,motorShell,.25*Math.cos(k*Math.PI*2/7),.25*Math.sin(k*Math.PI*2/7),0);
@@ -640,6 +642,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   water.add(pumpFan);
   const motorGuard=cyl(.80,.80,.16,motorEnd,-1.69,1.65,-1.7,24);
   motorGuard.rotation.z=Math.PI/2;water.add(motorGuard);
+  motorGuard.userData={kind:"water",label:"Water pressure pump",sourcePreset:"E",sourcePartKey:"p"};
   for(let i=0;i<4;i++){
     const foot=box(.44,.12,.46,motorEnd,-1.20+i*.46,.38,-1.7);
     water.add(foot);
@@ -647,6 +650,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   // Visible flange and bolts are presentation details, not hydraulic junctions.
   const pumpFlange=cyl(.53,.53,.14,brass,.90,1.45,-1.7,18);
   pumpFlange.rotation.z=Math.PI/2;water.add(pumpFlange);
+  pumpFlange.userData={kind:"water",label:"Water pressure pump",sourcePreset:"E",sourcePartKey:"p"};
   for(let i=0;i<8;i++){
     const a=i*Math.PI/4;
     const bolt=cyl(.07,.07,.14,m.steel,1.0,1.45+.40*Math.sin(a),-1.7+.40*Math.cos(a),8);
@@ -662,6 +666,8 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   // The source model is pump -> reverse osmosis. Visible cartridges represent stages,
   // not three additional treatment units in the numerical solver.
 
+  const roSelectInfo=Object.freeze({kind:"water",label:"Reverse-osmosis treatment stage",sourcePreset:"E",sourcePartKey:"r"});
+  const roPick=(object)=>{object.userData={...roSelectInfo};return object;};
   const skids=[];
   // Three parallel visual housings stand for one modeled RO unit. They are
   // not separate solver nodes and do not promise a three-stage treatment train.
@@ -671,15 +677,15 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     const cartridge=cyl(.52,.52,2.85,roShell,x,1.90,-1.0,28);
     water.add(cartridge);skids.push(cartridge);
     cartridge.userData={kind:"water",label:"Reverse-osmosis treatment stage",sourcePreset:"E",sourcePartKey:"r"};
-    water.add(cyl(.60,.60,.27,roCollar,x,3.47,-1.0,28));
-    water.add(cyl(.60,.60,.25,roCollar,x,.39,-1.0,28));
-    water.add(cyl(.17,.17,.19,brass,x,3.66,-1.0,12));
-    water.add(cyl(.17,.17,.17,brass,x,.26,-1.0,12));
+    water.add(roPick(cyl(.60,.60,.27,roCollar,x,3.47,-1.0,28)));
+    water.add(roPick(cyl(.60,.60,.25,roCollar,x,.39,-1.0,28)));
+    water.add(roPick(cyl(.17,.17,.19,brass,x,3.66,-1.0,12)));
+    water.add(roPick(cyl(.17,.17,.17,brass,x,.26,-1.0,12)));
     for(const z of [-1.63,-.37]){
-      water.add(box(.13,3.0,.11,m.steel,x,1.95,z));
+      water.add(roPick(box(.13,3.0,.11,m.steel,x,1.95,z)));
     }
     // Opaque service stripes improve legibility from an oblique camera.
-    for(const y of [1.05,2.9])water.add(cyl(.535,.535,.08,roCollar,x,y,-1.0,28));
+    for(const y of [1.05,2.9])water.add(roPick(cyl(.535,.535,.08,roCollar,x,y,-1.0,28)));
   }
   // Service manifolds and return line visually connect the housings, rather
   // than suggesting three unrelated independent filter devices.
@@ -702,7 +708,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   const tank=group("water","Treated-water storage tank",tankX,tankZ);
   foundationFor(tank,tankX,tankZ,6.2,6.2,m.concrete,{round:true});
   tank.add(cyl(3.1,3.1,.28,m.concrete,0,.18,0));
-  tank.add(cyl(2.8,2.8,5.2,m.tank,0,2.95,0,30));
+  const tankShell=cyl(2.8,2.8,5.2,m.tank,0,2.95,0,30);tank.add(tankShell);
   tank.add(cyl(2.95,2.95,.32,m.steel,0,5.64,0,30));
   for(let i=0;i<4;i++)tank.add(cyl(.095,.095,5.1,m.steel,2.67*Math.cos(i*Math.PI/2),2.95,2.67*Math.sin(i*Math.PI/2),8));
   const tankFill=cyl(2.55,2.55,1,m.water,0,1.0,0,30);tank.add(tankFill);
@@ -2126,6 +2132,20 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     },resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
+      waterPickable:{pump:selectable.includes(motor),ro:skids.every(part=>selectable.includes(part)),tank:selectable.includes(tankShell)},
+      waterPickTargets:(()=>{
+        // Project actual rendered geometry into the live canvas for browser raycast
+        // regression. This reports geometry, not a synthetic selection callback.
+        scene.updateMatrixWorld(true);camera.updateMatrixWorld(true);
+        const rect=canvas.getBoundingClientRect();
+        return [["pump",motor],["ro",skids[1]],["storage",tankShell]].map(([role,object])=>{
+          const center=new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
+          const projected=center.clone().project(camera);
+          return {role,x:rect.left+(projected.x+1)*rect.width/2,
+            y:rect.top+(1-projected.y)*rect.height/2,depth:projected.z,
+            inView:projected.z>=-1&&projected.z<=1&&Math.abs(projected.x)<1&&Math.abs(projected.y)<1};
+        });
+      })(),
       visualEditor:visualEditor.status(),
       visualObjects:visualEditor.list(),
       solarMount:{supportCount:solarSupportProof.length,
