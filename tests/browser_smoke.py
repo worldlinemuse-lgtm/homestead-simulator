@@ -34,6 +34,21 @@ try:
             page.locator("#inspectBtn").click()
             assert page.evaluate("getComputedStyle(document.querySelector('#inspector')).display") == "block"
             assert page.locator("#assetReadout").is_visible()
+            # Native Water preset evaluator runs real vendored source hydraulics in an
+            # isolated world; neither the shared scenario nor its clock may advance.
+            prior_source_eval=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#waterPresetSelect").select_option("E")
+            page.locator("#waterPresetScenario").select_option("1")
+            page.locator("#waterPresetDuration").select_option("60")
+            page.locator("#waterPresetRun").click()
+            water_eval=page.evaluate("window.HomesteadApp.waterPreset()")
+            assert water_eval is not None and water_eval["preset"]=="E",water_eval
+            assert water_eval["schema"]==1 and water_eval["seconds"]==60,water_eval
+            assert water_eval["producedL"]>=0 and water_eval["estimatedPartsUSD"]>=0,water_eval
+            assert water_eval["source"]["path"]=="source/engine.js",water_eval
+            assert "Not a potable-water" in page.locator("#waterPresetReport").inner_text()
+            assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
+                "Water engineering preview mutated the live model",mobile)
             page.locator("#closeInspector").click()
             assert page.evaluate("window.HomesteadApp.world().animals") > 0
             # Native Farm enclosure footprints are mapped from the original
