@@ -1,6 +1,6 @@
 import {makeScene} from "./scene.js";
 import {nativeLedgerCsv} from "./native-ledger.mjs";
-import {evaluateWaterPreset,evaluateWaterPresetComparison} from "./water-preset-utility.mjs";
+import {evaluateWaterPreset,evaluateWaterPresetComparison,waterPresetNativeControls} from "./water-preset-utility.mjs";
 import {UTILITY_CAPABILITIES,assertUtilityRegistry} from "./utility-registry.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
 import {ScenarioTimeline,formatHour} from "./sim-clock.mjs";
@@ -306,6 +306,48 @@ for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
 }
 let lastWaterPreset=null,lastWaterComparison=null;
+function invalidateWaterStudy(){
+ lastWaterPreset=null;
+ $("waterPresetReport").dataset.resultState="none";
+ $("waterPresetReport").textContent="Inputs changed. Choose Evaluate to recalculate; the live Homestead model remains unchanged.";
+}
+function renderNativeWaterControls(){
+ const host=$("waterNativeControls");host.replaceChildren();
+ const controls=waterPresetNativeControls(window.HomesteadWaterCore,$("waterPresetSelect").value);
+ const intro=document.createElement("p");
+ intro.textContent="Original source component inputs · independent engineering study only. Changes do not modify the connected 3D resource ledger.";
+ host.append(intro);
+ for(const c of controls){
+  const label=document.createElement("label");label.className="waterNativeField";
+  const text=document.createElement("span");text.textContent=c.name+" · "+c.label+" ("+c.unit+")";
+  let input;
+  if(c.kind==="boolean"){
+   input=document.createElement("select");
+   for(const [value,caption] of [["true","Yes"],["false","No"]]){
+    const opt=document.createElement("option");opt.value=value;opt.textContent=caption;input.append(opt);
+   }
+   input.value=String(c.value);
+  }else{
+   input=document.createElement("input");input.type="number";
+   input.min=String(c.min);input.max=String(c.max);input.step=String(c.step);input.value=String(c.value);
+  }
+  input.dataset.nativeKey=c.key;input.dataset.nativeField=c.field;input.dataset.nativeKind=c.kind;
+  input.addEventListener("input",invalidateWaterStudy);
+  input.addEventListener("change",invalidateWaterStudy);
+  label.append(text,input);host.append(label);
+ }
+ if(!controls.length){const note=document.createElement("p");
+  note.textContent="This original design has no supported editable parameters.";host.append(note);}
+}
+function readNativeWaterEdits(){
+ return Array.from($("waterNativeControls").querySelectorAll("[data-native-key]")).map(input=>({
+  key:input.dataset.nativeKey,field:input.dataset.nativeField,
+  value:input.dataset.nativeKind==="boolean"?input.value==="true":
+   input.value.trim()===""?NaN:Number(input.value)
+ }));
+}
+$("waterPresetSelect").addEventListener("change",renderNativeWaterControls);
+renderNativeWaterControls();
 for(const id of ["waterPresetSelect","waterPresetScenario","waterPresetDuration"]){
  $(id).addEventListener("change",()=>{
   // Never leave a previous result visible beneath new, uncomputed inputs.
@@ -390,7 +432,8 @@ $("waterPresetRun").addEventListener("click",()=>{
   const result=evaluateWaterPreset(window.HomesteadWaterCore,{
    preset:$("waterPresetSelect").value,
    scenario:Number($("waterPresetScenario").value),
-   seconds:Number($("waterPresetDuration").value)
+   seconds:Number($("waterPresetDuration").value),
+   componentEdits:readNativeWaterEdits()
   });
   if(JSON.stringify(coordinator.snapshot())!==before)
    throw new Error("Isolated Water preview unexpectedly changed the coupled scenario");
@@ -445,6 +488,7 @@ $("waterPresetRun").addEventListener("click",()=>{
    }else report.append(componentList);
   }
   const readouts=[
+   ["Source component settings",result.componentEdits.map(e=>e.key+"."+e.field+" = "+String(e.value)).join("; ")||"Original defaults"],
    ["Water source design",result.name],
    ["Hydraulic conditions",["Low","Reference","High"][result.scenario]],
    ["Elapsed source-engine time",result.seconds+" s"],
@@ -519,7 +563,14 @@ try{scene=makeScene($("world"),(kind,label)=>{
   const selectedWater=kind==="water"&&Boolean(label);
   selectedWaterRole=selectedWater?(label==="Treated-water storage tank"?"storage":"treatment"):null;
   $("waterAssetReturn").hidden=!selectedWater;
-  if(selectedWater)jumpToUtility("waterPresetUtility");
+  if(selectedWater){
+   // A source reference study, not an edit to the coupled equipment inventory.
+   $("waterPresetSelect").value=selectedWaterRole==="storage"?"D":"E";
+   $("waterPresetSelect").dispatchEvent(new Event("change",{bubbles:true}));
+   jumpToUtility("waterPresetUtility");
+   const field=selectedWaterRole==="storage"?"init":"psi";
+   $("waterNativeControls").querySelector('[data-native-field="'+field+'"]')?.focus({preventScroll:true});
+  }
   else setInspectorOpen(true);
 },farmVisual);selectArea("overview");redraw(coordinator.snapshot());
  refreshObjectEditor()}catch(e){fail(e)}
