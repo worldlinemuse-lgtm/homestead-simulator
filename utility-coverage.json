@@ -50,15 +50,33 @@
       "tests": [
         "tests/water-preset-utility.test.mjs",
         "tests/utility-registry.test.mjs",
-        "tests/browser_smoke.py"
+        "tests/browser_smoke.py",
+        "tests/water-native-component-controls.test.mjs"
       ],
       "fidelity": "original-vendored-engine-isolated-world",
       "gaps": [
         "Isolated source research presets do not change Homestead world",
         "No electrical pump supply verification",
         "No potable-water certification",
-        "No validated field yield"
-      ]
+        "No validated field yield",
+        "Only source-native pump pressure, RO drain ratio and selected storage startup parameters are editable; complete source hydraulic network editing remains absent"
+      ],
+      "uiAccess": "3D Water pump / RO equipment / tank selection → original source-native inputs; Utilities directory → same isolated evaluator",
+      "scope": "Isolated hydraulic study; edited pump/RO/storage parameters never change coupled Homestead resource inventory or simulation clock",
+      "units": {
+        "inputs": {
+          "pumpPressure": "psi",
+          "roDrainRatio": "L discarded / L produced",
+          "initialStorageFraction": "0 empty / 1 full",
+          "stand": "boolean"
+        },
+        "outputs": {
+          "throughput": "L",
+          "flow": "L/min",
+          "produced": "L",
+          "drained": "L"
+        }
+      }
     },
     {
       "id": "water.preset.source-comparison",
@@ -89,9 +107,39 @@
       "fidelity": "original-vendored-hydraulic-solver-A-to-H",
       "gaps": [
         "Comparative results are not a ranking of potable-water safety or guaranteed field yield",
-        "No native editable Water schematic or component property editor",
+        "Native component edit subset exists for isolated studies; complete schematic and topology editing remain absent",
         "Independent comparison cannot update the coupled live network",
         "Native Solar dispatcher and Farm planner are separate missing integrations"
+      ]
+    },
+    {
+      "id": "water.preset.native-component-controls",
+      "domain": "water",
+      "status": "partial",
+      "sourcePath": "source/engine.js; source/ui.js",
+      "upstreamRevision": "bd1bfedc8e53d71792f532c5a89d80a33dcf6700",
+      "sourceInterface": "DEF/PRESETS → buildPreset → per-component params → analyze/step; source UI parameter fields",
+      "adapter": "src/water-preset-utility.mjs",
+      "ui": "waterNativeControls",
+      "uiAccess": "3D pump/RO/tank object selection → source-native specific field, or Utilities → Water design calculator",
+      "units": {
+        "pressure": "psi",
+        "reverseOsmosisDrain": "L waste / L product",
+        "storageInitialFraction": "0 or 1",
+        "flow": "L/min",
+        "volume": "L"
+      },
+      "scope": "isolated source-preset engineering study; live model and clock unchanged",
+      "tests": [
+        "tests/water-native-component-controls.test.mjs",
+        "tests/browser_smoke.py"
+      ],
+      "fidelity": "original-vendored-hydraulic-solver-select-component-controls",
+      "gaps": [
+        "Only pump_sky psi, RO drain ratio, barrel50 init/stand, bucket init in supported presets",
+        "Model-specific source identity refers to the isolated preset, not a one-to-one live 3D component",
+        "Complete source editor including plumbing topology, filter media catalog and live electrical dispatch not yet integrated",
+        "No potable-water or field performance certification"
       ]
     },
     {
