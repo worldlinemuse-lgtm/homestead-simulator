@@ -162,3 +162,56 @@ button{transition:background .17s ease,border-color .17s ease,transform .17s eas
 .editorButtons button{flex:1;min-width:42px;min-height:36px;border-radius:8px;background:#315d51}
 #editStatus{font-size:11px;color:#bfe8ce;line-height:1.4;min-height:24px}
 @media(max-width:650px){#inspector .inspector-body{max-height:calc(58dvh - 62px)}}
+
+/* Utility hub navigation: actual executable tools only, no false live controls. */
+.navShort{display:none}
+nav #utilitiesBtn{border:1px solid rgba(157,228,192,.3);background:rgba(95,161,124,.15)}
+nav #utilitiesBtn[aria-expanded="true"]{background:rgba(157,228,192,.26);border-color:rgba(157,228,192,.66)}
+#inspector .inspector-body{scroll-behavior:auto}
+.utilityHub{display:flex;flex-direction:column;gap:10px;padding:12px;
+  background:rgba(126,175,147,.12);border:1px solid rgba(167,224,186,.36);border-radius:13px}
+.utilityHub:focus,.utilitySection:focus{outline:2px solid #b4f4d2;outline-offset:3px}
+.utilityHubHeading{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:6px}
+.utilityHub h3{margin:2px 0 0;font-size:16px;font-weight:710;color:#f5fff4}
+.utilityHub h4{margin:8px 0 0;font-size:12px;font-weight:700;color:#e2f9e7}
+.utilityHub .sub{font-size:11px;line-height:1.5;color:#d1e8d9}
+.utilityAvailability{font-size:10px;color:#c6f4d3;border:1px solid #659c7a;
+  background:rgba(38,108,70,.4);padding:3px 8px;border-radius:12px}
+.utilityQuickActions{display:grid;gap:7px}
+.utilityQuickActions button{background:#315b50;text-align:left;font-size:12px;padding:9px}
+.utilityHub label{color:#dfeddf;font-size:11px;font-weight:620}
+#nativeUtilitySearch{display:block;width:100%;min-height:38px;border-radius:8px;
+  border:1px solid #81aa93;color:#f4fff7;background:#233f38;padding:8px 10px;font-size:13px}
+#nativeUtilitySearch:focus-visible{outline:2px solid #b4f4d2;outline-offset:1px}
+.nativeUtilityList{display:grid;gap:8px}
+.nativeUtilityEntry{border:1px solid rgba(188,229,197,.28);border-radius:10px;overflow:hidden;
+  background:rgba(13,37,30,.66)}
+.nativeUtilityEntry button{display:block;width:100%;min-height:55px;text-align:left;padding:10px 12px;
+  border:0;background:transparent;border-radius:0;white-space:normal}
+.nativeUtilityEntry button:hover,.nativeUtilityEntry button:focus-visible{background:rgba(96,158,124,.22)}
+.nativeUtilityEntry strong{display:block;font-size:12px;color:#f5fff6}
+.nativeUtilityEntry small{display:block;margin-top:4px;color:#cce6d4;font-size:11px;line-height:1.45}
+.nativeUtilityEntry .utilityScope{margin:0;padding:5px 12px 9px;font-size:10px}
+.utilityScope{font-size:10px;font-weight:700;letter-spacing:.025em;color:#a8e9c6;line-height:1.5}
+.utilityHelp{font-size:11px;color:#d0e4d8;line-height:1.5;margin:5px 0 8px}
+.utilityPending{font-size:10px;color:#d6e2d9;line-height:1.5;border-top:1px solid rgba(220,244,226,.15);padding-top:9px}
+.utilitySection{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-top:1px solid rgba(234,246,235,.24)}
+.utilitySection h3{font-size:14px;margin:0;color:#f3fff0}
+.utilitySection select{width:100%;min-height:38px;color:#f6fff8;background:#294944;
+  border:1px solid #739780;border-radius:8px;padding:7px 8px;font:inherit;font-size:12px}
+.utilitySection label{font-size:11px;color:#e0f0e6;font-weight:610}
+.utilitySection button{white-space:normal;text-align:center;min-height:38px}
+#waterPresetRun{background:#37795d;border:1px solid #86b99b;color:#f9fff7;font-weight:720}
+#waterPresetReport{line-height:1.55;border:1px solid rgba(154,215,177,.25);
+  border-radius:8px;padding:10px;background:rgba(14,38,34,.74)}
+#waterPresetReport p{font-size:11px;color:#e4f2e7;margin:5px 0;overflow-wrap:anywhere}
+#utilityExports button{width:100%}
+#nativeUtilityEmpty[hidden]{display:none}
+@media(max-width:650px){
+  nav{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:3px}
+  nav button,nav #inspectBtn{min-width:0;padding:6px 2px;font-size:10px;margin:0;white-space:nowrap}
+  .navWide{display:none}.navShort{display:inline}
+  .utilityHub{padding:10px}.utilityHub h3{font-size:14px}
+  .utilitySection{gap:7px}
+  .nativeUtilityEntry button{min-height:53px}
+}
