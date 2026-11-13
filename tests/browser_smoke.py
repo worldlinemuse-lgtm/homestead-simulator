@@ -210,6 +210,15 @@ try:
                 page.screenshot(path=str(preview_shots/(
                     ("mobile" if mobile else "desktop")+"-water-3d-"+role+".png")))
                 page.locator("#closeInspector").click()
+            # The top-level source-native directory resets object-specific
+            # filtering while calling the SAME original executable evaluator.
+            page.locator("#utilitiesBtn").click()
+            page.locator('[data-utility-id="water.preset.native-evaluator"]').click()
+            page.locator("#waterPresetRun").click()
+            assert "Selected 3D" not in page.locator("#waterPresetReport").inner_text()
+            assert page.evaluate("window.HomesteadApp.waterPreset()") is not None
+            assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#closeInspector").click()
             # Returning to whole property must not mutate the model or playback.
             page.locator('nav [data-view="overview"]').click()
             assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
