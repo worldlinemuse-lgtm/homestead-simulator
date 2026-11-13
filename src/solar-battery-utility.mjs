@@ -74,3 +74,40 @@ export function evaluateNativeSolarBattery(model,options={}){
    throw new RangeError("Original Solar model returned invalid "+name);
  return Object.freeze(report);
 }
+
+// A source-anchor sweep, NOT a fitted replacement or a new battery equation.
+// Each point calls the original engine at an actual Renogy 25 °C table current.
+export function evaluateNativeSolarAgmSweep(model,{tempC=20}={}){
+ if(!model||typeof model.drainMult!=="function"||
+    !Array.isArray(model.AGM_RATE)||typeof model.agmCapAt!=="function")
+  throw new TypeError("Original AGM source capacity table is required");
+ finite("tempC",tempC,-15,40);
+ if(model.AGM_RATE.length<4||model.AGM_RATE.length>64)
+  throw new TypeError("Original AGM source table length is invalid");
+ const points=model.AGM_RATE.map(([hours,amps])=>{
+  finite("source rate hours",hours,0.01,1000);
+  finite("source rate current",amps,0.01,1000);
+  const direct=model.drainMult("agm",amps,tempC);
+  const capacity=model.agmCapAt(amps);
+  if(!Number.isFinite(direct.m)||direct.m<=0||
+     !Number.isFinite(capacity.ah)||capacity.ah<=0)
+   throw new RangeError("Original AGM source data was nonfinite");
+  return Object.freeze({
+   currentA:amps,sourceRatedHours:hours,
+   availableAh:capacity.ah,drainMultiplier:direct.m,
+   sourceRateFactor:direct.rate,sourceTemperatureFactor:direct.temp
+  });
+ }).sort((a,b)=>a.currentA-b.currentA);
+ if(points.some((p,i)=>i>0&&p.currentA===points[i-1].currentA))
+  throw new TypeError("Duplicate source AGM discharge current");
+ return Object.freeze({
+  schema:1,kind:"isolated-solar-native-agm-table-sweep",
+  source:SOLAR_BATTERY_SOURCE,tempC,
+  mode:"independent source table comparison; no live state mutation",
+  points:Object.freeze(points),
+  limitations:Object.freeze([
+   "Only the original Renogy AGM table currents are sampled; no alternate battery chemistry is claimed.",
+   "Source rate and temperature corrections are combined using its explicit assumption; discharge forecasts are not certified."
+  ])
+ });
+}
