@@ -57,8 +57,9 @@ capabilities.push(Object.freeze({
  ui:"waterTimeRun",
  title:"Water outlet time to target volume",
  purpose:"Use the original Water solver to estimate time to a requested outlet volume or explain why it cannot be reached.",
- inputUnits:Object.freeze({preset:"source-key",seconds:"s",scenario:"index",liters:"L"}),
- outputUnits:Object.freeze({produced:"L",spilled:"L",drained:"L",estimatedParts:"USD",minutes:"min"}),
+ sources:Object.freeze([Object.freeze({domain:"water",interface:"HomesteadWaterCore.buildPreset/timeTo",unit:"L",fidelity:"original-hydraulic-solver-isolated"})]),
+ inputUnits:Object.freeze({preset:"source-key",scenario:"index",liters:"L"}),
+ outputUnits:Object.freeze({minutes:"min"}),
  tests:"tests/water-time-to-volume.test.mjs",
  limitations:"24-hour source-model horizon; no guarantee of flow, water quality, electrical availability or field performance"
 }));
@@ -94,11 +95,11 @@ export function assertUtilityRegistry(registry=UTILITY_CAPABILITIES){
        c.sourceBlob!=="e3e516aa462272d83442acc7904e5592eeb9f6e7"||
        c.isolatedWorldSteps!==true||c.clockUnit!=="s"||
        c.sources.length!==1||c.sources[0]?.domain!=="water"||
-       c.sources[0]?.interface!=="HomesteadWaterCore.buildPreset/analyze/step"||
-       c.inputUnits?.preset!=="source-key"||c.inputUnits?.seconds!=="s"||
-       c.inputUnits?.scenario!=="index"||c.outputUnits?.produced!=="L"||
-       c.outputUnits?.spilled!=="L"||c.outputUnits?.drained!=="L"||
-       c.outputUnits?.estimatedParts!=="USD"))
+       c.sources[0]?.interface!==(c.id==="water.preset.time-to-volume"?"HomesteadWaterCore.buildPreset/timeTo":"HomesteadWaterCore.buildPreset/analyze/step")||
+       c.inputUnits?.preset!=="source-key"||(c.id==="water.preset.time-to-volume"?
+        c.inputUnits?.seconds!==undefined||c.inputUnits?.liters!=="L"||c.outputUnits?.minutes!=="min"||["produced","spilled","drained","estimatedParts"].some(k=>c.outputUnits?.[k]!==undefined):
+        c.inputUnits?.seconds!=="s"||c.outputUnits?.produced!=="L"||c.outputUnits?.spilled!=="L"||c.outputUnits?.drained!=="L"||c.outputUnits?.estimatedParts!=="USD")||
+       c.inputUnits?.scenario!=="index"))
       throw new TypeError("Incomplete capability contract: "+c.id);
     const domains=new Set();
     for(const s of c.sources){
