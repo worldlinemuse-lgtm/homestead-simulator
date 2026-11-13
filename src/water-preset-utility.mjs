@@ -103,9 +103,9 @@ export function evaluateWaterTimeToVolume(engine,{preset="E",liters=10,scenario=
  const {world,edits}=buildEditedSourceWorld(engine,preset,componentEdits);
  const result=engine.timeTo(world,liters,scenario,24);
  if(!result||!(result.min===null||(typeof result.min==="number"&&
-    Number.isFinite(result.min)&&result.min>=0))||
+    Number.isFinite(result.min)&&result.min>=0&&result.min<=24*60))||
     !Number.isSafeInteger(result.steps)||result.steps<0||
-    (result.min===null&&typeof result.why!=="string"))
+    (result.min===null&&(typeof result.why!=="string"||!result.why.trim())))
   throw new Error("Original Water time-to-volume result is invalid");
  return Object.freeze({schema:1,kind:"isolated-water-time-to-volume",
   preset,liters,scenario,componentEdits:edits,source:WATER_PRESET_SOURCE,
