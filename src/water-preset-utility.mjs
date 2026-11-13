@@ -62,6 +62,42 @@ const finite=(field,value)=>{
   throw new TypeError(field+" must be a nonnegative finite number");
  return value;
 };
+function buildEditedSourceWorld(engine,preset,componentEdits){
+ if(!engine||typeof engine.buildPreset!=="function"||!engine.PRESETS||
+    typeof preset!=="string"||!Object.hasOwn(engine.PRESETS,preset))
+  throw new TypeError("Original Water preset engine is required");
+ const controls=waterPresetNativeControls(engine,preset);
+ const edits=validateWaterNativeEdits(controls,componentEdits);
+ const world=engine.buildPreset(preset);
+ const keys=Object.keys(engine.PRESETS[preset].parts);
+ for(const edit of edits){
+  const index=keys.indexOf(edit.key),part=world.parts[index];
+  if(index<0||!part||part.type!==engine.PRESETS[preset].parts[edit.key]?.type)
+   throw new Error("Original Water preset component identity mismatch");
+  part.params[edit.field]=edit.value;
+  if(edit.field==="init")part.rt.vol=engine.DEF[part.type].capL*edit.value;
+ }
+ return {world,keys,edits};
+}
+export function evaluateWaterTimeToVolume(engine,{preset="E",liters=10,scenario=1,componentEdits=[]}={}){
+ if(!engine||typeof engine.timeTo!=="function")
+  throw new TypeError("Original Water timeTo engine API is required");
+ if(typeof liters!=="number"||!Number.isFinite(liters)||liters<=0||liters>10000)
+  throw new RangeError("Target volume must be finite and between 0 and 10000 L");
+ if(!WATER_PRESET_SCENARIOS.includes(scenario))
+  throw new RangeError("Water source scenario must be 0, 1 or 2");
+ const {world,edits}=buildEditedSourceWorld(engine,preset,componentEdits);
+ const result=engine.timeTo(world,liters,scenario,24);
+ if(!result||!(result.min===null||(typeof result.min==="number"&&
+    Number.isFinite(result.min)&&result.min>=0))||
+    !Number.isSafeInteger(result.steps)||result.steps<0||
+    (result.min===null&&typeof result.why!=="string"))
+  throw new Error("Original Water time-to-volume result is invalid");
+ return Object.freeze({schema:1,kind:"isolated-water-time-to-volume",
+  preset,liters,scenario,componentEdits:edits,source:WATER_PRESET_SOURCE,
+  minutes:result.min,reason:result.min===null?result.why:null,solverSteps:result.steps,
+  maxHours:24,assumptions:"Original Water hydraulic estimate over at most 24 modeled hours. Not a guarantee of safe water, sustained yield or electrical supply. Live Homestead state unchanged."});
+}
 export function evaluateWaterPreset(engine,{preset="E",seconds=60,scenario=1,componentEdits=[]}={}){
  if(!engine||typeof engine.buildPreset!=="function"||typeof engine.analyze!=="function"||
     typeof engine.step!=="function"||!engine.PRESETS||typeof engine.PRESETS!=="object")
@@ -72,19 +108,7 @@ export function evaluateWaterPreset(engine,{preset="E",seconds=60,scenario=1,com
   throw new RangeError("Water preview duration must be 60, 300 or 900 seconds");
  if(!WATER_PRESET_SCENARIOS.includes(scenario))
   throw new RangeError("Water source scenario must be 0, 1 or 2");
- const controls=waterPresetNativeControls(engine,preset);
- const edits=validateWaterNativeEdits(controls,componentEdits);
- // Construct the actual original topology, then edit only its fresh private state.
- const world=engine.buildPreset(preset);
- const keys=Object.keys(engine.PRESETS[preset].parts);
- for(const edit of edits){
-  const index=keys.indexOf(edit.key),part=world.parts[index];
-  if(index<0||!part||part.type!==engine.PRESETS[preset].parts[edit.key]?.type)
-   throw new Error("Original Water preset component identity mismatch");
-  part.params[edit.field]=edit.value;
-  // Preserve original resetPart() initial storage formula before any solver step.
-  if(edit.field==="init")part.rt.vol=engine.DEF[part.type].capL*edit.value;
- }
+ const {world,keys,edits}=buildEditedSourceWorld(engine,preset,componentEdits);
  const study=engine.analyze(world); // original engine attaches caches only to this world
  let elapsed=0,iterations=0,last=null;
  while(elapsed<seconds-1e-8){
