@@ -39,6 +39,17 @@ const capabilities=[
     limitations:"Isolated source Water solver only; not connected to live pump electricity, inventory, weather, or potability testing"
   }
 ];
+// The comparison is a second real executable UI workflow over the same original
+// hydraulic engine, not a new or simplified calculation implementation.
+capabilities.push(Object.freeze({
+ ...capabilities[1],
+ id:"water.preset.source-comparison",
+ entrypoint:"evaluateWaterPresetComparison",
+ ui:"waterCompareRun",
+ title:"Compare eight source Water designs",
+ purpose:"Run original Water designs A–H using identical conditions and inspect each original solver diagnostic.",
+ tests:"tests/water-preset-comparison.test.mjs"
+}));
 export const UTILITY_CAPABILITIES=Object.freeze(capabilities.map(c=>Object.freeze(c)));
 export function utilityCapability(id){
   if(typeof id!=="string")throw new TypeError("Capability id must be a string");
