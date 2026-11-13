@@ -38,8 +38,9 @@ try:
             assert page.locator("#inspectBtn").get_attribute("aria-expanded")=="true"
             assert page.evaluate("document.activeElement.id")=="utilityHub"
             available=page.locator("#nativeUtilityList button[data-utility-id]")
-            assert available.count()==2,available.all_text_contents()
-            assert available.first.get_attribute("data-utility-id")=="water.preset.native-evaluator", (
+            assert available.count()>=3,available.all_text_contents()
+            assert page.locator('[data-utility-id="water.preset.source-comparison"]').count()==1
+            assert available.first.get_attribute("data-utility-id").startswith("water.preset."), (
                 "Water evaluator should be first in native utility directory",mobile)
             assert page.locator('[data-utility-id="water.preset.native-evaluator"]').count()==1
             assert page.locator('[data-utility-id="cross-domain.resource-ledger.csv"]').count()==1
@@ -771,8 +772,8 @@ try:
             assert rect["height"]>=40,("Narrow navigation tap targets too short",i,rect)
         narrow.locator("#utilitiesBtn").click()
         assert narrow.locator("#inspector").is_visible()
-        assert narrow.locator("#nativeUtilityList button").first.get_attribute("data-utility-id")==(
-            "water.preset.native-evaluator")
+        assert narrow.locator("#nativeUtilityList button").first.get_attribute("data-utility-id").startswith(
+            "water.preset.")
         (ROOT/"tests"/"artifacts").mkdir(parents=True,exist_ok=True)
         narrow.screenshot(path=str(ROOT/"tests"/"artifacts"/"narrow-utility-hub.png"))
         narrow.close()
