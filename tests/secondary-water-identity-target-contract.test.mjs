@@ -94,6 +94,46 @@ test("invalid Water component edits fail before invoking the original time-to-vo
  assert.equal(invoked,2);
 });
 
+test("invalid target and scenario requests never dispatch the source solver",()=>{
+ // Validation is a trust boundary: malformed external values must not
+ // construct a hydraulic world, advance its clock, or invoke timeTo.
+ let builds=0,calls=0;
+ const traced={...original,
+  buildPreset(...args){builds++;return original.buildPreset(...args);},
+  timeTo(...args){calls++;return original.timeTo(...args);}
+ };
+ const badTargets=[NaN,Infinity,-Infinity,0,-1,10000.01,0.01,
+  0.001,null,"10",{},[],true];
+ for(const liters of badTargets){
+  assert.throws(()=>evaluateWaterTimeToVolume(traced,{preset:"E",liters,scenario:1}),
+   error=>error instanceof Error&&/target|volume|resolution/i.test(error.message),
+   "Reject invalid target before constructing source world");
+  assert.equal(builds,0);
+  assert.equal(calls,0);
+ }
+ for(const scenario of [-1,3,NaN,Infinity,null,"1",{},[]]){
+  assert.throws(()=>evaluateWaterTimeToVolume(traced,{preset:"E",liters:10,scenario}),
+   error=>error instanceof Error&&/scenario/i.test(error.message));
+  assert.equal(builds,0);
+  assert.equal(calls,0);
+ }
+ for(const preset of ["", "unknown", null, 3, {}, []]){
+  assert.throws(()=>evaluateWaterTimeToVolume(traced,{preset,liters:10,scenario:1}),
+   error=>error instanceof Error&&/preset/i.test(error.message));
+  assert.equal(builds,0);
+  assert.equal(calls,0);
+ }
+ // Adjacent legal values preserve source delegation and explicit units.
+ for(const liters of [0.010000001,10000]){
+  const result=evaluateWaterTimeToVolume(traced,{preset:"H",liters,scenario:1});
+  assert.equal(result.liters,liters);
+  assert.equal(result.minutes,null);
+  assert.equal(result.maxHours,24);
+ }
+ assert.equal(builds,2);
+ assert.equal(calls,2);
+});
+
 test("same-type upstream component reorder must reject incorrect source-key attribution",()=>{
  // Original source preset G contains two Mission filters with different keys
  // but the same type; positional type-only verification cannot distinguish them.
