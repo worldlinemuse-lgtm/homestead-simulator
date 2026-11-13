@@ -240,6 +240,7 @@ nav #utilitiesBtn[aria-expanded="true"]{background:rgba(157,228,192,.26);border-
 .waterUtilityActions{display:flex;flex-wrap:wrap;gap:7px}
 .waterUtilityActions button{flex:1 1 145px;min-height:42px}
 .nativeCompareReport{display:grid;gap:10px;min-width:0}
+#waterComparisonReport[hidden],#waterAssetReturn[hidden]{display:none!important}
 .nativeCompareScroll{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .nativeCompareTable{border-collapse:collapse;width:100%;min-width:295px;font-size:11px}
 .nativeCompareTable th,.nativeCompareTable td{text-align:left;vertical-align:top;border-bottom:1px solid rgba(234,246,235,.17);padding:8px 6px}
