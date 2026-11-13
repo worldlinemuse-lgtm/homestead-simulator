@@ -37,7 +37,7 @@ test("repeated source previews are deterministic and cannot mutate an existing l
  assert.ok(Object.isFrozen(first.warnings));
 });
 test("source preset cases with no outlet flow retain honest zero output, no invented yield",()=>{
- for(const preset of ["A","C","E","H"]){
+ for(const preset of ["A","B","C","D","E","F","G","H"]){
   const r=evaluateWaterPreset(engine,{preset,seconds:60,scenario:1});
   for(const name of ["producedL","spilledL","drainedL","divertedL","estimatedPartsUSD"])
    assert.ok(Number.isFinite(r[name])&&r[name]>=0,preset+" "+name);
@@ -61,9 +61,9 @@ test("Water preview rejects invalid requests before invoking the engine",()=>{
 });
 test("low, baseline and high source solver scenarios are finite and isolated",()=>{
  for(const scenario of [0,1,2]){
-  const r=evaluateWaterPreset(engine,{preset:"E",seconds:300,scenario});
+  const r=evaluateWaterPreset(engine,{preset:"E",seconds:900,scenario});
   assert.equal(r.scenario,scenario);
   assert.ok(r.producedL>=0);
-  assert.equal(r.seconds,300);
+  assert.equal(r.seconds,900);
  }
 });
