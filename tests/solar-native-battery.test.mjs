@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 import {createHash} from "node:crypto";
-import {evaluateNativeSolarBattery,SOLAR_BATTERY_SOURCE} from "../src/solar-battery-utility.mjs";
+import {evaluateNativeSolarBattery,evaluateNativeSolarAgmSweep,SOLAR_BATTERY_SOURCE} from "../src/solar-battery-utility.mjs";
 const code=fs.readFileSync(new URL("../vendor/solar-battery-native.js",import.meta.url),"utf8");
 const blob=createHash("sha1").update("blob "+Buffer.byteLength(code)+"\0"+code).digest("hex");
 const ctx={module:{exports:{}},window:undefined};
@@ -83,4 +83,32 @@ test("invalid, nonfinite, forged, and unsafe Solar study inputs fail closed",()=
  assert.throws(()=>evaluateNativeSolarBattery(native,{...valid,chem:"lfp",tempC:-25,heatMode:"mid"}),/requires/);
  assert.throws(()=>evaluateNativeSolarBattery(null,valid),/original Solar/);
  assert.throws(()=>evaluateNativeSolarBattery(native,[]),/options/);
+});
+
+test("source AGM discharge-table sweep is exact original-data evaluation at all source anchor currents",()=>{
+ const before=JSON.stringify(native);
+ for(const tempC of [-15,0,20,40]){
+  const result=evaluateNativeSolarAgmSweep(native,{tempC});
+  assert.equal(result.points.length,native.AGM_RATE.length);
+  assert.equal(result.tempC,tempC);
+  assert.equal(result.source.blob,SOLAR_BATTERY_SOURCE.blob);
+  assert.ok(result.points.every(p=>Number.isFinite(p.drainMultiplier)&&p.drainMultiplier>0));
+  for(const p of result.points){
+   const anchor=native.AGM_RATE.find(row=>row[1]===p.currentA);
+   assert.ok(anchor);
+   assert.equal(p.sourceRatedHours,anchor[0]);
+   assert.equal(p.availableAh,native.agmCapAt(p.currentA).ah);
+   assert.equal(p.drainMultiplier,native.drainMult("agm",p.currentA,tempC).m);
+   assert.equal(p.sourceRateFactor,native.drainMult("agm",p.currentA,tempC).rate);
+  }
+  assert.deepEqual(result,evaluateNativeSolarAgmSweep(native,{tempC}));
+ }
+ assert.equal(JSON.stringify(native),before);
+});
+test("source AGM sweep rejects nonfinite, unsupported, out-of-table temperatures and forged model",()=>{
+ for(const tempC of [-16,41,NaN,Infinity,-Infinity,"20",null])
+  assert.throws(()=>evaluateNativeSolarAgmSweep(native,{tempC}),/finite number/);
+ assert.throws(()=>evaluateNativeSolarAgmSweep(null),/source capacity table/);
+ const broken={...native,AGM_RATE:[[1,5],[1,5],[2,10],[3,20]]};
+ assert.throws(()=>evaluateNativeSolarAgmSweep(broken),/Duplicate/);
 });
