@@ -1,0 +1,145 @@
+{
+  "schema": 1,
+  "coverage": "partial-source-audit",
+  "auditDate": "2026-11-12",
+  "scope": "Authoritative originals preserved; this is a traced subset, not a comprehensive upstream feature inventory",
+  "upstreams": {
+    "solar": {
+      "repository": "worldlinemuse-lgtm/solar-sandbox",
+      "revision": "871dd8c0ef03a05feb339c9761ead900875f16b5"
+    },
+    "water": {
+      "repository": "worldlinemuse-lgtm/water-purification-simulator",
+      "revision": "bd1bfedc8e53d71792f532c5a89d80a33dcf6700"
+    },
+    "farm": {
+      "repository": "worldlinemuse-lgtm/farm-sim",
+      "revision": "d6614d7981535fa2b74be86e0c5356af57b56e3b"
+    }
+  },
+  "capabilities": [
+    {
+      "id": "cross-domain.resource-ledger.csv",
+      "domain": "cross-domain",
+      "status": "integrated",
+      "sourcePath": null,
+      "upstreamRevision": null,
+      "sourceInterface": "coordinator.snapshot cumulative",
+      "adapter": "src/native-ledger.mjs",
+      "ui": "ledgerCsvBtn",
+      "tests": [
+        "tests/native-ledger.test.mjs",
+        "tests/native-ledger-calendar.test.mjs",
+        "tests/utility-registry.test.mjs"
+      ],
+      "fidelity": "experimental-coupled-snapshot",
+      "gaps": [
+        "Single cumulative snapshot only",
+        "Solar dispatch and Farm shortage feedback are experimental"
+      ]
+    },
+    {
+      "id": "water.preset.native-evaluator",
+      "domain": "water",
+      "status": "integrated",
+      "sourcePath": "source/engine.js",
+      "upstreamRevision": "bd1bfedc8e53d71792f532c5a89d80a33dcf6700",
+      "sourceInterface": "buildPreset/analyze/step",
+      "adapter": "src/water-preset-utility.mjs",
+      "ui": "waterPresetRun",
+      "tests": [
+        "tests/water-preset-utility.test.mjs",
+        "tests/utility-registry.test.mjs",
+        "tests/browser_smoke.py"
+      ],
+      "fidelity": "original-vendored-engine-isolated-world",
+      "gaps": [
+        "Isolated source research presets do not change Homestead world",
+        "No electrical pump supply verification",
+        "No potable-water certification",
+        "No validated field yield"
+      ]
+    },
+    {
+      "id": "water.source-time-to-volume",
+      "domain": "water",
+      "status": "not-integrated",
+      "sourcePath": "source/engine.js",
+      "upstreamRevision": "bd1bfedc8e53d71792f532c5a89d80a33dcf6700",
+      "sourceInterface": "timeTo/timeToGen",
+      "adapter": null,
+      "ui": null,
+      "tests": [],
+      "fidelity": "not-evaluated",
+      "gaps": [
+        "Source function not exposed by current vendored Homestead wrapper"
+      ]
+    },
+    {
+      "id": "water.source-visual-network-editor",
+      "domain": "water",
+      "status": "not-integrated",
+      "sourcePath": "source/ui.js",
+      "upstreamRevision": "bd1bfedc8e53d71792f532c5a89d80a33dcf6700",
+      "sourceInterface": "interactive world editor",
+      "adapter": null,
+      "ui": null,
+      "tests": [],
+      "fidelity": "not-evaluated",
+      "gaps": [
+        "Native source UI and editable hydraulic network not ported"
+      ]
+    },
+    {
+      "id": "solar.full-dispatch-controls",
+      "domain": "solar",
+      "status": "not-integrated",
+      "sourcePath": null,
+      "upstreamRevision": "871dd8c0ef03a05feb339c9761ead900875f16b5",
+      "sourceInterface": null,
+      "adapter": null,
+      "ui": null,
+      "tests": [],
+      "fidelity": "not-audited",
+      "gaps": [
+        "Original dispatcher source entrypoint requires source inspection",
+        "Current coordinator uses experimental PV envelope and battery ledger"
+      ]
+    },
+    {
+      "id": "farm.original-daily-biology",
+      "domain": "farm",
+      "status": "partial",
+      "sourcePath": null,
+      "upstreamRevision": "d6614d7981535fa2b74be86e0c5356af57b56e3b",
+      "sourceInterface": "HomesteadFarmCore.advanceDay/snapshot",
+      "adapter": "src/coordinator.js",
+      "ui": "farm",
+      "tests": [
+        "tests/engine.test.cjs"
+      ],
+      "fidelity": "original-seeded-biology-daily",
+      "gaps": [
+        "Deficit response not coupled to biological outcomes",
+        "Daily loads are redistributed hourly"
+      ]
+    },
+    {
+      "id": "farm.native-agent-geometry",
+      "domain": "farm",
+      "status": "partial",
+      "sourcePath": "source/src/world/agents.js",
+      "upstreamRevision": "d6614d7981535fa2b74be86e0c5356af57b56e3b",
+      "sourceInterface": "original world agents",
+      "adapter": "src/scene.js",
+      "ui": "farm",
+      "tests": [
+        "tests/browser_smoke.py"
+      ],
+      "fidelity": "source-derived-scenes-partial",
+      "gaps": [
+        "Additional object/animal interactions and geometry require audit"
+      ]
+    }
+  ]
+}
