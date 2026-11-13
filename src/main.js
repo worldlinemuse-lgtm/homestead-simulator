@@ -1,5 +1,6 @@
 import {makeScene} from "./scene.js";
 import {nativeLedgerCsv} from "./native-ledger.mjs";
+import {evaluateWaterPreset} from "./water-preset-utility.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
 import {ScenarioTimeline,formatHour} from "./sim-clock.mjs";
 const $=id=>document.getElementById(id);
@@ -243,6 +244,52 @@ $("objectRotate").addEventListener("click",()=>runEdit(()=>scene.editor.rotate(M
 for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*100,0)+"%"],["houseLoad","houseLoadOut","backgroundLoadW",x=>fmt(x,0)+" W"],["pumpLoad","pumpLoadOut","pumpElectricalW",x=>fmt(x,0)+" W"]]){
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
 }
+let lastWaterPreset=null;
+$("waterPresetRun").addEventListener("click",()=>{
+ const report=$("waterPresetReport");
+ try{
+  const before=JSON.stringify(coordinator.snapshot());
+  const result=evaluateWaterPreset(window.HomesteadWaterCore,{
+   preset:$("waterPresetSelect").value,
+   scenario:Number($("waterPresetScenario").value),
+   seconds:Number($("waterPresetDuration").value)
+  });
+  if(JSON.stringify(coordinator.snapshot())!==before)
+   throw new Error("Isolated Water preview unexpectedly changed the coupled scenario");
+  lastWaterPreset=result;
+  report.replaceChildren();
+  const rows=[
+   ["Preset",result.name],
+   ["Hydraulic scenario",String(result.scenario)],
+   ["Original solver output",fmt(result.producedL,2)+" L in "+result.seconds+" s"],
+   ["Spill / drain / diversion",fmt(result.spilledL,2)+" / "+fmt(result.drainedL,2)+" / "+fmt(result.divertedL,2)+" L"],
+   ["Estimated source parts",fmt(result.estimatedPartsUSD,2)+" USD (research estimate)"],
+   ["Unpriced connections",String(result.unpricedConnections)],
+   ["Source screening",result.safetyScreen],
+   ["Germ coverage gaps",result.treatmentGaps.join("; ")||"None identified by source screening"],
+   ["Chemical coverage gaps",result.chemicalGaps.join("; ")||"None identified by source screening"],
+   ["No-flow diagnostic",result.noFlowReason||"Not reported"]
+  ];
+  for(const [name,value] of rows){
+   const p=document.createElement("p");
+   p.textContent=name+": "+value;
+   report.append(p);
+  }
+  if(result.warnings.length){
+   const p=document.createElement("p");
+   p.textContent="Source warnings: "+result.warnings.slice(0,4).join("; ")+
+     (result.warnings.length>4?" (and "+(result.warnings.length-4)+" more)":"");
+   report.append(p);
+  }
+  const caution=document.createElement("p");
+  caution.textContent="Independent source-engine calculation, NOT transferred into the live Homestead model. Not a potable-water or electrical certification.";
+  report.append(caution);
+ }catch(error){
+  lastWaterPreset=null;
+  report.textContent="Water source evaluation failed: "+(error?.message||error);
+  console.error("Isolated Water preset failure",error);
+ }
+});
 $("ledgerCsvBtn").addEventListener("click",()=>{
  try{
   const snapshot=coordinator.snapshot();
@@ -270,6 +317,7 @@ try{scene=makeScene($("world"),(kind,label)=>{
 },farmVisual);selectArea("overview");redraw(coordinator.snapshot());
  refreshObjectEditor()}catch(e){fail(e)}
 window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),
+ waterPreset:()=>lastWaterPreset,
  step:()=>{stop();advanceMinutes(60)},advanceMinutes:minutes=>{stop();advanceMinutes(minutes)},
  previewTime:minute=>{stop();timeline.preview(minute);updateVisibleClock()},
  resumeTime:()=>{timeline.resume();updateVisibleClock()},
