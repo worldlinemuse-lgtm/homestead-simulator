@@ -1,6 +1,7 @@
 import {makeScene} from "./scene.js";
 import {nativeLedgerCsv} from "./native-ledger.mjs";
 import {evaluateWaterPreset} from "./water-preset-utility.mjs";
+import {UTILITY_CAPABILITIES,assertUtilityRegistry} from "./utility-registry.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
 import {ScenarioTimeline,formatHour} from "./sim-clock.mjs";
 const $=id=>document.getElementById(id);
@@ -218,7 +219,64 @@ $("resetBtn").addEventListener("click",()=>{stop();try{resetScenario();$("errors
 document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=null;selectArea(b.dataset.view);$("sceneHint").textContent=selected==="farm"
   ?"Tap an animal to follow · Drag to orbit · Pinch to zoom"
   :"Drag to orbit · Pinch to zoom · Select equipment";renderAsset(coordinator.snapshot())}));
-$("inspectBtn").addEventListener("click",()=>$("inspector").classList.toggle("open"));
+// Navigation is generated from the executable capability registry. A source
+// calculator is never presented as a live scene control; unavailable tools
+// are labeled, never exposed as fake clickable actions.
+function setInspectorOpen(open){
+ $("inspector").classList.toggle("open",open);
+ for(const id of ["inspectBtn","utilitiesBtn"])
+  $(id).setAttribute("aria-expanded",String(open));
+}
+function jumpToUtility(sectionId){
+ const section=$(sectionId);
+ if(!section)throw new Error("Registered utility section not found: "+sectionId);
+ setInspectorOpen(true);
+ section.scrollIntoView({block:"start",behavior:"auto"});
+ section.focus({preventScroll:true});
+}
+function renderUtilityDirectory(search=""){
+ assertUtilityRegistry();
+ const term=String(search).trim().toLocaleLowerCase("en-US");
+ const host=$("nativeUtilityList");
+ const found=UTILITY_CAPABILITIES.filter(c=>
+  [c.title,c.purpose,c.category,c.scope].some(value=>value.toLocaleLowerCase("en-US").includes(term)));
+ host.replaceChildren();
+ for(const capability of found){
+  const entry=document.createElement("div");
+  entry.className="nativeUtilityEntry";
+  entry.setAttribute("role","listitem");
+  const button=document.createElement("button");
+  button.type="button";
+  button.dataset.utilityId=capability.id;
+  button.setAttribute("aria-label","Open "+capability.title);
+  const heading=document.createElement("strong");
+  heading.textContent=capability.category+" · "+capability.title;
+  const description=document.createElement("small");
+  description.textContent=capability.purpose;
+  button.append(heading,description);
+  button.addEventListener("click",()=>jumpToUtility(capability.uiSection));
+  const scope=document.createElement("p");
+  scope.className="utilityScope";
+  scope.textContent=capability.scope;
+  entry.append(button,scope);
+  host.append(entry);
+ }
+ $("nativeUtilityEmpty").hidden=found.length!==0;
+ return found.length;
+}
+renderUtilityDirectory();
+$("nativeUtilitySearch").addEventListener("input",()=>
+ renderUtilityDirectory($("nativeUtilitySearch").value));
+$("nativeUtilitySearch").addEventListener("keydown",event=>{
+ if(event.key==="Enter"){
+  const first=$("nativeUtilityList").querySelector("button");
+  if(first){event.preventDefault();first.click();}
+ }
+});
+$("utilitiesBtn").addEventListener("click",()=>jumpToUtility("utilityHub"));
+$("utilityLiveShortcut").addEventListener("click",()=>jumpToUtility("scenarioControls"));
+$("utilityLayoutShortcut").addEventListener("click",()=>jumpToUtility("objectEditor"));
+$("inspectBtn").addEventListener("click",()=>setInspectorOpen(!$("inspector").classList.contains("open")));
 $("hudToggle").addEventListener("click",()=>{const collapsed=$("summary").classList.toggle("collapsed");$("hudToggle").setAttribute("aria-expanded",String(!collapsed));$("hudToggle").setAttribute("aria-label",collapsed?"Expand resource summary":"Collapse resource summary");});
 // Keep the living landscape visible on narrow phones; all readings remain one tap away.
 if(window.matchMedia("(max-width: 650px)").matches){
@@ -226,7 +284,7 @@ if(window.matchMedia("(max-width: 650px)").matches){
  $("hudToggle").setAttribute("aria-expanded","false");
  $("hudToggle").setAttribute("aria-label","Expand resource summary");
 }
-$("closeInspector").addEventListener("click",()=>$("inspector").classList.remove("open"));
+$("closeInspector").addEventListener("click",()=>setInspectorOpen(false));
 $("editMode").addEventListener("change",()=>{
  scene?.editor?.setEditMode($("editMode").checked);
  editMessage($("editMode").checked?"Drag a selected visual object on the terrain":"Drag mode off");
@@ -313,7 +371,7 @@ try{scene=makeScene($("world"),(kind,label)=>{
   $("inspectTitle").textContent=selectedAsset||descriptions[kind][0];
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
   renderAsset(coordinator.snapshot());refreshObjectEditor();
-  $("inspector").classList.add("open");
+  setInspectorOpen(true);
 },farmVisual);selectArea("overview");redraw(coordinator.snapshot());
  refreshObjectEditor()}catch(e){fail(e)}
 window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),
