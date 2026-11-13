@@ -238,8 +238,10 @@ function renderUtilityDirectory(search=""){
  assertUtilityRegistry();
  const term=String(search).trim().toLocaleLowerCase("en-US");
  const host=$("nativeUtilityList");
+ const priority={Water:0,Solar:1,Farm:2,Exports:3};
  const found=UTILITY_CAPABILITIES.filter(c=>
-  [c.title,c.purpose,c.category,c.scope].some(value=>value.toLocaleLowerCase("en-US").includes(term)));
+  [c.title,c.purpose,c.category,c.scope].some(value=>value.toLocaleLowerCase("en-US").includes(term)))
+  .sort((a,b)=>priority[a.category]-priority[b.category]||a.title.localeCompare(b.title));
  host.replaceChildren();
  for(const capability of found){
   const entry=document.createElement("div");
