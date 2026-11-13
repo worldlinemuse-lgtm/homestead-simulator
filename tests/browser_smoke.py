@@ -47,6 +47,8 @@ try:
             assert water_eval["producedL"]>=0 and water_eval["estimatedPartsUSD"]>=0,water_eval
             assert water_eval["source"]["path"]=="source/engine.js",water_eval
             assert "Not a potable-water" in page.locator("#waterPresetReport").inner_text()
+            preview_shots=ROOT/"tests"/"artifacts";preview_shots.mkdir(parents=True,exist_ok=True)
+            page.screenshot(path=str(preview_shots/("mobile-water-preset.png" if mobile else "desktop-water-preset.png")))
             assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
                 "Water engineering preview mutated the live model",mobile)
             page.locator("#closeInspector").click()
