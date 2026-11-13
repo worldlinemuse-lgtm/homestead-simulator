@@ -39,6 +39,61 @@ test("source timeTo tolerance cannot claim a zero-output design meets a sub-cent
  }
 });
 
+test("adjacent-to-tolerance zero-flow targets remain unreachable with accurate units and replay",()=>{
+ // The original source's 0.01 L absolute tolerance must not become an
+ // arbitrary requirement that all small targets are invalid. On the dry
+ // original H preset, targets immediately ABOVE that threshold are valid
+ // requests, but the solver must truthfully report no physical delivery.
+ for(const liters of [0.0100000001,0.0101,0.02,1]){
+  const native=original.timeTo(original.buildPreset("H"),liters,1,24);
+  assert.equal(native.min,null,"Original Water H must produce no outlet flow at "+liters+" L");
+  const first=evaluateWaterTimeToVolume(original,{preset:"H",liters,scenario:1});
+  const replay=evaluateWaterTimeToVolume(original,{preset:"H",liters,scenario:1});
+  assert.equal(first.minutes,null,"Do not report delivery without output: "+liters+" L");
+  assert.ok(typeof first.reason==="string"&&first.reason.trim().length>0);
+  assert.equal(first.liters,liters);
+  assert.equal(first.maxHours,24);
+  assert.equal(first.solverSteps,native.steps);
+  assert.deepEqual(first,replay,"A read-only source study must replay identically");
+ }
+});
+
+test("invalid Water component edits fail before invoking the original time-to-volume solver",()=>{
+ // Reject malformed controls at the public adapter boundary, before timeTo
+ // can consume an invalid hydraulic world. Valid component keys are those
+ // of the original upstream E preset (p: pump_sky, r: reverse osmosis).
+ let invoked=0;
+ const traced={...original,timeTo(...args){invoked++;return original.timeTo(...args);}};
+ const invalid=[
+  null,{},[{key:"p",field:"psi",value:NaN}],
+  [{key:"p",field:"psi",value:Infinity}],
+  [{key:"p",field:"psi",value:-Infinity}],
+  [{key:"p",field:"psi",value:"50"}],
+  [{key:"p",field:"psi",value:101}],
+  [{key:"r",field:"drain",value:-0.01}],
+  [{key:"p",field:"psi",value:40},{key:"p",field:"psi",value:41}],
+  [{key:"forged",field:"psi",value:50}],
+  [{key:"p",field:"psi",value:50,unexpected:true}]
+ ];
+ for(const componentEdits of invalid){
+  assert.throws(()=>evaluateWaterTimeToVolume(traced,
+   {preset:"E",liters:10,scenario:1,componentEdits}),
+   error=>error instanceof Error&&/Water (source component|component|component edits)/i.test(error.message),
+   "Malformed native control must be rejected before execution");
+  assert.equal(invoked,0,"Source timeTo must not run after validation failure");
+ }
+ // Boundaries that are legal in the source must remain executable. They
+ // should pass through to the unchanged hydraulic solver exactly once.
+ for(const psi of [0,100]){
+  const result=evaluateWaterTimeToVolume(traced,{preset:"E",liters:10,scenario:1,
+   componentEdits:[{key:"p",field:"psi",value:psi}]});
+  assert.equal(result.componentEdits[0].value,psi);
+  assert.equal(result.source.path,"source/engine.js");
+  assert.equal(result.maxHours,24);
+ }
+ assert.equal(invoked,2);
+});
+
 test("same-type upstream component reorder must reject incorrect source-key attribution",()=>{
  // Original source preset G contains two Mission filters with different keys
  // but the same type; positional type-only verification cannot distinguish them.
