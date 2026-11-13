@@ -134,6 +134,44 @@ test("invalid target and scenario requests never dispatch the source solver",()=
  assert.equal(calls,2);
 });
 
+test("invalid native timeTo result shapes fail closed without mutating the caller world",()=>{
+ // A native solver failure must never be reinterpreted as a finite,
+ // successful engineering estimate. These are contract probes, not a
+ // replacement hydraulic model.
+ const live=original.buildPreset("E"),before=JSON.stringify(live);
+ const invalid=[
+  null,undefined,{},[],
+  {min:NaN,steps:1},{min:Infinity,steps:1},
+  {min:-1,steps:1},{min:"12",steps:1},
+  {min:0,steps:NaN},{min:0,steps:-1},
+  {min:0,steps:1.5},{min:0,steps:Number.MAX_SAFE_INTEGER+1},
+  {min:null,steps:1},{min:null,steps:1,why:""},
+  {min:null,steps:1,why:null}
+ ];
+ for(const output of invalid){
+  let calls=0;
+  const engine={...original,timeTo(){calls++;return output;}};
+  assert.throws(()=>evaluateWaterTimeToVolume(engine,{preset:"E",liters:10,scenario:1}),
+   /Original Water time-to-volume result is invalid/,
+   "Malformed original-engine result must not become a UI success");
+  assert.equal(calls,1,"Native solver should execute exactly once");
+  assert.equal(JSON.stringify(live),before,"Caller-owned live world must remain unchanged");
+ }
+ // Adjacent valid native outcomes must remain usable and preserve units.
+ for(const output of [
+  {min:0,steps:0},
+  {min:24*60,steps:10},
+  {min:null,steps:2,why:"No outlet flow"}
+ ]){
+  const engine={...original,timeTo(){return output;}};
+  const result=evaluateWaterTimeToVolume(engine,{preset:"E",liters:10,scenario:1});
+  assert.equal(result.minutes,output.min);
+  assert.equal(result.solverSteps,output.steps);
+  assert.equal(result.reason,output.min===null?output.why:null);
+  assert.equal(result.maxHours,24);
+ }
+});
+
 test("same-type upstream component reorder must reject incorrect source-key attribution",()=>{
  // Original source preset G contains two Mission filters with different keys
  // but the same type; positional type-only verification cannot distinguish them.
