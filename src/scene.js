@@ -553,6 +553,8 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     for(let n=0;n<3;n++)power.add(box(.94,.045,.10,m.metal,x,3.22+n*.14,3.39));
   }
   const batteryBox=box(1.65,2.25,1.1,m.steel,-2.5,1.4,3.65);power.add(batteryBox);
+  batteryBox.userData={kind:"energy",label:"Battery storage module",
+    sourcePath:"source/battery.js",modelScope:"isolated-source-study"};
   const chargeRail=box(1.13,.13,.075,m.glow,-2.5,2.07,4.27);power.add(chargeRail);
   const inverter=box(1.75,1.5,.65,m.metal,2.4,2.2,3.62);power.add(inverter);
   power.add(box(1.35,.34,.08,m.steel,2.4,2.27,4.01));
@@ -1404,6 +1406,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     // User-facing Solar view frames actual panel models at close enough range
     // for the support geometry to be inspected, including on mobile.
     energy:{eye:V(-32,16,14),look:V(-32,2,-10)},
+    battery:{eye:V(-20.5,7,9),look:V(-20.5,2,-3.35)},
     water:{eye:V(17,24,-1),look:V(0,2,-23)},
     farm:{eye:V(46,4.6,14),look:V(39.5,.8,11.1)},
     // Dedicated native-hutch inspection framing, derived from Farm footprints.
@@ -1452,7 +1455,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   }
   // Main Water equipment must actually participate in raycast selection.
   // Previously only newly edited visual props were registered as selectable.
-  select(water);select(tank);
+  select(water);select(tank);select(power);select(panels);
   const ray=new THREE.Raycaster(),pointerMap=new Map();
   let gestureMoved=false,pinchDistance=null;
   canvas.addEventListener("pointerdown",e=>{
@@ -2132,6 +2135,16 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     },resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()},
     dispose(){disposed=true;observer.disconnect();renderer.dispose();scene.traverse(obj=>{if(obj.geometry)obj.geometry.dispose()})},
     stats(){return {animals:agents.children.length,paths:flows.length,view,meshes:selectable.length,playing,
+      solarBatteryPickable:selectable.includes(batteryBox),
+      solarBatteryPickTarget:(()=>{
+       // Project the actual displayed model for desktop/mobile raycast acceptance.
+       scene.updateMatrixWorld(true);camera.updateMatrixWorld(true);
+       const rect=canvas.getBoundingClientRect();
+       const center=new THREE.Box3().setFromObject(batteryBox).getCenter(new THREE.Vector3());
+       const p=center.project(camera);
+       return {x:rect.left+(p.x+1)*rect.width/2,y:rect.top+(1-p.y)*rect.height/2,
+        inView:p.z>=-1&&p.z<=1&&Math.abs(p.x)<1&&Math.abs(p.y)<1};
+      })(),
       waterPickable:{pump:selectable.includes(motor),ro:skids.every(part=>selectable.includes(part)),tank:selectable.includes(tankShell)},
       waterPickTargets:(()=>{
         // Project actual rendered geometry into the live canvas for browser raycast

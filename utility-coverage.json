@@ -293,6 +293,41 @@
       "gaps": [
         "Native source UI and editable hydraulic network not ported"
       ]
+    },
+    {
+      "id": "solar.battery.source-diagnostics",
+      "domain": "solar",
+      "status": "integrated",
+      "sourcePath": "source/battery.js",
+      "upstreamRevision": "871dd8c0ef03a05feb339c9761ead900875f16b5",
+      "sourceBlob": "d3190721347fc53991a5d1c7b535dd658c46696f",
+      "sourceInterface": "BATTMODEL.drainMult/agmCapAt/agmTempFactor/absorption/agmPeukert/heatMinutes",
+      "adapter": "src/solar-battery-utility.mjs",
+      "ui": "solarBatteryRun",
+      "uiAccess": "3D selectable Battery storage module → original Solar parameter controls; Utilities → Solar battery discharge, charging & cold-weather diagnostics",
+      "units": {
+        "dischargeCurrent": "A per string",
+        "batteryTemperature": "degC",
+        "stateOfCharge": "%",
+        "bankCapacity": "Ah",
+        "absorptionTime": "min",
+        "drainAndChargingMultipliers": "ratio",
+        "heatingTime": "min"
+      },
+      "scope": "isolated original-source battery characterization, no live coordinator mutation or clock advance",
+      "tests": [
+        "tests/solar-native-battery.test.mjs",
+        "tests/browser_smoke.py",
+        "tests/utility-registry.test.mjs"
+      ],
+      "fidelity": "byte-identical-original-source-battery-model-isolated",
+      "gaps": [
+        "Does not replace experimental live Solar dispatch or implement the full source/sim.js chronological dispatcher",
+        "Battery object corresponds to a source study, not an automatically inferred real installed chemistry",
+        "Renogy AGM manufacturer table is limited in current and temperature; source assumptions remain labeled",
+        "Original source applies no rate/temperature derating to LFP, and self-heating timings are not field guarantees",
+        "Electrical installation design and battery safety certification are not provided"
+      ]
     }
   ]
 }

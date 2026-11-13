@@ -133,3 +133,32 @@ test("native utility directory rejects invalid labels, categories, and UI naviga
   assert.throws(()=>assertUtilityRegistry([{...water,uiSection}]),/Incomplete capability contract/);
  }
 });
+
+test("native Solar battery registry is a real executable and source-pinned isolated study",()=>{
+ const battery=utilityCapability("solar.battery.source-diagnostics");
+ assert.ok(battery);
+ assert.equal(battery.kind,"isolated-solar-battery");
+ assert.equal(battery.category,"Solar");
+ assert.equal(battery.entrypoint,"evaluateNativeSolarBattery");
+ assert.equal(battery.ui,"solarBatteryRun");
+ assert.equal(battery.uiSection,"solarBatteryUtility");
+ assert.equal(battery.sourcePath,"source/battery.js");
+ assert.equal(battery.sourceBlob,"d3190721347fc53991a5d1c7b535dd658c46696f");
+ assert.equal(battery.sourceRevision,"871dd8c0ef03a05feb339c9761ead900875f16b5");
+ assert.equal(battery.model,"solar-source-battery-study");
+ assert.equal(battery.mutatesModel,false);
+ assert.equal(battery.advancesClock,false);
+ assert.equal(battery.isolatedSourceExecution,true);
+ assert.equal(battery.clockUnit,"none");
+ assert.equal(battery.sources[0].unit,"A");
+ assert.equal(battery.inputUnits.tempC,"degC");
+ assert.equal(battery.outputUnits.heatTime,"min");
+ assert.equal(assertUtilityRegistry(),true);
+ for(const [field,value] of [["sourceBlob","forged"],["sourceRevision","forged"],
+  ["sourcePath","wrong"],["mutatesModel",true],["advancesClock",true],
+  ["isolatedSourceExecution",false],["clockUnit","h"]]){
+  assert.throws(()=>assertUtilityRegistry([{...battery,[field]:value}]),/Incomplete/);
+ }
+ assert.throws(()=>assertUtilityRegistry([{...battery,sources:[{...battery.sources[0],unit:"W"}]}]),/Incomplete|Invalid/);
+ assert.throws(()=>assertUtilityRegistry([{...battery,inputUnits:{...battery.inputUnits,currentA:"kW"}}]),/Incomplete/);
+});
