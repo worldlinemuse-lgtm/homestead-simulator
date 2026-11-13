@@ -181,6 +181,38 @@ try:
             assert page.locator("#waterComparisonReport").is_hidden()
             assert before_comparison==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
             page.locator("#closeInspector").click()
+            # Real Three.js raycast acceptance: selecting water hardware from the
+            # rendered canvas reaches the exact source-native component input.
+            before_3d_selection=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator('nav [data-view="water"]').click()
+            page.wait_for_function("""() => {
+                const c=window.HomesteadApp.world().camera;
+                return c.eyeTargetResidualM<0.15 && c.lookTargetResidualM<0.15;
+            }""",timeout=30000)
+            evidence=page.evaluate("window.HomesteadApp.world()")
+            assert evidence["waterPickable"]=={"pump":True,"ro":True,"tank":True},(
+                "Main Water equipment missing from Three.js raycast targets",mobile,evidence["waterPickable"])
+            for role,label,field in [
+                ("pump","Water pressure pump","psi"),
+                ("ro","Reverse-osmosis treatment stage","drain")]:
+                target=next(t for t in page.evaluate("window.HomesteadApp.world().waterPickTargets")
+                            if t["role"]==role)
+                assert target["inView"],("Water object not in camera view",mobile,target)
+                page.mouse.click(target["x"],target["y"])
+                assert page.locator("#inspectTitle").inner_text()==label,(
+                    "3D water raycast missed original hardware",mobile,role,target,
+                    page.locator("#inspectTitle").inner_text())
+                assert page.locator('#waterNativeControls [data-native-field="'+field+'"]').count()==1
+                assert page.evaluate("document.activeElement.dataset.nativeField")==field
+                assert page.locator("#waterPresetSelect").input_value()=="E"
+                assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"),(
+                    "3D equipment selection mutated live simulation",mobile,role)
+                page.screenshot(path=str(preview_shots/(
+                    ("mobile" if mobile else "desktop")+"-water-3d-"+role+".png")))
+                page.locator("#closeInspector").click()
+            # Returning to whole property must not mutate the model or playback.
+            page.locator('nav [data-view="overview"]').click()
+            assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
             assert page.evaluate("window.HomesteadApp.world().animals") > 0
             # Native Farm enclosure footprints are mapped from the original
             # model's feet coordinates, not authored freehand in Three.js.
