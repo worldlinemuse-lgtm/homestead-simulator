@@ -215,3 +215,23 @@ nav #utilitiesBtn[aria-expanded="true"]{background:rgba(157,228,192,.26);border-
   .utilitySection{gap:7px}
   .nativeUtilityEntry button{min-height:53px}
 }
+
+/* Source-engine result readability: quantity first, assumptions and hazards explicit. */
+.utilityResultSummary{display:flex;flex-direction:column;gap:4px;padding:10px;
+ border:1px solid rgba(165,232,194,.3);border-radius:10px;background:rgba(55,112,77,.23)}
+.utilityResultSummary small{font-size:9px;font-weight:700;letter-spacing:.065em;color:#b4dfc2}
+.utilityResultSummary strong{font-size:24px;line-height:1.1;font-weight:750;letter-spacing:-.03em;color:#e7ffe9}
+.utilityResultSummary span{font-size:11px;color:#d0eada;line-height:1.4}
+.utilityInterpretation{font-size:11px;line-height:1.55;color:#e8f4e9}
+.utilityResultsDetails{margin:6px 0;display:grid;gap:0}
+.utilityResultsDetails>div{display:grid;gap:5px;border-bottom:1px solid rgba(222,243,225,.14);padding:9px 0}
+.utilityResultsDetails dt{font-size:10px;color:#b5d3c4;font-weight:600}
+.utilityResultsDetails dd{font-size:11px;color:#f1fff0;line-height:1.5;margin:0;overflow-wrap:anywhere}
+.utilityWarningTitle{font-size:12px;font-weight:720;color:#efca91;margin:8px 0 3px}
+.utilityWarningList{margin:4px 0 9px;padding-left:19px}
+.utilityWarningList li{font-size:11px;line-height:1.5;color:#f1d7a9;margin-bottom:6px}
+.utilityResultCaution{font-size:11px;line-height:1.55;border-top:1px solid #7c987e;
+ padding-top:9px;color:#f3d4a1}
+#waterPresetReport[data-result-state="no-flow"] .utilityResultSummary{
+ border-color:rgba(235,183,131,.52);background:rgba(105,73,36,.3)}
+@media(max-width:650px){.utilityResultSummary strong{font-size:22px}}
