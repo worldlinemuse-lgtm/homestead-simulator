@@ -248,6 +248,61 @@ try:
             assert page.evaluate("window.HomesteadApp.waterPreset()") is not None
             assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
             page.locator("#closeInspector").click()
+            # SOURCE-NATIVE SOLAR BATTERY: directory -> configure -> run ->
+            # actual source parity -> focus real 3D battery -> click -> return.
+            before_solar=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#utilitiesBtn").click()
+            page.locator("#nativeUtilitySearch").fill("Solar battery")
+            battery_entry=page.locator('[data-utility-id="solar.battery.source-diagnostics"]')
+            assert battery_entry.count()==1,(mobile,"Original Solar study missing from Utilities directory")
+            battery_entry.click()
+            assert page.evaluate("document.activeElement.id")=="solarBatteryUtility"
+            page.locator("#solarBatteryChem").select_option("agm")
+            page.locator("#solarBatteryCurrentA").fill("55")
+            page.locator("#solarBatteryTempC").fill("20")
+            page.locator("#solarBatterySoc").fill("90")
+            page.locator("#solarBatteryRun").click()
+            solar_study=page.evaluate("window.HomesteadApp.solarBattery()")
+            assert solar_study and solar_study["source"]["path"]=="source/battery.js"
+            assert solar_study["discharge"]["m"]==page.evaluate("window.BATTMODEL.drainMult('agm',55,20).m")
+            assert solar_study["charging"]["mult"]==page.evaluate("window.BATTMODEL.absorption('agm',.9,0,100).mult")
+            assert page.locator("#solarBatteryReport").get_attribute("data-result-state")=="complete"
+            assert before_solar==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.screenshot(path=str(preview_shots/("mobile-solar-battery-result.png" if mobile else "desktop-solar-battery-result.png")))
+            page.locator("#solarBatteryCurrentA").fill("-1")
+            assert page.evaluate("window.HomesteadApp.solarBattery()") is None
+            page.locator("#solarBatteryRun").click()
+            assert page.locator("#solarBatteryReport").get_attribute("data-result-state")=="error"
+            page.locator("#solarBatteryCurrentA").fill("10")
+            page.locator("#solarBatteryChem").select_option("lfp")
+            page.locator("#solarBatteryTempC").fill("-10")
+            page.locator("#solarBatteryHeatMode").select_option("mid")
+            page.locator("#solarBatteryRun").click()
+            warm=page.evaluate("window.HomesteadApp.solarBattery()")
+            assert warm and warm["heating"]["minutesTo5C"]==page.evaluate(
+                "window.BATTMODEL.heatMinutes(window.BATTMODEL.HEAT.mid.rate,-10,5)")
+            assert warm["discharge"]["m"]==1
+            assert before_solar==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            # Focus the true Three.js battery, not a synthetic picker callback.
+            page.locator("#solarBatteryFocus").click()
+            page.wait_for_function("""() => {
+                const c=window.HomesteadApp.world().camera;
+                return c.eyeTargetResidualM<0.15 && c.lookTargetResidualM<0.15;
+            }""",timeout=30000)
+            assert page.evaluate("window.HomesteadApp.world().solarBatteryPickable")
+            target=page.evaluate("window.HomesteadApp.world().solarBatteryPickTarget")
+            assert target["inView"],("Selected Solar battery not in 3D camera view",mobile,target)
+            page.mouse.click(target["x"],target["y"])
+            assert page.locator("#inspectTitle").inner_text()=="Battery storage module",(
+                "Rendered battery raycast missed original Solar equipment",mobile,target,
+                page.locator("#inspectTitle").inner_text())
+            assert page.evaluate("document.activeElement.id")=="solarBatteryCurrentA"
+            assert page.locator("#solarBatteryUtility").is_visible()
+            assert before_solar==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.screenshot(path=str(preview_shots/("mobile-solar-battery-object.png" if mobile else "desktop-solar-battery-object.png")))
+            page.locator("#solarBatteryReturn").click()
+            assert page.evaluate("document.activeElement.id")=="assetReadout"
+            page.locator("#closeInspector").click()
             # Returning to whole property must not mutate the model or playback.
             page.locator('nav [data-view="overview"]').click()
             assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
