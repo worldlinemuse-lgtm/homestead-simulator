@@ -726,6 +726,25 @@ try:
             assert metrics["nativeSteps"]>=0 and metrics["enclosureCount"]>=3
             print(f"3D visual performance mobile={mobile}: {metrics}",flush=True)
             page.close()
+        # NARROW UTILITY DISCOVERY REGRESSION: six top-level actions remain
+        # independently tappable at a 320 px viewport without clipped text.
+        narrow=browser.new_page(viewport={"width":320,"height":720},device_scale_factor=1)
+        narrow.goto("http://127.0.0.1:%d/"%server.server_port,wait_until="load")
+        narrow.wait_for_function("window.HomesteadApp && window.HomesteadApp.snapshot().farm.counts.n>0",timeout=40000)
+        buttons=narrow.locator("header nav button")
+        assert buttons.count()==6
+        for i in range(buttons.count()):
+            rect=buttons.nth(i).bounding_box()
+            assert rect and rect["x"]>=-1 and rect["x"]+rect["width"]<=321, (
+                "Narrow utility navigation is clipped",i,rect)
+            assert rect["height"]>=40,("Narrow navigation tap targets too short",i,rect)
+        narrow.locator("#utilitiesBtn").click()
+        assert narrow.locator("#inspector").is_visible()
+        assert narrow.locator("#nativeUtilityList button").first.get_attribute("data-utility-id")==(
+            "water.preset.native-evaluator")
+        (ROOT/"tests"/"artifacts").mkdir(parents=True,exist_ok=True)
+        narrow.screenshot(path=str(ROOT/"tests"/"artifacts"/"narrow-utility-hub.png"))
+        narrow.close()
         browser.close()
     print("PASS: unified 3D site runs, both layouts step 25 model hours, no page exceptions")
 finally:
