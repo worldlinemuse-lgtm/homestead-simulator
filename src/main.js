@@ -1,6 +1,6 @@
 import {makeScene} from "./scene.js";
 import {nativeLedgerCsv} from "./native-ledger.mjs";
-import {evaluateWaterPreset,evaluateWaterPresetComparison,waterPresetNativeControls} from "./water-preset-utility.mjs";
+import {evaluateWaterPreset,evaluateWaterPresetComparison,evaluateWaterTimeToVolume,waterPresetNativeControls} from "./water-preset-utility.mjs";
 import {UTILITY_CAPABILITIES,assertUtilityRegistry} from "./utility-registry.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
 import {ScenarioTimeline,formatHour} from "./sim-clock.mjs";
@@ -440,6 +440,38 @@ $("waterCompareRun").addEventListener("click",()=>{
   host.dataset.resultState="error";
   host.textContent="Original Water design comparison failed: "+(error?.message||error);
   console.error("Water source comparison failure",error);
+ }
+});
+$("waterTimeRun").addEventListener("click",()=>{
+ const report=$("waterTimeReport");
+ try{
+  const before=JSON.stringify(coordinator.snapshot());
+  const liters=Number($("waterTargetLiters").value);
+  if(!$("waterTargetLiters").value.trim())throw new RangeError("Enter a target volume in liters");
+  const result=evaluateWaterTimeToVolume(window.HomesteadWaterCore,{
+   preset:$("waterPresetSelect").value,
+   liters,scenario:Number($("waterPresetScenario").value),
+   componentEdits:readNativeWaterEdits()
+  });
+  if(JSON.stringify(coordinator.snapshot())!==before)
+   throw new Error("Time-to-volume study changed live Homestead state");
+  report.replaceChildren();
+  report.dataset.resultState=result.minutes===null?"no-flow":"flow";
+  const title=document.createElement("strong");
+  title.textContent=result.minutes===null?"Target not reached":fmt(result.minutes,2)+" modeled minutes";
+  const details=document.createElement("p");
+  details.textContent=result.minutes===null?
+   "Original solver: "+result.reason:
+   "Original Water source estimates "+fmt(result.liters,2)+" L at the outlet in "+fmt(result.minutes,2)+" minutes.";
+  const warning=document.createElement("p");
+  warning.className="utilityResultCaution";
+  warning.textContent=result.assumptions;
+  report.append(title,details,warning);
+  report.focus({preventScroll:true});
+ }catch(error){
+  report.dataset.resultState="error";
+  report.textContent="Time-to-volume calculation failed: "+(error?.message||error);
+  console.error("Water time-to-volume failure",error);
  }
 });
 $("waterPresetRun").addEventListener("click",()=>{
