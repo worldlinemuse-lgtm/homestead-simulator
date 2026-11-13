@@ -76,6 +76,17 @@ function renderAsset(s){
     ["RO network treated output",l?fmt(w.treatedL,2)+" L this hour":"—"],
     ["Authority","Original Water hydraulic solver; pump watts assumed"]
   ],
+  "Water pressure pump":[
+    ["Pump energized",l?(e.pumpEnabled?"Yes":"No"):"Not run"],
+    ["Electrical pump allocation",l?fmt(e.servedPumpWh,1)+" Wh":"—"],
+    ["Original source study","Pump pressure in psi can be varied independently; no live changes"],
+    ["Live pump sizing","Assumed electrical demand, not source catalog calibration"]
+  ],
+  "Reverse-osmosis treatment stage":[
+    ["Source hydraulic output",l?fmt(w.treatedL,2)+" L":"Not run"],
+    ["Original source study","RO drain in liters per liter produced is independently editable"],
+    ["Field safety","Neither treatment quality nor potable water is certified"]
+  ],
   "Treated-water storage tank":[
     ["Stored treated water",fmt(s.waterStoredL,1)+" L"],
     ["Scenario capacity",fmt(s.config.waterStorageCapacityL,0)+" L"],
@@ -464,13 +475,17 @@ $("waterPresetRun").addEventListener("click",()=>{
 
   // Selected 3D equipment drills into actual original-engine component snapshots.
   // The selected object is a role, not a fabricated one-to-one source part ID.
-  const componentTypes=selectedWaterRole==="treatment"
-   ?new Set(["pump_sky","ro","uf","media","mission","sawyer","bleach","boil"])
-   :selectedWaterRole==="storage"?new Set(["barrel50","bucket","outlet"]):null;
+  const componentTypes=selectedWaterRole==="pump"?new Set(["pump_sky"]):
+   selectedWaterRole==="ro"?new Set(["ro"]):
+   selectedWaterRole==="treatment"?new Set(["pump_sky","ro","uf","media","mission","sawyer","bleach","boil"]):
+   selectedWaterRole==="storage"?new Set(["barrel50","bucket","outlet"]):null;
   if(componentTypes){
    const matching=result.components.filter(p=>componentTypes.has(p.type));
    const heading=document.createElement("strong");
-   heading.textContent="Selected 3D "+(selectedWaterRole==="treatment"?"treatment equipment":"storage equipment")+" · original source components";
+   heading.textContent="Selected 3D "+({
+    pump:"pressure pump",ro:"reverse-osmosis equipment",
+    treatment:"treatment equipment",storage:"storage equipment"
+   }[selectedWaterRole]||"Water equipment")+" · original source components";
    report.append(heading);
    const componentList=document.createElement("dl");
    componentList.className="utilityResultsDetails";
@@ -561,14 +576,17 @@ try{scene=makeScene($("world"),(kind,label)=>{
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
   renderAsset(coordinator.snapshot());refreshObjectEditor();
   const selectedWater=kind==="water"&&Boolean(label);
-  selectedWaterRole=selectedWater?(label==="Treated-water storage tank"?"storage":"treatment"):null;
+  selectedWaterRole=selectedWater?(
+   label==="Treated-water storage tank"?"storage":
+   label==="Water pressure pump"?"pump":
+   label==="Reverse-osmosis treatment stage"?"ro":"treatment"):null;
   $("waterAssetReturn").hidden=!selectedWater;
   if(selectedWater){
    // A source reference study, not an edit to the coupled equipment inventory.
    $("waterPresetSelect").value=selectedWaterRole==="storage"?"D":"E";
    $("waterPresetSelect").dispatchEvent(new Event("change",{bubbles:true}));
    jumpToUtility("waterPresetUtility");
-   const field=selectedWaterRole==="storage"?"init":"psi";
+   const field=selectedWaterRole==="storage"?"init":selectedWaterRole==="ro"?"drain":"psi";
    $("waterNativeControls").querySelector('[data-native-field="'+field+'"]')?.focus({preventScroll:true});
   }
   else setInspectorOpen(true);
