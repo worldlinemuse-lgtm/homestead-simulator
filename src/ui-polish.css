@@ -235,3 +235,15 @@ nav #utilitiesBtn[aria-expanded="true"]{background:rgba(157,228,192,.26);border-
 #waterPresetReport[data-result-state="no-flow"] .utilityResultSummary{
  border-color:rgba(235,183,131,.52);background:rgba(105,73,36,.3)}
 @media(max-width:650px){.utilityResultSummary strong{font-size:22px}}
+
+/* Real source Water comparison: compact, keyboard-operable, without vertical scroll traps. */
+.waterUtilityActions{display:flex;flex-wrap:wrap;gap:7px}
+.waterUtilityActions button{flex:1 1 145px;min-height:42px}
+.nativeCompareReport{display:grid;gap:10px;min-width:0}
+.nativeCompareScroll{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
+.nativeCompareTable{border-collapse:collapse;width:100%;min-width:295px;font-size:11px}
+.nativeCompareTable th,.nativeCompareTable td{text-align:left;vertical-align:top;border-bottom:1px solid rgba(234,246,235,.17);padding:8px 6px}
+.nativeCompareTable thead th{color:#b5eccd;font-size:10px}
+.nativeCompareTable tbody th{font-weight:600;max-width:135px}
+.nativeCompareTable td button{min-height:40px;white-space:nowrap}
+#waterPresetReport:focus-visible{outline:2px solid #9beefc;outline-offset:2px}
