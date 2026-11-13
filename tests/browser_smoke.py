@@ -39,6 +39,8 @@ try:
             assert page.evaluate("document.activeElement.id")=="utilityHub"
             available=page.locator("#nativeUtilityList button[data-utility-id]")
             assert available.count()==2,available.all_text_contents()
+            assert available.first.get_attribute("data-utility-id")=="water.preset.native-evaluator", (
+                "Water evaluator should be first in native utility directory",mobile)
             assert page.locator('[data-utility-id="water.preset.native-evaluator"]').count()==1
             assert page.locator('[data-utility-id="cross-domain.resource-ledger.csv"]').count()==1
             assert "not available" in page.locator("#utilityHub").inner_text().lower() or (
