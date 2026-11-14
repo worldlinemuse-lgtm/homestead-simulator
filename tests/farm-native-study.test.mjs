@@ -140,3 +140,14 @@ test("native Farm model calendar is independent of host UTC offset",()=>{
  assert.throws(()=>vm.runInContext("modelCalendarDate(-1)",worker),/calendar day/);
  assert.throws(()=>vm.runInContext("modelCalendarDate(NaN)",worker),/calendar day/);
 });
+
+test("native Farm worker rejects source snapshot date inconsistent with day index",()=>{
+ const worker=workerContext();
+ const snapshot={day:1,date:"2026-12-31",counts:{n:2},daily:{eggs:0,waterGal:0,kWh:0}};
+ worker.snapshotForTest=snapshot;
+ assert.throws(()=>vm.runInContext("measure(snapshotForTest)",worker),/snapshot date disagrees/);
+ snapshot.date="2026-11-04";
+ assert.equal(vm.runInContext("measure(snapshotForTest).date",worker),"2026-11-05");
+ snapshot.date="2026-11-05";
+ assert.equal(vm.runInContext("measure(snapshotForTest).date",worker),"2026-11-05");
+});
