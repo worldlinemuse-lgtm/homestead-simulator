@@ -1409,6 +1409,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     battery:{eye:V(-20.5,7,9),look:V(-20.5,2,-3.35)},
     water:{eye:V(17,24,-1),look:V(0,2,-23)},
     farm:{eye:V(46,4.6,14),look:V(39.5,.8,11.1)},
+    farmStudy:{eye:V(31,10,3),look:V(31,2,-8)}, // actual selectable Farm equipment building
     // Dedicated native-hutch inspection framing, derived from Farm footprints.
     hutch:null,
     // Test-accessible roof side view, computed only after native Farm sync.
@@ -2143,6 +2144,16 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
        const center=new THREE.Box3().setFromObject(batteryBox).getCenter(new THREE.Vector3());
        const p=center.project(camera);
        return {x:rect.left+(p.x+1)*rect.width/2,y:rect.top+(1-p.y)*rect.height/2,
+        inView:p.z>=-1&&p.z<=1&&Math.abs(p.x)<1&&Math.abs(p.y)<1};
+      })(),
+      farmStudyPickable:selectable.includes(coopDoor),
+      farmStudyPickTarget:(()=>{
+       // Project actual Barn door geometry for real mouse/touch raycast acceptance.
+       scene.updateMatrixWorld(true);camera.updateMatrixWorld(true);
+       const rect=canvas.getBoundingClientRect();
+       const p=new THREE.Box3().setFromObject(coopDoor).getCenter(new THREE.Vector3()).project(camera);
+       return {x:rect.left+(p.x+1)*rect.width/2,
+        y:rect.top+(1-p.y)*rect.height/2,
         inView:p.z>=-1&&p.z<=1&&Math.abs(p.x)<1&&Math.abs(p.y)<1};
       })(),
       waterPickable:{pump:selectable.includes(motor),ro:skids.every(part=>selectable.includes(part)),tank:selectable.includes(tankShell)},
