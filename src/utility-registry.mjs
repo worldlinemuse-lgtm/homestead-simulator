@@ -83,6 +83,25 @@ capabilities.push(Object.freeze({
  mutatesModel:false,advancesClock:false,tests:"tests/solar-native-battery.test.mjs",
  limitations:"Original source AGM characterization and charging assumptions only. LFP rate/temperature correction is not available; independent estimates do not change coupled dispatch or certify a battery installation."
 }));
+capabilities.push(Object.freeze({
+ id:"farm.native-daily-scenario",version:1,kind:"isolated-farm-daily",
+ implementation:"src/farm-native-study.mjs",entrypoint:"runNativeFarmDailyStudy",
+ ui:"farmStudyRun",uiSection:"farmStudyUtility",
+ title:"Farm original biological scenario (7–90 days)",category:"Farm",
+ purpose:"Execute the pinned original Farm rabbit and chicken biological model over real consecutive modeled days using source management settings.",
+ scope:"Independent seeded Farm study · live animals, energy, water and clock unchanged",
+ model:"farm-source-daily-isolated-study",snapshotSchema:1,
+ sources:Object.freeze([Object.freeze({domain:"farm",
+  interface:"HomesteadFarmCore.setParameter/reset/advanceDay/snapshot",
+  unit:"count",fidelity:"original-seeded-biological-engine-isolated-worker"})]),
+ sourceRevision:"d6614d7981535fa2b74be86e0c5356af57b56e3b",
+ sourcePath:"source/src/core/settings.js; original daily biology",
+ inputUnits:Object.freeze({seed:"uint32",days:"d",mg_does:"does",mg_hens:"hens",mg_roosters:"birds",mg_set:"eggs/wk"}),
+ outputUnits:Object.freeze({animals:"count",eggs:"count",waterGal:"USgal",electricityKWh:"kWh"}),
+ isolatedSourceExecution:true,clockUnit:"d",
+ mutatesModel:false,advancesClock:false,tests:"tests/farm-native-study.test.mjs",
+ limitations:"Runs original daily biology in a fresh worker, not the still-missing Farm year planner. Study loads do not feed Solar/Water shortage effects back into biology; no welfare or yield certification."
+}));
 export const UTILITY_CAPABILITIES=Object.freeze(capabilities.map(c=>Object.freeze(c)));
 export function utilityCapability(id){
   if(typeof id!=="string")throw new TypeError("Capability id must be a string");
@@ -98,12 +117,14 @@ export function assertUtilityRegistry(registry=UTILITY_CAPABILITIES){
     const modelForKind={
       "inspection-export":"experimental-coupled-scenario",
       "isolated-water-preset":"water-source-preset-evaluation",
-      "isolated-solar-battery":"solar-source-battery-study"
+      "isolated-solar-battery":"solar-source-battery-study",
+      "isolated-farm-daily":"farm-source-daily-isolated-study"
     }[c.kind];
     const categoryForKind={
       "inspection-export":"Exports",
       "isolated-water-preset":"Water",
-      "isolated-solar-battery":"Solar"
+      "isolated-solar-battery":"Solar",
+      "isolated-farm-daily":"Farm"
     }[c.kind];
     if(!modelForKind||!Number.isSafeInteger(c.version)||c.version<1||
        ![c.kind,c.implementation,c.entrypoint,c.ui,c.uiSection,c.title,c.category,c.purpose,c.scope,c.tests,c.limitations].every(nonBlankString)||
@@ -136,6 +157,21 @@ export function assertUtilityRegistry(registry=UTILITY_CAPABILITIES){
       c.inputUnits?.socPercent!=="%"||c.inputUnits?.absorptionMinutes!=="min"||
       c.inputUnits?.bankAh!=="Ah"||c.outputUnits?.heatTime!=="min"))
       throw new TypeError("Incomplete Solar source battery contract: "+c.id);
+    if(c.kind==="isolated-farm-daily"&&(
+      c.id!=="farm.native-daily-scenario"||
+      c.sourceRevision!=="d6614d7981535fa2b74be86e0c5356af57b56e3b"||
+      c.sourcePath!=="source/src/core/settings.js; original daily biology"||
+      c.entrypoint!=="runNativeFarmDailyStudy"||
+      c.implementation!=="src/farm-native-study.mjs"||
+      c.isolatedSourceExecution!==true||c.clockUnit!=="d"||
+      c.sources.length!==1||c.sources[0]?.domain!=="farm"||
+      c.sources[0]?.interface!=="HomesteadFarmCore.setParameter/reset/advanceDay/snapshot"||
+      c.inputUnits?.seed!=="uint32"||c.inputUnits?.days!=="d"||
+      c.inputUnits?.mg_does!=="does"||c.inputUnits?.mg_hens!=="hens"||
+      c.inputUnits?.mg_roosters!=="birds"||c.inputUnits?.mg_set!=="eggs/wk"||
+      c.outputUnits?.animals!=="count"||c.outputUnits?.eggs!=="count"||
+      c.outputUnits?.waterGal!=="USgal"||c.outputUnits?.electricityKWh!=="kWh"))
+      throw new TypeError("Incomplete original Farm source study contract: "+c.id);
     const domains=new Set();
     for(const s of c.sources){
       if(!s||typeof s!=="object"||Array.isArray(s)||
