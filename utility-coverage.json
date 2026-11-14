@@ -62,7 +62,7 @@
       "sourcePath": "source/src/core/settings.js; original source/src/core daily biology and state",
       "upstreamRevision": "d6614d7981535fa2b74be86e0c5356af57b56e3b",
       "sourceInterface": "HomesteadFarmCore.setParameter/reset/advanceDay/snapshot; original P.mg_does/mg_hens/mg_roosters/mg_set",
-      "adapter": "src/farm-native-study.mjs; src/farm-study-worker.js; src/farm-study-ui.mjs",
+      "adapter": "src/farm-native-study.mjs",
       "ui": "farmStudyRun",
       "uiAccess": "Main Utilities → Farm original biological scenario (7–90 days) → native management settings → Run → source chart/table → CSV → return; select an animal or Farm asset from 3D to jump to source calculator",
       "scope": "Independent dedicated browser worker with its own Farm core closure, RNG, daily clock and parameters. Never writes coupled Homestead model.",
@@ -94,6 +94,11 @@
         "Study management limits are safety/performance budgets rather than upstream model limits",
         "No live Solar/Water shortage feedback, monetary planning or guaranteed livestock production",
         "Daily plots describe modeled animals/eggs/water/electricity only"
+      ],
+      "implementationFiles": [
+        "src/farm-native-study.mjs",
+        "src/farm-study-worker.js",
+        "src/farm-study-ui.mjs"
       ]
     },
     {
