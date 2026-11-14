@@ -332,7 +332,12 @@ for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
 }
 
-const farmStudyUI=installFarmNativeStudy({$,coordinator,stop,jumpToUtility,fmt});
+const farmStudyUI=installFarmNativeStudy({$,coordinator,stop,jumpToUtility,fmt,
+ focusFarm:()=>{
+  if(!scene)throw new Error("Original Farm 3D scene unavailable");
+  scene.go("farmStudy");setInspectorOpen(false);
+  $("sceneHint").textContent="Farm equipment in view · select the real building to open native biological controls";
+ }});
 let lastSolarBatteryStudy=null,lastSolarSweep=null;
 const solarInputIds=["solarBatteryChem","solarBatteryCurrentA","solarBatteryTempC","solarBatterySoc",
  "solarBatteryAbsMin","solarBatteryBankAh","solarBatteryHeatMode"];
