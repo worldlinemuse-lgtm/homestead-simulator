@@ -54,8 +54,11 @@ function measure(snapshot,{initial=false}={}){
     (!initial&&!snapshot.daily)||!snapshot.counts)
   throw new Error("Original Farm engine returned incomplete daily snapshot");
  const expectedDate=modelCalendarDate(snapshot.day);
- const previousDate=snapshot.day===0?"2026-11-03":modelCalendarDate(snapshot.day-1);
- if(snapshot.date!==expectedDate&&snapshot.date!==previousDate)
+ // Compare against the exact pinned source serialization of LOCAL midnight.
+ // UTC must not accept yesterday as a valid snapshot; positive UTC offsets
+ // legitimately serialize the prior civil date, but only in those offsets.
+ const sourceRawDate=new Date(2026,10,4+snapshot.day).toISOString().slice(0,10);
+ if(snapshot.date!==sourceRawDate)
   throw new Error("Original Farm snapshot date disagrees with source day index");
  const value=(name,x)=>{
   if(typeof x!=="number"||!Number.isFinite(x)||x<0)
