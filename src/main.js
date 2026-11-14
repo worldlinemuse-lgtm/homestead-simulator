@@ -1,4 +1,5 @@
 import {makeScene} from "./scene.js";
+import {installFarmNativeStudy} from "./farm-study-ui.mjs";
 import {nativeLedgerCsv} from "./native-ledger.mjs";
 import {evaluateNativeSolarBattery,evaluateNativeSolarAgmSweep} from "./solar-battery-utility.mjs";
 import {evaluateWaterPreset,evaluateWaterPresetComparison,evaluateWaterTimeToVolume,waterPresetNativeControls} from "./water-preset-utility.mjs";
@@ -299,6 +300,7 @@ $("utilitiesBtn").addEventListener("click",()=>{
  selectedWaterRole=null;
  $("waterAssetReturn").hidden=true;
  $("solarBatteryReturn").hidden=true;
+ $("farmStudyReturn").hidden=true;
  jumpToUtility("utilityHub");
 });
 $("utilityLiveShortcut").addEventListener("click",()=>jumpToUtility("scenarioControls"));
@@ -330,6 +332,7 @@ for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
 }
 
+const farmStudyUI=installFarmNativeStudy({$,coordinator,stop,jumpToUtility,fmt});
 let lastSolarBatteryStudy=null,lastSolarSweep=null;
 const solarInputIds=["solarBatteryChem","solarBatteryCurrentA","solarBatteryTempC","solarBatterySoc",
  "solarBatteryAbsMin","solarBatteryBankAh","solarBatteryHeatMode"];
@@ -761,6 +764,8 @@ try{scene=makeScene($("world"),(kind,label)=>{
    label==="Water pressure pump"?"pump":
    label==="Reverse-osmosis treatment stage"?"ro":"treatment"):null;
   $("waterAssetReturn").hidden=!selectedWater;
+  const selectedFarm=kind==="farm"&&Boolean(label);
+  $("farmStudyReturn").hidden=!selectedFarm;
   const selectedBattery=kind==="energy"&&(label==="Battery storage module"||label==="Solar inverter and battery");
   $("solarBatteryReturn").hidden=!selectedBattery;
   if(selectedWater){
@@ -775,11 +780,17 @@ try{scene=makeScene($("world"),(kind,label)=>{
    jumpToUtility("solarBatteryUtility");
    $("solarBatteryCurrentA").focus({preventScroll:true});
   }
+  else if(selectedFarm){
+   jumpToUtility("farmStudyUtility");
+   $(selectedAsset?.startsWith("Rabbit")?"farmStudyDoes":"farmStudyHens").focus({preventScroll:true});
+  }
   else setInspectorOpen(true);
 },farmVisual);selectArea("overview");redraw(coordinator.snapshot());
  refreshObjectEditor()}catch(e){fail(e)}
 window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),
  solarBattery:()=>lastSolarBatteryStudy,
+ farmStudy:()=>farmStudyUI.study(),
+ farmStudySource:()=>farmStudyUI.source(),
  solarAgmSweep:()=>lastSolarSweep,
  waterPreset:()=>lastWaterPreset,
  waterComparison:()=>lastWaterComparison,
