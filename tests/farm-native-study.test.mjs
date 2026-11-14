@@ -44,6 +44,7 @@ test("native worker's 7-day biological trajectory matches separate direct origin
  const study=verifyFarmStudyResult(reply.result,request);
  assert.equal(study.initial.day,0);
  const direct=reference.HomesteadFarmCore;
+ direct.reset(request.seed);
  for(const [k,v] of Object.entries(request.parameters))direct.setParameter(k,v);
  direct.reset(request.seed);
  for(const item of study.series){
@@ -72,6 +73,7 @@ test("fresh worker produces deterministic but isolated changed management scenar
 });
 test("a Farm study cannot advance or change the connected Farm closure",()=>{
  const live=farmContext().HomesteadFarmCore;
+ live.reset(7);
  const baseline=JSON.stringify(live.snapshot());
  const req=farmStudyRequest({days:7,seed:7,parameters:values});
  const independent=workerContext();independent.self.onmessage({data:req});
