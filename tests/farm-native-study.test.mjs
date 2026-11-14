@@ -146,8 +146,9 @@ test("native Farm worker rejects source snapshot date inconsistent with day inde
  const snapshot={day:1,date:"2026-12-31",counts:{n:2},daily:{eggs:0,waterGal:0,kWh:0}};
  worker.snapshotForTest=snapshot;
  assert.throws(()=>vm.runInContext("measure(snapshotForTest)",worker),/snapshot date disagrees/);
- snapshot.date="2026-11-04";
+ const rawSourceDate=new Date(2026,10,5).toISOString().slice(0,10);
+ snapshot.date=rawSourceDate;
  assert.equal(vm.runInContext("measure(snapshotForTest).date",worker),"2026-11-05");
- snapshot.date="2026-11-05";
- assert.equal(vm.runInContext("measure(snapshotForTest).date",worker),"2026-11-05");
+ snapshot.date=rawSourceDate==="2026-11-04"?"2026-11-05":"2026-11-04";
+ assert.throws(()=>vm.runInContext("measure(snapshotForTest)",worker),/snapshot date disagrees/);
 });
