@@ -39,7 +39,7 @@
 <button id="utilityLiveShortcut" type="button">⚙ Adjust live scenario settings</button>
 <button id="utilityLayoutShortcut" type="button">🌱 Arrange 3D landscape</button>
 </div>
-<p class="utilityPending"><strong>Still being integrated:</strong> full Solar dispatch tools, additional Farm controllers and the editable Water network. These are not available here yet.</p>
+<p class="utilityPending"><strong>Still being integrated:</strong> full Solar dispatcher and real weather, the original Farm annual planner and editable Water pipe-network topology. These are not available here yet.</p>
 </section>
 <section id="assetReadout" class="assetReadout" tabindex="-1" aria-live="polite"><p>Select a building or equipment in the 3D scene to inspect its model-driven state.</p></section>
 <section id="objectEditor" class="objectEditor" tabindex="-1" aria-label="Visual landscape object editor">
@@ -74,6 +74,22 @@
 <div class="waterUtilityActions"><button id="solarBatteryRun" type="button">Run original battery calculation</button><button id="solarBatterySweepRun" type="button">Compare original AGM discharge table</button><button id="solarBatteryFocus" type="button">Find battery in 3D</button><button id="solarBatteryReturn" type="button" hidden>Return to selected battery</button></div>
 <div id="solarBatteryReport" class="editorNote" role="status" tabindex="-1" aria-live="polite" data-result-state="none">No battery study yet. Select original Solar parameters and run this isolated calculation.</div><div id="solarBatterySweepReport" class="editorNote" role="status" tabindex="-1" aria-live="polite" data-result-state="none">Original AGM discharge comparison has not been run.</div>
 <p class="caution">No off-grid electrical certification. AGM capacity includes a source table and temperature assumptions; the original LFP model makes no rate/temperature capacity correction. The live Solar dispatch still uses an experimental envelope and is not changed by this tool.</p>
+</section>
+<section class="utilitySection" id="farmStudyUtility" tabindex="-1" aria-labelledby="farmStudyHeading">
+<h3 id="farmStudyHeading">Original Farm biological scenario study</h3>
+<p class="utilityScope">INDEPENDENT SOURCE STUDY · Native farm-sim daily engine · Separate worker, no live Farm or resource mutation</p>
+<p class="utilityHelp">Choose the original Farm management settings, one deterministic random seed, and a modeled time horizon. The original Farm simulator executes every biological day in a separate worker. Compare actual modeled animal counts, daily eggs, and Farm water/electricity demand. This does not run the separate original annual planner or change your live 3D animals.</p>
+<div class="solarNativeFields" role="group" aria-label="Original Farm management settings and scenario duration">
+<label for="farmStudyDays">Study horizon<select id="farmStudyDays"><option value="7" selected>7 modeled days</option><option value="30">30 modeled days</option><option value="90">90 modeled days</option></select></label>
+<label for="farmStudySeed">Native biological random seed<input id="farmStudySeed" type="number" min="0" max="4294967295" step="1" value="7" inputmode="numeric"></label>
+<label for="farmStudyDoes">Breeding does (does)<input id="farmStudyDoes" type="number" min="0" max="20" step="1" value="6" inputmode="numeric"></label>
+<label for="farmStudyHens">Laying hens (hens)<input id="farmStudyHens" type="number" min="0" max="60" step="1" value="12" inputmode="numeric"></label>
+<label for="farmStudyRoosters">Roosters (birds)<input id="farmStudyRoosters" type="number" min="0" max="10" step="1" value="1" inputmode="numeric"></label>
+<label for="farmStudySet">Incubator eggs set (eggs/week)<input id="farmStudySet" type="number" min="0" max="25" step="1" value="5" inputmode="numeric"></label>
+</div>
+<div class="waterUtilityActions"><button id="farmStudyRun" type="button">Run original Farm daily simulation</button><button id="farmStudyCsv" type="button" disabled>Download native daily results (CSV)</button><button id="farmStudyFocus" type="button">Find Farm equipment in 3D</button><button id="farmStudyReturn" type="button" hidden>Return to selected Farm object</button></div>
+<div id="farmStudyReport" class="editorNote" role="status" tabindex="-1" aria-live="polite" data-result-state="none">No source Farm scenario run yet. Run a 7, 30 or 90-day study to inspect the original daily biology, resource requirements and model limits.</div>
+<p class="caution">Independent original Farm biological model. Daily demands do not dynamically reduce survival or production after Solar/Water shortages in the combined Homestead. No livestock management, welfare, electrical or financial certification.</p>
 </section>
 <section class="setting utilitySection" id="waterPresetUtility" tabindex="-1" aria-label="Original Water preset engineering evaluator">
 <h3>Water design calculator</h3>

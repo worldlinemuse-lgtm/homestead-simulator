@@ -1,7 +1,12 @@
 name: Homestead integrated model tests
 on:
   push:
+    branches: [main] # prevent duplicate feature-branch push and PR workflows
   pull_request:
+concurrency:
+  # The newest exact-head PR commit supersedes earlier verification attempts.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   integration:
     runs-on: ubuntu-latest
