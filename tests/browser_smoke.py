@@ -316,6 +316,72 @@ try:
             page.locator("#solarBatteryReturn").click()
             assert page.evaluate("document.activeElement.id")=="assetReadout"
             page.locator("#closeInspector").click()
+            # Native Farm original source -> directory -> configure -> execute ->
+            # result/chart -> full CSV -> real 3D asset raycast -> return.
+            before_farm=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#utilitiesBtn").click()
+            page.locator("#nativeUtilitySearch").fill("Farm original")
+            farm_entry=page.locator('[data-utility-id="farm.native-daily-scenario"]')
+            assert farm_entry.count()==1,("Original Farm daily study not discoverable",mobile)
+            farm_entry.click()
+            assert page.evaluate("document.activeElement.id")=="farmStudyUtility"
+            page.locator("#farmStudyDays").select_option("7")
+            page.locator("#farmStudySeed").fill("7")
+            page.locator("#farmStudyHens").fill("10")
+            page.screenshot(path=str(preview_shots/(
+                "mobile-farm-native-directory.png" if mobile else "desktop-farm-native-directory.png")))
+            page.locator("#farmStudyRun").click()
+            page.wait_for_function("""() => {
+              const el=document.querySelector('#farmStudyReport');
+              return ['complete','error'].includes(el.dataset.resultState);
+            }""",timeout=45000)
+            status=page.locator("#farmStudyReport").get_attribute("data-result-state")
+            assert status=="complete",(mobile,page.locator("#farmStudyReport").inner_text())
+            farm_study=page.evaluate("window.HomesteadApp.farmStudy()")
+            assert farm_study and farm_study["source"]["revision"]=="d6614d7981535fa2b74be86e0c5356af57b56e3b"
+            assert farm_study["days"]==7 and len(farm_study["series"])==7
+            assert farm_study["parameters"]["mg_hens"]==10
+            assert farm_study["final"]["day"]==farm_study["initial"]["day"]+7
+            assert page.locator("#farmStudyReport svg[role='img']").count()==1
+            assert page.locator("#farmStudyReport tbody tr").count()==7
+            assert before_farm==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"),(
+                "Independent original Farm study mutated coupled Homestead",mobile)
+            page.screenshot(path=str(preview_shots/(
+                "mobile-farm-native-results.png" if mobile else "desktop-farm-native-results.png")))
+            with page.expect_download() as transfer:
+                page.locator("#farmStudyCsv").click()
+            exported=transfer.value
+            assert exported.suggested_filename.startswith("farm-original-native-daily-seed-7")
+            csv_text=Path(exported.path()).read_text()
+            assert csv_text.startswith("day,date,animals_count,eggs_count,water_US_gal,electricity_kWh")
+            assert len(csv_text.strip().splitlines())==8,("Missing native daily CSV rows",mobile)
+            page.locator("#farmStudyDoes").fill("-1")
+            assert page.evaluate("window.HomesteadApp.farmStudy()") is None
+            page.locator("#farmStudyRun").click()
+            assert page.locator("#farmStudyReport").get_attribute("data-result-state")=="error"
+            assert before_farm==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.locator("#farmStudyDoes").fill("6")
+            page.locator("#farmStudyFocus").click()
+            page.wait_for_function("""() => {
+              const c=window.HomesteadApp.world().camera;
+              return c.eyeTargetResidualM<0.15 && c.lookTargetResidualM<0.15;
+            }""",timeout=30000)
+            evidence=page.evaluate("window.HomesteadApp.world()")
+            assert evidence["farmStudyPickable"],("Actual Farm equipment missing from picker",mobile)
+            target=evidence["farmStudyPickTarget"]
+            assert target["inView"],("Farm equipment not in camera view",mobile,target)
+            page.mouse.click(target["x"],target["y"])
+            assert page.locator("#inspectTitle").inner_text()=="Feed and equipment storage barn",(
+                "3D Farm source-study object selection failed",mobile,target,
+                page.locator("#inspectTitle").inner_text())
+            assert page.evaluate("document.activeElement.id")=="farmStudyHens"
+            assert page.locator("#farmStudyReturn").is_visible()
+            assert before_farm==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            page.screenshot(path=str(preview_shots/(
+                "mobile-farm-native-object.png" if mobile else "desktop-farm-native-object.png")))
+            page.locator("#farmStudyReturn").click()
+            assert page.evaluate("document.activeElement.id")=="assetReadout"
+            page.locator("#closeInspector").click()
             # Returning to whole property must not mutate the model or playback.
             page.locator('nav [data-view="overview"]').click()
             assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
