@@ -53,6 +53,10 @@ function measure(snapshot,{initial=false}={}){
     typeof snapshot.date!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(snapshot.date)||
     (!initial&&!snapshot.daily)||!snapshot.counts)
   throw new Error("Original Farm engine returned incomplete daily snapshot");
+ const expectedDate=modelCalendarDate(snapshot.day);
+ const previousDate=snapshot.day===0?"2026-11-03":modelCalendarDate(snapshot.day-1);
+ if(snapshot.date!==expectedDate&&snapshot.date!==previousDate)
+  throw new Error("Original Farm snapshot date disagrees with source day index");
  const value=(name,x)=>{
   if(typeof x!=="number"||!Number.isFinite(x)||x<0)
    throw new Error("Original Farm model returned invalid "+name);
