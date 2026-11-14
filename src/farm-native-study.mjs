@@ -51,7 +51,8 @@ export function verifyFarmStudyResult(raw,req){
    "Invalid original Farm calendar date");
   return dateMs;
  };
- const start=check(raw.initial,raw.initial?.day);
+ must(raw.initial?.day===0,"Original Farm initial day must be zero");
+ const start=check(raw.initial,0);
  let sums={waterGal:0,electricityKWh:0,eggs:0};
  for(let i=0;i<req.days;i++){
   const day=raw.series[i];
