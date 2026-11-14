@@ -320,7 +320,7 @@ try:
             page.screenshot(path=str(preview_shots/("mobile-solar-battery-object.png" if mobile else "desktop-solar-battery-object.png")))
             page.locator("#solarBatteryReturn").click()
             assert page.evaluate("document.activeElement.id")=="assetReadout"
-            assert page.locator("#inspectTitle").inner_text()=="Feed and equipment storage barn",("Return did not restore 3D asset context",mobile)
+            assert page.locator("#inspectTitle").inner_text()=="Battery storage module",("Return did not restore selected 3D battery context",mobile)
             page.locator("#closeInspector").click()
             # Native Farm original source -> directory -> configure -> execute ->
             # result/chart -> full CSV -> real 3D asset raycast -> return.
