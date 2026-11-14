@@ -65,6 +65,10 @@ function executeFarmStudy(input){
   throw new Error("Original Farm biological engine unavailable");
  // Fresh worker instance per calculation makes P, S, all RNG and visual state
  // private. A failed study is discarded on termination; no partial live writes.
+ // Original Farm core requires a real seeded state before setParameter()
+ // (setParameter invokes refreshToday against S.today). Initialize, set native
+ // P values, then reseed once so startup herd matches the edited settings.
+ original.reset(request.seed);
  for(const [key,value] of Object.entries(request.parameters))
   original.setParameter(key,value);
  original.reset(request.seed);
