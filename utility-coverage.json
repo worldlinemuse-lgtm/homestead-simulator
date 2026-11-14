@@ -56,6 +56,47 @@
       ]
     },
     {
+      "id": "farm.native-daily-scenario",
+      "domain": "farm",
+      "status": "integrated",
+      "sourcePath": "source/src/core/settings.js; original source/src/core daily biology and state",
+      "upstreamRevision": "d6614d7981535fa2b74be86e0c5356af57b56e3b",
+      "sourceInterface": "HomesteadFarmCore.setParameter/reset/advanceDay/snapshot; original P.mg_does/mg_hens/mg_roosters/mg_set",
+      "adapter": "src/farm-native-study.mjs; src/farm-study-worker.js; src/farm-study-ui.mjs",
+      "ui": "farmStudyRun",
+      "uiAccess": "Main Utilities → Farm original biological scenario (7–90 days) → native management settings → Run → source chart/table → CSV → return; select an animal or Farm asset from 3D to jump to source calculator",
+      "scope": "Independent dedicated browser worker with its own Farm core closure, RNG, daily clock and parameters. Never writes coupled Homestead model.",
+      "units": {
+        "inputs": {
+          "seed": "unsigned 32-bit integer",
+          "days": "biological days (7,30,90)",
+          "breedingDoes": "does",
+          "layingHens": "hens",
+          "roosters": "birds",
+          "incubatorSet": "eggs/week"
+        },
+        "outputs": {
+          "animals": "count",
+          "eggs": "count",
+          "water": "US gal",
+          "electricity": "kWh",
+          "dates": "Gregorian UTC dates in original source simulator"
+        }
+      },
+      "tests": [
+        "tests/farm-native-study.test.mjs",
+        "tests/browser_smoke.py",
+        "tests/utility-registry.test.mjs"
+      ],
+      "fidelity": "original-vendored-biological-engine-isolated-worker",
+      "gaps": [
+        "Uses original daily Farm biological model; original Farm makePlan/runRange annual planning is not integrated",
+        "Study management limits are safety/performance budgets rather than upstream model limits",
+        "No live Solar/Water shortage feedback, monetary planning or guaranteed livestock production",
+        "Daily plots describe modeled animals/eggs/water/electricity only"
+      ]
+    },
+    {
       "id": "farm.native-range-check",
       "domain": "farm",
       "status": "not-integrated",
@@ -103,6 +144,41 @@
       "gaps": [
         "Deficit response not coupled to biological outcomes",
         "Daily loads are redistributed hourly"
+      ]
+    },
+    {
+      "id": "solar.battery.source-diagnostics",
+      "domain": "solar",
+      "status": "integrated",
+      "sourcePath": "source/battery.js",
+      "upstreamRevision": "871dd8c0ef03a05feb339c9761ead900875f16b5",
+      "sourceBlob": "d3190721347fc53991a5d1c7b535dd658c46696f",
+      "sourceInterface": "BATTMODEL.drainMult/agmCapAt/agmTempFactor/absorption/agmPeukert/heatMinutes",
+      "adapter": "src/solar-battery-utility.mjs",
+      "ui": "solarBatteryRun",
+      "uiAccess": "3D selectable Battery storage module → original Solar parameter controls; Utilities → Solar battery discharge, charging & cold-weather diagnostics",
+      "units": {
+        "dischargeCurrent": "A per string",
+        "batteryTemperature": "degC",
+        "stateOfCharge": "%",
+        "bankCapacity": "Ah",
+        "absorptionTime": "min",
+        "drainAndChargingMultipliers": "ratio",
+        "heatingTime": "min"
+      },
+      "scope": "isolated original-source battery characterization, no live coordinator mutation or clock advance",
+      "tests": [
+        "tests/solar-native-battery.test.mjs",
+        "tests/browser_smoke.py",
+        "tests/utility-registry.test.mjs"
+      ],
+      "fidelity": "byte-identical-original-source-battery-model-isolated",
+      "gaps": [
+        "Does not replace experimental live Solar dispatch or implement the full source/sim.js chronological dispatcher",
+        "Battery object corresponds to a source study, not an automatically inferred real installed chemistry",
+        "Renogy AGM manufacturer table is limited in current and temperature; source assumptions remain labeled",
+        "Original source applies no rate/temperature derating to LFP, and self-heating timings are not field guarantees",
+        "Electrical installation design and battery safety certification are not provided"
       ]
     },
     {
@@ -292,41 +368,6 @@
       "fidelity": "not-evaluated",
       "gaps": [
         "Native source UI and editable hydraulic network not ported"
-      ]
-    },
-    {
-      "id": "solar.battery.source-diagnostics",
-      "domain": "solar",
-      "status": "integrated",
-      "sourcePath": "source/battery.js",
-      "upstreamRevision": "871dd8c0ef03a05feb339c9761ead900875f16b5",
-      "sourceBlob": "d3190721347fc53991a5d1c7b535dd658c46696f",
-      "sourceInterface": "BATTMODEL.drainMult/agmCapAt/agmTempFactor/absorption/agmPeukert/heatMinutes",
-      "adapter": "src/solar-battery-utility.mjs",
-      "ui": "solarBatteryRun",
-      "uiAccess": "3D selectable Battery storage module → original Solar parameter controls; Utilities → Solar battery discharge, charging & cold-weather diagnostics",
-      "units": {
-        "dischargeCurrent": "A per string",
-        "batteryTemperature": "degC",
-        "stateOfCharge": "%",
-        "bankCapacity": "Ah",
-        "absorptionTime": "min",
-        "drainAndChargingMultipliers": "ratio",
-        "heatingTime": "min"
-      },
-      "scope": "isolated original-source battery characterization, no live coordinator mutation or clock advance",
-      "tests": [
-        "tests/solar-native-battery.test.mjs",
-        "tests/browser_smoke.py",
-        "tests/utility-registry.test.mjs"
-      ],
-      "fidelity": "byte-identical-original-source-battery-model-isolated",
-      "gaps": [
-        "Does not replace experimental live Solar dispatch or implement the full source/sim.js chronological dispatcher",
-        "Battery object corresponds to a source study, not an automatically inferred real installed chemistry",
-        "Renogy AGM manufacturer table is limited in current and temperature; source assumptions remain labeled",
-        "Original source applies no rate/temperature derating to LFP, and self-heating timings are not field guarantees",
-        "Electrical installation design and battery safety certification are not provided"
       ]
     }
   ]
