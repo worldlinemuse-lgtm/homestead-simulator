@@ -258,6 +258,9 @@ function jumpToUtility(sectionId){
   $("inspectTitle").textContent=heading.textContent.trim();
   const scope=section.querySelector(".utilityScope");
   $("inspectDescription").textContent=scope?.textContent.trim()||"Select and configure this utility.";
+ }else if(sectionId==="assetReadout"&&selectedAsset){
+  $("inspectTitle").textContent=selectedAsset;
+  $("inspectDescription").textContent=descriptions[selected][1];
  }
  section.scrollIntoView({block:"start",behavior:"auto"});
  section.focus({preventScroll:true});
