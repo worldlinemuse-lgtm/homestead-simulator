@@ -37,3 +37,40 @@ test("original native model remains deterministic and unchanged",()=>{
  assert.deepEqual(sweep,evaluateNativeSolarAgmSweep(native,{tempC:20}));
  assert.equal(JSON.stringify(native),before);
 });
+
+test("source sweep rejects malformed table tuples, duplicates and forged nonfinite anchors",()=>{
+ const badTables=[
+  [[1,10],[2,20],[3,30],null],
+  [[1,10],[2,20],[3,30],["4",40]],
+  [[1,10],[2,20],[3,30],[4,NaN]],
+  [[1,10],[2,20],[3,30],[4,Infinity]],
+  [[1,10],[2,20],[3,30],[4,10]]
+ ];
+ for(const AGM_RATE of badTables){
+  const broken={...native,AGM_RATE};
+  assert.throws(()=>evaluateNativeSolarAgmSweep(broken,{tempC:20}),
+   /invalid|finite|duplicate|source|iterable|object|number/i);
+ }
+});
+test("native Solar inputs reject type coercion, forged fields and nonfinite values",()=>{
+ for(const options of [
+  {...base,currentA:"10"}, {...base,tempC:NaN},
+  {...base,socPercent:Infinity},{...base,bankAh:0},
+  {...base,unknownField:42}, {...base,chem:"forged"},
+  {...base,heatMode:"turbo"},null,[],42
+ ]){
+  assert.throws(()=>evaluateNativeSolarBattery(native,options));
+ }
+ for(const options of [{tempC:NaN},{tempC:"20"},{tempC:-15.001},{tempC:40.001}]){
+  assert.throws(()=>evaluateNativeSolarAgmSweep(native,options));
+ }
+});
+test("source sweep must not silently accept zero, negative or nonfinite secondary outputs",()=>{
+ const badModels=[
+  {...native,drainMult:(...a)=>({...native.drainMult(...a),rate:0})},
+  {...native,drainMult:(...a)=>({...native.drainMult(...a),temp:-1})},
+  {...native,agmCapAt:(...a)=>({...native.agmCapAt(...a),ah:Infinity})}
+ ];
+ for(const model of badModels)
+  assert.throws(()=>evaluateNativeSolarAgmSweep(model,{tempC:20}),/invalid|finite|source/i);
+});
