@@ -108,5 +108,12 @@ export function installFarmNativeStudy({$,coordinator,stop,jumpToUtility,focusFa
   link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  });
  $("farmStudyReturn").addEventListener("click",()=>jumpToUtility("assetReadout"));
+ $("farmStudyFocus").addEventListener("click",()=>{
+  try{focusFarm()}
+  catch(error){
+   const host=$("farmStudyReport");host.dataset.resultState="error";
+   host.textContent="Farm equipment focus failed: "+String(error?.message||error);
+  }
+ });
  return Object.freeze({study:()=>result,source:()=>FARM_STUDY_SOURCE});
 }
