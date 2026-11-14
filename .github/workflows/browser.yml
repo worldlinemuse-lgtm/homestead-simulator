@@ -9,7 +9,12 @@ concurrency:
   cancel-in-progress: true
 jobs:
   browser:
+    name: browser-${{ matrix.viewport }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        viewport: [desktop, mobile]
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
@@ -24,9 +29,11 @@ jobs:
           # Chromium downloads independently; browser launch validates libraries.
           python -m playwright install chromium
       - name: Run integrated WebGL, UI and numerical control smoke
+        env:
+          HOMESTEAD_BROWSER_VIEWPORT: ${{ matrix.viewport }}
         run: python tests/browser_smoke.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: 3d-smoke-screenshots
+          name: 3d-smoke-screenshots-${{ matrix.viewport }}
           path: tests/artifacts/*.png

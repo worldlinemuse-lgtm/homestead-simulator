@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """3D WebGL + all-source-coupling browser smoke. Run from repository root."""
+import os
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -13,7 +14,11 @@ thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
 try:
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True,args=["--enable-webgl","--use-gl=angle","--use-angle=swiftshader","--ignore-gpu-blocklist"])
-        for mobile in (False,True):
+        viewport_mode=os.environ.get('HOMESTEAD_BROWSER_VIEWPORT', 'both')
+        if viewport_mode not in ('both', 'desktop', 'mobile'):
+            raise ValueError('HOMESTEAD_BROWSER_VIEWPORT must be both, desktop or mobile')
+        viewports={'both': (False, True), 'desktop': (False,), 'mobile': (True,)}[viewport_mode]
+        for mobile in viewports:
             page=browser.new_page(viewport={"width":393 if mobile else 1280,"height":851 if mobile else 800},device_scale_factor=1)
             errors=[]
             page.on("pageerror",lambda e:errors.append(str(e)+"\n"+(getattr(e,"stack","") or "")))
@@ -315,6 +320,7 @@ try:
             page.screenshot(path=str(preview_shots/("mobile-solar-battery-object.png" if mobile else "desktop-solar-battery-object.png")))
             page.locator("#solarBatteryReturn").click()
             assert page.evaluate("document.activeElement.id")=="assetReadout"
+            assert page.locator("#inspectTitle").inner_text()=="Feed and equipment storage barn",("Return did not restore 3D asset context",mobile)
             page.locator("#closeInspector").click()
             # Native Farm original source -> directory -> configure -> execute ->
             # result/chart -> full CSV -> real 3D asset raycast -> return.
@@ -325,6 +331,7 @@ try:
             assert farm_entry.count()==1,("Original Farm daily study not discoverable",mobile)
             farm_entry.click()
             assert page.evaluate("document.activeElement.id")=="farmStudyUtility"
+            assert page.locator("#inspectTitle").inner_text()=="Original Farm biological scenario study", ("Utility directory inherited stale object title",mobile)
             page.locator("#farmStudyDays").select_option("7")
             page.locator("#farmStudySeed").fill("7")
             page.locator("#farmStudyHens").fill("10")
@@ -371,8 +378,8 @@ try:
             target=evidence["farmStudyPickTarget"]
             assert target["inView"],("Farm equipment not in camera view",mobile,target)
             page.mouse.click(target["x"],target["y"])
-            assert page.locator("#inspectTitle").inner_text()=="Feed and equipment storage barn",(
-                "3D Farm source-study object selection failed",mobile,target,
+            assert page.locator("#inspectTitle").inner_text()=="Original Farm biological scenario study",(
+                "3D Farm source-study route inherited stale object title",mobile,target,
                 page.locator("#inspectTitle").inner_text())
             assert page.evaluate("document.activeElement.id")=="farmStudyHens"
             assert page.locator("#farmStudyReturn").is_visible()
@@ -988,23 +995,28 @@ try:
             page.close()
         # NARROW UTILITY DISCOVERY REGRESSION: six top-level actions remain
         # independently tappable at a 320 px viewport without clipped text.
-        narrow=browser.new_page(viewport={"width":320,"height":720},device_scale_factor=1)
-        narrow.goto("http://127.0.0.1:%d/"%server.server_port,wait_until="load")
-        narrow.wait_for_function("window.HomesteadApp && window.HomesteadApp.snapshot().farm.counts.n>0",timeout=40000)
-        buttons=narrow.locator("header nav button")
-        assert buttons.count()==6
-        for i in range(buttons.count()):
-            rect=buttons.nth(i).bounding_box()
-            assert rect and rect["x"]>=-1 and rect["x"]+rect["width"]<=321, (
-                "Narrow utility navigation is clipped",i,rect)
-            assert rect["height"]>=40,("Narrow navigation tap targets too short",i,rect)
-        narrow.locator("#utilitiesBtn").click()
-        assert narrow.locator("#inspector").is_visible()
-        assert narrow.locator("#nativeUtilityList button").first.get_attribute("data-utility-id").startswith(
-            "water.preset.")
-        (ROOT/"tests"/"artifacts").mkdir(parents=True,exist_ok=True)
-        narrow.screenshot(path=str(ROOT/"tests"/"artifacts"/"narrow-utility-hub.png"))
-        narrow.close()
+        if viewport_mode == 'desktop':
+            print('PASS: desktop browser verification; mobile and 320px coverage run in separate matrix job',flush=True)
+            browser.close()
+            narrow=None
+        else:
+            narrow=browser.new_page(viewport={"width":320,"height":720},device_scale_factor=1)
+            narrow.goto("http://127.0.0.1:%d/"%server.server_port,wait_until="load")
+            narrow.wait_for_function("window.HomesteadApp && window.HomesteadApp.snapshot().farm.counts.n>0",timeout=40000)
+            buttons=narrow.locator("header nav button")
+            assert buttons.count()==6
+            for i in range(buttons.count()):
+                rect=buttons.nth(i).bounding_box()
+                assert rect and rect["x"]>=-1 and rect["x"]+rect["width"]<=321, (
+                    "Narrow utility navigation is clipped",i,rect)
+                assert rect["height"]>=40,("Narrow navigation tap targets too short",i,rect)
+            narrow.locator("#utilitiesBtn").click()
+            assert narrow.locator("#inspector").is_visible()
+            assert narrow.locator("#nativeUtilityList button").first.get_attribute("data-utility-id").startswith(
+                "water.preset.")
+            (ROOT/"tests"/"artifacts").mkdir(parents=True,exist_ok=True)
+            narrow.screenshot(path=str(ROOT/"tests"/"artifacts"/"narrow-utility-hub.png"))
+            narrow.close()
         browser.close()
     print("PASS: unified 3D site runs, both layouts step 25 model hours, no page exceptions")
 finally:

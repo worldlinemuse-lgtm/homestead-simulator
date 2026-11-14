@@ -38,17 +38,31 @@ function assertFarmRequest(input){
  for(const [key,{min,max}] of Object.entries(FARM_CONTROLS))integer(key,p[key],min,max);
  return input;
 }
+// The pinned original Farm source starts at local 2026-11-04 and advances
+// calendar days using setDate(). Its snapshot() serializes that local midnight
+// with toISOString(), which shifts the displayed day in positive UTC offsets.
+// Preserve source biology and day index; represent the source calendar date
+// independently of host timezone (not a second biological clock).
+function modelCalendarDate(day){
+ if(!Number.isSafeInteger(day)||day<0||day>90)
+  throw new RangeError("Invalid original Farm calendar day");
+ return new Date(Date.UTC(2026,10,4+day)).toISOString().slice(0,10);
+}
 function measure(snapshot,{initial=false}={}){
  if(!snapshot||!Number.isSafeInteger(snapshot.day)||
     typeof snapshot.date!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(snapshot.date)||
     (!initial&&!snapshot.daily)||!snapshot.counts)
   throw new Error("Original Farm engine returned incomplete daily snapshot");
+ const expectedDate=modelCalendarDate(snapshot.day);
+ const previousDate=snapshot.day===0?"2026-11-03":modelCalendarDate(snapshot.day-1);
+ if(snapshot.date!==expectedDate&&snapshot.date!==previousDate)
+  throw new Error("Original Farm snapshot date disagrees with source day index");
  const value=(name,x)=>{
   if(typeof x!=="number"||!Number.isFinite(x)||x<0)
    throw new Error("Original Farm model returned invalid "+name);
   return x;
  };
- const base={day:snapshot.day,date:snapshot.date,
+ const base={day:snapshot.day,date:modelCalendarDate(snapshot.day),
   animals:value("animal count",snapshot.counts.n)};
  // Original newState/reset has an EMPTY S.hist, so no day-zero daily record.
  // Do not invent values: source measurements begin at advanceDay().
