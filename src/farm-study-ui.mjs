@@ -1,6 +1,6 @@
 import {runNativeFarmDailyStudy,FARM_STUDY_SOURCE} from "./farm-native-study.mjs";
 // Real UI over the original seeded Farm daily engine, isolated from Homestead.
-export function installFarmNativeStudy({$,coordinator,stop,jumpToUtility,fmt}){
+export function installFarmNativeStudy({$,coordinator,stop,jumpToUtility,focusFarm,fmt}){
  let result=null,generation=0;
  const inputFields=[
   ["farmStudyDoes","mg_does"],["farmStudyHens","mg_hens"],
