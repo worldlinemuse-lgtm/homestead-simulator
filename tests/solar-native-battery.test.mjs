@@ -112,3 +112,47 @@ test("source AGM sweep rejects nonfinite, unsupported, out-of-table temperatures
  const broken={...native,AGM_RATE:[[1,5],[1,5],[2,10],[3,20]]};
  assert.throws(()=>evaluateNativeSolarAgmSweep(broken),/Duplicate/);
 });
+
+test("fail-closed Solar output gate rejects malformed native discharge, AGM and charge fields",()=>{
+ const inputs={chem:"agm",currentA:10,tempC:20,socPercent:86,bankAh:100};
+ const invalid=[
+  {label:"discharge absent",model:{...native,drainMult:()=>null}},
+  {label:"discharge rate infinite",model:{...native,drainMult:(...a)=>({...native.drainMult(...a),rate:Infinity})}},
+  {label:"discharge temperature NaN",model:{...native,drainMult:(...a)=>({...native.drainMult(...a),temp:NaN})}},
+  {label:"discharge flag forged",model:{...native,drainMult:(...a)=>({...native.drainMult(...a),beyond:"false"})}},
+  {label:"AGM capacity zero",model:{...native,agmCapAt:()=>({ah:0,beyond:false,below:true})}},
+  {label:"AGM temperature factor infinite",model:{...native,agmTempFactor:()=>Infinity}},
+  {label:"AGM Peukert negative",model:{...native,agmPeukert:()=>-1}},
+  {label:"charging phase forged",model:{...native,absorption:(...a)=>({...native.absorption(...a),phase:"forged"})}},
+  {label:"charging multiplier outside normalized range",model:{...native,absorption:(...a)=>({...native.absorption(...a),mult:2})}},
+  {label:"charging time limit nonfinite",model:{...native,absorption:(...a)=>({...native.absorption(...a),limit:Infinity})}}
+ ];
+ const baseline=JSON.stringify(native);
+ for(const {label,model} of invalid)
+  assert.throws(()=>evaluateNativeSolarBattery(model,inputs),
+   /Original Solar model returned invalid/,label);
+ assert.equal(JSON.stringify(native),baseline,"original engine stays unmodified");
+});
+test("Solar heating result requires valid native rate, label and duration",()=>{
+ const options={chem:"lfp",tempC:-10,heatMode:"mid"};
+ for(const model of [
+  {...native,HEAT:{...native.HEAT,mid:{...native.HEAT.mid,rate:NaN}}},
+  {...native,HEAT:{...native.HEAT,mid:{...native.HEAT.mid,label:" "}}},
+  {...native,heatMinutes:()=>Infinity},
+  {...native,heatMinutes:()=>-4}
+ ])assert.throws(()=>evaluateNativeSolarBattery(model,options),/Original Solar model returned invalid/);
+ const good=evaluateNativeSolarBattery(native,options);
+ assert.ok(good.heating.rateCPerMinute>0&&good.heating.minutesTo5C>0);
+});
+test("AGM sweep secondary outputs and row identities fail closed without touching source",()=>{
+ const original=JSON.stringify(native);
+ for(const model of [
+  {...native,drainMult:(...a)=>({...native.drainMult(...a),rate:NaN})},
+  {...native,drainMult:(...a)=>({...native.drainMult(...a),temp:-1})},
+  {...native,agmCapAt:(...a)=>({...native.agmCapAt(...a),ah:Infinity})},
+  {...native,agmCapAt:(...a)=>({...native.agmCapAt(...a),below:"forged"})},
+  {...native,AGM_RATE:[...native.AGM_RATE.slice(0,7),null]},
+  {...native,AGM_RATE:[...native.AGM_RATE.slice(0,7),[20,5,"forged"]]}
+ ])assert.throws(()=>evaluateNativeSolarAgmSweep(model),/invalid|source table row/i);
+ assert.equal(JSON.stringify(native),original);
+});
