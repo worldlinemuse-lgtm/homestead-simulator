@@ -320,6 +320,7 @@ try:
             page.screenshot(path=str(preview_shots/("mobile-solar-battery-object.png" if mobile else "desktop-solar-battery-object.png")))
             page.locator("#solarBatteryReturn").click()
             assert page.evaluate("document.activeElement.id")=="assetReadout"
+            assert page.locator("#inspectTitle").inner_text()=="Feed and equipment storage barn",("Return did not restore 3D asset context",mobile)
             page.locator("#closeInspector").click()
             # Native Farm original source -> directory -> configure -> execute ->
             # result/chart -> full CSV -> real 3D asset raycast -> return.
@@ -330,6 +331,7 @@ try:
             assert farm_entry.count()==1,("Original Farm daily study not discoverable",mobile)
             farm_entry.click()
             assert page.evaluate("document.activeElement.id")=="farmStudyUtility"
+            assert page.locator("#inspectTitle").inner_text()=="Original Farm biological scenario study", ("Utility directory inherited stale object title",mobile)
             page.locator("#farmStudyDays").select_option("7")
             page.locator("#farmStudySeed").fill("7")
             page.locator("#farmStudyHens").fill("10")
@@ -376,8 +378,8 @@ try:
             target=evidence["farmStudyPickTarget"]
             assert target["inView"],("Farm equipment not in camera view",mobile,target)
             page.mouse.click(target["x"],target["y"])
-            assert page.locator("#inspectTitle").inner_text()=="Feed and equipment storage barn",(
-                "3D Farm source-study object selection failed",mobile,target,
+            assert page.locator("#inspectTitle").inner_text()=="Original Farm biological scenario study",(
+                "3D Farm source-study route inherited stale object title",mobile,target,
                 page.locator("#inspectTitle").inner_text())
             assert page.evaluate("document.activeElement.id")=="farmStudyHens"
             assert page.locator("#farmStudyReturn").is_visible()
