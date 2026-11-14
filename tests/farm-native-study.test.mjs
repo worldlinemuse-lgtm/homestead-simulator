@@ -152,3 +152,20 @@ test("native Farm worker rejects source snapshot date inconsistent with day inde
  snapshot.date=rawSourceDate==="2026-11-04"?"2026-11-05":"2026-11-04";
  assert.throws(()=>vm.runInContext("measure(snapshotForTest)",worker),/snapshot date disagrees/);
 });
+
+test("client rejects uniformly shifted but otherwise authentic original Farm timelines",()=>{
+ const req=farmStudyRequest({days:7});
+ const worker=workerContext();worker.self.onmessage({data:req});
+ assert.equal(worker.messages[0].ok,true);
+ const valid=worker.messages[0].result;
+ assert.equal(verifyFarmStudyResult(valid,req),valid);
+ const shift=(date,offset)=>new Date(Date.parse(date+"T00:00:00Z")+offset*86400000).toISOString().slice(0,10);
+ for(const offset of [-365,-1,1,365]){
+  const forged=JSON.parse(JSON.stringify(valid));
+  forged.initial.date=shift(forged.initial.date,offset);
+  for(const day of forged.series)day.date=shift(day.date,offset);
+  forged.final.date=shift(forged.final.date,offset);
+  assert.throws(()=>verifyFarmStudyResult(forged,req),/calendar epoch/,
+   "uniformly forged Farm source calendar offset "+offset+" must fail");
+ }
+});
