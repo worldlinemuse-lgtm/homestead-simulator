@@ -12,6 +12,22 @@ const finite=(name,value,min,max)=>{
   throw new RangeError(name+" must be a finite number in ["+min+", "+max+"]");
  return value;
 };
+const sourceNumber=(name,value,{zero=false,max=Infinity}={})=>{
+ if(typeof value!=="number"||!Number.isFinite(value)||
+   (zero?value<0:value<=0)||value>max)
+  throw new RangeError("Original Solar model returned invalid "+name);
+ return value;
+};
+const sourceRecord=(name,record)=>{
+ if(!record||typeof record!=="object"||Array.isArray(record))
+  throw new TypeError("Original Solar model returned invalid "+name);
+ return record;
+};
+const sourceFlag=(name,value)=>{
+ if(typeof value!=="boolean")
+  throw new TypeError("Original Solar model returned invalid "+name);
+ return value;
+};
 export function evaluateNativeSolarBattery(model,options={}){
  if(!model||typeof model!=="object"||
   !["drainMult","agmCapAt","agmTempFactor","absorption","agmPeukert","heatMinutes"]
@@ -40,11 +56,41 @@ export function evaluateNativeSolarBattery(model,options={}){
  const charge=model.absorption(chem,socPercent/100,absorptionMinutes,bankAh);
  const agm=chem==="agm"?model.agmCapAt(currentA):null;
  const heat=heatMode==="off"?null:model.HEAT[heatMode];
- const heating=heat?Object.freeze({
-  mode:heatMode,rateCPerMinute:heat.rate,
-  minutesTo5C:model.heatMinutes(heat.rate,tempC,5),
-  assumption:heat.label
- }):null;
+ // Validate EVERY exposed native output, not merely the headline capacity.
+ // Original battery physics remains entirely inside the pinned source.
+ sourceRecord("discharge",discharge);
+ sourceNumber("discharge multiplier",discharge.m);
+ sourceNumber("discharge rate factor",discharge.rate);
+ sourceNumber("discharge temperature factor",discharge.temp);
+ if(chem==="agm"){
+  sourceFlag("discharge beyond flag",discharge.beyond);
+  sourceFlag("discharge cold flag",discharge.cold);
+ }else if(discharge.note!==undefined&&
+   (typeof discharge.note!=="string"||!discharge.note.trim()))
+  throw new TypeError("Original Solar model returned invalid discharge note");
+ sourceRecord("charging",charge);
+ sourceNumber("charging multiplier",charge.mult,{zero:true,max:1});
+ if(!["bulk","absorption","float"].includes(charge.phase))
+  throw new RangeError("Original Solar model returned invalid charging phase");
+ if(charge.limit!=null)
+  sourceNumber("charging time limit",charge.limit,{zero:true});
+ if(agm){
+  sourceRecord("AGM capacity",agm);
+  sourceNumber("AGM available Ah",agm.ah);
+  sourceFlag("AGM beyond flag",agm.beyond);
+  sourceFlag("AGM below flag",agm.below);
+ }
+ const agmTemperatureFactor=agm?sourceNumber("AGM temperature factor",model.agmTempFactor(tempC)):null;
+ const peukertDisplayExponent=agm?sourceNumber("AGM Peukert exponent",model.agmPeukert()):null;
+ const heating=heat?(()=>{
+  sourceRecord("heating specification",heat);
+  const rate=sourceNumber("heating rate",heat.rate);
+  if(typeof heat.label!=="string"||!heat.label.trim())
+   throw new TypeError("Original Solar model returned invalid heating label");
+  const minutes=sourceNumber("heating minutes",model.heatMinutes(rate,tempC,5),{zero:true});
+  return Object.freeze({mode:heatMode,rateCPerMinute:rate,
+   minutesTo5C:minutes,assumption:heat.label});
+ })():null;
  const warnings=[];
  if(chem==="agm"){
   if(agm.beyond)warnings.push("Current exceeds the original Renogy AGM table; capacity estimate is clamped at its high-current endpoint.");
@@ -60,8 +106,7 @@ export function evaluateNativeSolarBattery(model,options={}){
   inputs:Object.freeze({chem,currentA,tempC,socPercent,absorptionMinutes,bankAh,heatMode}),
   discharge:Object.freeze({...discharge}),
   agmAtCurrent:agm?Object.freeze({...agm}):null,
-  agmTemperatureFactor:agm?model.agmTempFactor(tempC):null,
-  peukertDisplayExponent:agm?model.agmPeukert():null,
+  agmTemperatureFactor,peukertDisplayExponent,
   charging:Object.freeze({...charge}),
   heating,
   warnings:Object.freeze(warnings)
@@ -84,18 +129,24 @@ export function evaluateNativeSolarAgmSweep(model,{tempC=20}={}){
  finite("tempC",tempC,-15,40);
  if(model.AGM_RATE.length<4||model.AGM_RATE.length>64)
   throw new TypeError("Original AGM source table length is invalid");
- const points=model.AGM_RATE.map(([hours,amps])=>{
+ const points=model.AGM_RATE.map(row=>{
+  if(!Array.isArray(row)||row.length!==2)
+   throw new TypeError("Original AGM source table row is invalid");
+  const [hours,amps]=row;
   finite("source rate hours",hours,0.01,1000);
   finite("source rate current",amps,0.01,1000);
-  const direct=model.drainMult("agm",amps,tempC);
-  const capacity=model.agmCapAt(amps);
-  if(!Number.isFinite(direct.m)||direct.m<=0||
-     !Number.isFinite(capacity.ah)||capacity.ah<=0)
-   throw new RangeError("Original AGM source data was nonfinite");
+  const direct=sourceRecord("AGM sweep discharge",model.drainMult("agm",amps,tempC));
+  const capacity=sourceRecord("AGM sweep capacity",model.agmCapAt(amps));
+  const availableAh=sourceNumber("AGM sweep available Ah",capacity.ah);
+  const multiplier=sourceNumber("AGM sweep multiplier",direct.m);
+  const rate=sourceNumber("AGM sweep rate factor",direct.rate);
+  const temperatureFactor=sourceNumber("AGM sweep temperature factor",direct.temp);
+  sourceFlag("AGM sweep beyond flag",capacity.beyond);
+  sourceFlag("AGM sweep below flag",capacity.below);
   return Object.freeze({
    currentA:amps,sourceRatedHours:hours,
-   availableAh:capacity.ah,drainMultiplier:direct.m,
-   sourceRateFactor:direct.rate,sourceTemperatureFactor:direct.temp
+   availableAh,drainMultiplier:multiplier,
+   sourceRateFactor:rate,sourceTemperatureFactor:temperatureFactor
   });
  }).sort((a,b)=>a.currentA-b.currentA);
  if(points.some((p,i)=>i>0&&p.currentA===points[i-1].currentA))
