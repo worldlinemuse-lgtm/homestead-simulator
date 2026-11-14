@@ -114,6 +114,8 @@ test("client rejects forged provenance, chronology, missing native fields and co
   x=>{x.totals.eggs+=1;},
   x=>{x.parameters.mg_does=99;},
   x=>{x.series.pop();},
+  x=>{x.initial.day=1;},
+  x=>{x.initial.day=-1;},
   x=>{x.final.day=999;}
  ]){
   const forged=copy();mutate(forged);
