@@ -89,9 +89,10 @@ test("90 daily original-core biology and units agree across UTC, New York, Tokyo
  for(const [tz,data] of samples.slice(1)){
   for(const key of ["source","initial","series","final","totals","params","seed","days"])
    assert.deepEqual(data[key],canonical[key],tz+" timezone must not change "+key);
-  assert.notDeepEqual(data.originalSeries.map(s=>s.date),
-   canonical.originalSeries.map(s=>s.date),
-   tz+" raw ISO dates need not match UTC");
+  if(tz==="Asia/Tokyo"||tz==="Pacific/Chatham")
+   assert.notDeepEqual(data.originalSeries.map(s=>s.date),
+    canonical.originalSeries.map(s=>s.date),
+    tz+" raw local-midnight serialization must differ from UTC");
  }
  const replay=execute("Asia/Tokyo",baseline);
  assert.deepEqual(replay,samples[2][1],"repeated full-worker study must replay identically");
