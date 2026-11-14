@@ -61,6 +61,10 @@ export function verifyFarmStudyResult(raw,req){
  };
  must(raw.initial?.day===0,"Original Farm initial day must be zero");
  const start=check(raw.initial,0,true);
+ // Pin day zero to the original Farm core reset epoch, not an attacker-supplied
+ // internally consecutive timeline. Source starts at local 2026-11-04;
+ // published study dates are normalized civil days independent of host TZ.
+ must(raw.initial.date==="2026-11-04","Original Farm calendar epoch mismatch");
  let sums={waterGal:0,electricityKWh:0,eggs:0};
  for(let i=0;i<req.days;i++){
   const day=raw.series[i];
