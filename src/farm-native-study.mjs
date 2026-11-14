@@ -41,18 +41,23 @@ export function verifyFarmStudyResult(raw,req){
   "Original Farm response identity mismatch");
  must(Array.isArray(raw.series)&&raw.series.length===req.days,"Original Farm timeline length mismatch");
  const dailyFields=["animals","eggs","waterGal","electricityKWh"];
- const check=(row,day)=>{
+ const check=(row,day,initial=false)=>{
   must(row&&Number.isSafeInteger(row.day)&&row.day===day&&
     typeof row.date==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(row.date),
    "Malformed original Farm day/date");
-  for(const key of dailyFields)finite(key,row[key]);
+  if(initial){
+   // Original Farm reset() exposes day 0 with null daily ledger, not measured zeros.
+   finite("animals",row.animals);
+   for(const key of ["eggs","waterGal","electricityKWh"])
+    must(row[key]===null,"Original Farm day-zero ledger must be null until advanceDay()");
+  }else for(const key of dailyFields)finite(key,row[key]);
   const dateMs=Date.parse(row.date+"T00:00:00Z");
   must(Number.isFinite(dateMs)&&new Date(dateMs).toISOString().startsWith(row.date),
    "Invalid original Farm calendar date");
   return dateMs;
  };
  must(raw.initial?.day===0,"Original Farm initial day must be zero");
- const start=check(raw.initial,0);
+ const start=check(raw.initial,0,true);
  let sums={waterGal:0,electricityKWh:0,eggs:0};
  for(let i=0;i<req.days;i++){
   const day=raw.series[i];
