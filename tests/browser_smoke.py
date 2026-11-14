@@ -311,8 +311,8 @@ try:
             target=page.evaluate("window.HomesteadApp.world().solarBatteryPickTarget")
             assert target["inView"],("Selected Solar battery not in 3D camera view",mobile,target)
             page.mouse.click(target["x"],target["y"])
-            assert page.locator("#inspectTitle").inner_text()=="Battery storage module",(
-                "Rendered battery raycast missed original Solar equipment",mobile,target,
+            assert page.locator("#inspectTitle").inner_text()=="Original Solar battery engineering study",(
+                "Rendered battery raycast failed to open source-native Solar utility",mobile,target,
                 page.locator("#inspectTitle").inner_text())
             assert page.evaluate("document.activeElement.id")=="solarBatteryCurrentA"
             assert page.locator("#solarBatteryUtility").is_visible()
