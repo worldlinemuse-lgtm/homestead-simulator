@@ -122,3 +122,21 @@ test("client rejects forged provenance, chronology, missing native fields and co
   assert.throws(()=>verifyFarmStudyResult(forged,req),/Farm|source|original|Invalid/);
  }
 });
+test("native Farm validator rejects forged repository even with matching revision and path",()=>{
+ const request=farmStudyRequest();
+ const worker=workerContext();worker.self.onmessage({data:request});
+ assert.equal(worker.messages[0].ok,true);
+ const raw=worker.messages[0].result;
+ assert.throws(()=>verifyFarmStudyResult({...raw,source:{...raw.source,repository:"attacker/farm-sim"}},request),
+  /provenance/);
+ assert.throws(()=>verifyFarmStudyResult({...raw,source:{...raw.source,unexpected:"forged"}},request),
+  /provenance/);
+ assert.equal(verifyFarmStudyResult(raw,request),raw);
+});
+test("native Farm model calendar is independent of host UTC offset",()=>{
+ const worker=workerContext();
+ const dates=vm.runInContext("[modelCalendarDate(0),modelCalendarDate(1),modelCalendarDate(90)]",worker);
+ assert.deepEqual(Array.from(dates),["2026-11-04","2026-11-05","2027-02-02"]);
+ assert.throws(()=>vm.runInContext("modelCalendarDate(-1)",worker),/calendar day/);
+ assert.throws(()=>vm.runInContext("modelCalendarDate(NaN)",worker),/calendar day/);
+});
