@@ -48,12 +48,18 @@ test("90-day Farm worker output matches every original daily biological step and
  native.reset(request.seed);
  const initial=native.snapshot();
  assert.equal(study.initial.day,initial.day);
- assert.equal(study.initial.date,initial.date);
+ assert.equal(study.initial.date,"2026-11-04");
+ assert.ok(["2026-11-03","2026-11-04"].includes(initial.date),
+  "original local-midnight ISO date may be one civil day earlier");
  assert.equal(study.initial.animals,initial.counts.n);
  for(let i=0;i<90;i++){
   const snapshot=native.advanceDay(),row=study.series[i];
   assert.equal(row.day,snapshot.day,"day "+(i+1));
-  assert.equal(row.date,snapshot.date,"source date "+(i+1));
+  const civilDate=new Date(Date.UTC(2026,10,4+i+1)).toISOString().slice(0,10);
+  const priorDate=new Date(Date.UTC(2026,10,4+i)).toISOString().slice(0,10);
+  assert.equal(row.date,civilDate,"normalized source civil date "+(i+1));
+  assert.ok([civilDate,priorDate].includes(snapshot.date),
+   "original local-midnight ISO serialization day "+(i+1));
   assert.equal(row.animals,snapshot.counts.n,"animals day "+(i+1));
   assert.equal(row.eggs,snapshot.daily.eggs??0,"eggs day "+(i+1));
   assert.equal(row.waterGal,snapshot.daily.waterGal,"US gallons day "+(i+1));
