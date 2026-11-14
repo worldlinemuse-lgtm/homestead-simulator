@@ -2,6 +2,10 @@ name: 3D browser smoke
 on:
   push:
   pull_request:
+concurrency:
+  # The newest exact-head PR commit supersedes earlier verification attempts.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   browser:
     runs-on: ubuntu-latest
