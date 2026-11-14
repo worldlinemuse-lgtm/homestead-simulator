@@ -38,19 +38,23 @@ function assertFarmRequest(input){
  for(const [key,{min,max}] of Object.entries(FARM_CONTROLS))integer(key,p[key],min,max);
  return input;
 }
-function measure(snapshot){
+function measure(snapshot,{initial=false}={}){
  if(!snapshot||!Number.isSafeInteger(snapshot.day)||
     typeof snapshot.date!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(snapshot.date)||
-    !snapshot.daily||!snapshot.counts)
+    (!initial&&!snapshot.daily)||!snapshot.counts)
   throw new Error("Original Farm engine returned incomplete daily snapshot");
  const value=(name,x)=>{
   if(typeof x!=="number"||!Number.isFinite(x)||x<0)
    throw new Error("Original Farm model returned invalid "+name);
   return x;
  };
- return Object.freeze({
-  day:snapshot.day,date:snapshot.date,
-  animals:value("animal count",snapshot.counts.n),
+ const base={day:snapshot.day,date:snapshot.date,
+  animals:value("animal count",snapshot.counts.n)};
+ // Original newState/reset has an EMPTY S.hist, so no day-zero daily record.
+ // Do not invent values: source measurements begin at advanceDay().
+ if(initial&&!snapshot.daily)
+  return Object.freeze({...base,eggs:null,waterGal:null,electricityKWh:null});
+ return Object.freeze({...base,
   eggs:value("eggs",snapshot.daily.eggs??0),
   waterGal:value("waterGal",snapshot.daily.waterGal),
   electricityKWh:value("kWh",snapshot.daily.kWh)
@@ -72,7 +76,7 @@ function executeFarmStudy(input){
  for(const [key,value] of Object.entries(request.parameters))
   original.setParameter(key,value);
  original.reset(request.seed);
- const initial=measure(original.snapshot()),series=[];
+ const initial=measure(original.snapshot(),{initial:true}),series=[];
  let waterGal=0,electricityKWh=0,eggs=0;
  for(let i=0;i<request.days;i++){
   const day=measure(original.advanceDay());
