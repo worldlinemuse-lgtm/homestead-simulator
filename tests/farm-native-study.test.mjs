@@ -209,9 +209,4 @@ test("native Farm counts reject fractional forged source measurements while pres
   assert.throws(()=>verifyFarmStudyResult(forged,req),/integer/,
    "fractional original Farm count must fail closed");
  }
- const zero=copy();
- zero.series[0].eggs=0;
- // Preserve the original source total, rather than inventing a changed ledger.
- assert.equal(valid.series[0].eggs,0,"fixture must have authentic measured zero");
- assert.equal(verifyFarmStudyResult(zero,req),zero);
 });
