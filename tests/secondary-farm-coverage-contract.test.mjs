@@ -215,3 +215,36 @@ test('Farm worker lifecycle rejects forged responses, errors and initialization 
     /worker could not initialize/
   );
 });
+
+test('authentic pinned Farm worker accepts naturally measured zero eggs without synthetic ledger edits', async () => {
+  const { runInNewContext } = await import('node:vm');
+  const core = readFileSync(new URL('../vendor/farm-core.js', import.meta.url), 'utf8');
+  const workerSource = readFileSync(new URL('../src/farm-study-worker.js', import.meta.url), 'utf8');
+  const req = farmStudyRequest({ days: 7, seed: 7, parameters: {
+    mg_does: 0, mg_hens: 0, mg_roosters: 0, mg_set: 0
+  } });
+  const context = { console, Date, Math, Map, Set, Number, String, Array, Object, JSON,
+    Error, Uint8Array, Float64Array, Float32Array, Int32Array, Infinity, NaN,
+    performance: { now: () => 0 } };
+  context.self = context;
+  const messages = [];
+  context.postMessage = value => messages.push(JSON.parse(JSON.stringify(value)));
+  context.importScripts = filename => {
+    assert.equal(filename, '../vendor/farm-core.js');
+    runInNewContext(core, context, { filename: 'vendor/farm-core.js', timeout: 30000 });
+  };
+  runInNewContext(workerSource, context, { filename: 'src/farm-study-worker.js', timeout: 30000 });
+  context.onmessage({ data: req });
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].ok, true, JSON.stringify(messages[0]));
+  const native = messages[0].result;
+  assert.ok(native.series.some(row => row.eggs === 0),
+    'the unmodified original Farm core must produce a measured zero-egg day');
+  assert.equal(native.initial.eggs, null, 'day zero is unmeasured, not a zero observation');
+  assert.equal(verifyFarmStudyResult(native, req), native,
+    'the validator must accept the actual native worker result');
+  const again = [];
+  context.postMessage = value => again.push(JSON.parse(JSON.stringify(value)));
+  context.onmessage({ data: req });
+  assert.deepEqual(again[0], messages[0], 'same seed and management controls must replay deterministically');
+});
