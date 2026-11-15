@@ -250,6 +250,18 @@ function jumpToUtility(sectionId){
  const section=$(sectionId);
  if(!section)throw new Error("Registered utility section not found: "+sectionId);
  setInspectorOpen(true);
+ // A utility route must not inherit the title of a previously selected 3D asset.
+ // Keep the scene selection intact; this heading describes the active tool.
+ const headingId=section.getAttribute("aria-labelledby");
+ const heading=headingId?$(headingId):null;
+ if(heading){
+  $("inspectTitle").textContent=heading.textContent.trim();
+  const scope=section.querySelector(".utilityScope");
+  $("inspectDescription").textContent=scope?.textContent.trim()||"Select and configure this utility.";
+ }else if(sectionId==="assetReadout"&&selectedAsset){
+  $("inspectTitle").textContent=selectedAsset;
+  $("inspectDescription").textContent=descriptions[selected][1];
+ }
  section.scrollIntoView({block:"start",behavior:"auto"});
  section.focus({preventScroll:true});
 }

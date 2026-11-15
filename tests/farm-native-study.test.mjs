@@ -122,3 +122,50 @@ test("client rejects forged provenance, chronology, missing native fields and co
   assert.throws(()=>verifyFarmStudyResult(forged,req),/Farm|source|original|Invalid/);
  }
 });
+test("native Farm validator rejects forged repository even with matching revision and path",()=>{
+ const request=farmStudyRequest();
+ const worker=workerContext();worker.self.onmessage({data:request});
+ assert.equal(worker.messages[0].ok,true);
+ const raw=worker.messages[0].result;
+ assert.throws(()=>verifyFarmStudyResult({...raw,source:{...raw.source,repository:"attacker/farm-sim"}},request),
+  /provenance/);
+ assert.throws(()=>verifyFarmStudyResult({...raw,source:{...raw.source,unexpected:"forged"}},request),
+  /provenance/);
+ assert.equal(verifyFarmStudyResult(raw,request),raw);
+});
+test("native Farm model calendar is independent of host UTC offset",()=>{
+ const worker=workerContext();
+ const dates=vm.runInContext("[modelCalendarDate(0),modelCalendarDate(1),modelCalendarDate(90)]",worker);
+ assert.deepEqual(Array.from(dates),["2026-11-04","2026-11-05","2027-02-02"]);
+ assert.throws(()=>vm.runInContext("modelCalendarDate(-1)",worker),/calendar day/);
+ assert.throws(()=>vm.runInContext("modelCalendarDate(NaN)",worker),/calendar day/);
+});
+
+test("native Farm worker rejects source snapshot date inconsistent with day index",()=>{
+ const worker=workerContext();
+ const snapshot={day:1,date:"2026-12-31",counts:{n:2},daily:{eggs:0,waterGal:0,kWh:0}};
+ worker.snapshotForTest=snapshot;
+ assert.throws(()=>vm.runInContext("measure(snapshotForTest)",worker),/snapshot date disagrees/);
+ const rawSourceDate=new Date(2026,10,5).toISOString().slice(0,10);
+ snapshot.date=rawSourceDate;
+ assert.equal(vm.runInContext("measure(snapshotForTest).date",worker),"2026-11-05");
+ snapshot.date=rawSourceDate==="2026-11-04"?"2026-11-05":"2026-11-04";
+ assert.throws(()=>vm.runInContext("measure(snapshotForTest)",worker),/snapshot date disagrees/);
+});
+
+test("client rejects uniformly shifted but otherwise authentic original Farm timelines",()=>{
+ const req=farmStudyRequest({days:7});
+ const worker=workerContext();worker.self.onmessage({data:req});
+ assert.equal(worker.messages[0].ok,true);
+ const valid=worker.messages[0].result;
+ assert.equal(verifyFarmStudyResult(valid,req),valid);
+ const shift=(date,offset)=>new Date(Date.parse(date+"T00:00:00Z")+offset*86400000).toISOString().slice(0,10);
+ for(const offset of [-365,-1,1,365]){
+  const forged=JSON.parse(JSON.stringify(valid));
+  forged.initial.date=shift(forged.initial.date,offset);
+  for(const day of forged.series)day.date=shift(day.date,offset);
+  forged.final.date=shift(forged.final.date,offset);
+  assert.throws(()=>verifyFarmStudyResult(forged,req),/calendar epoch/,
+   "uniformly forged Farm source calendar offset "+offset+" must fail");
+ }
+});

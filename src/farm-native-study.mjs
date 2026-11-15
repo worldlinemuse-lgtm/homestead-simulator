@@ -32,7 +32,10 @@ const finite=(label,value)=>must(typeof value==="number"&&Number.isFinite(value)
 export function verifyFarmStudyResult(raw,req){
  must(raw&&typeof raw==="object"&&raw.schema===1&&raw.kind==="isolated-native-farm-daily-scenario",
   "Invalid original Farm study response");
- must(raw.source?.revision===FARM_STUDY_SOURCE.revision&&
+ must(raw.source&&typeof raw.source==="object"&&!Array.isArray(raw.source)&&
+  Object.keys(raw.source).length===Object.keys(FARM_STUDY_SOURCE).length&&
+  raw.source.repository===FARM_STUDY_SOURCE.repository&&
+  raw.source?.revision===FARM_STUDY_SOURCE.revision&&
   raw.source?.path===FARM_STUDY_SOURCE.path,
   "Incorrect original Farm source provenance");
  must(raw.seed===req.seed&&raw.days===req.days&&
@@ -58,6 +61,10 @@ export function verifyFarmStudyResult(raw,req){
  };
  must(raw.initial?.day===0,"Original Farm initial day must be zero");
  const start=check(raw.initial,0,true);
+ // Pin day zero to the original Farm core reset epoch, not an attacker-supplied
+ // internally consecutive timeline. Source starts at local 2026-11-04;
+ // published study dates are normalized civil days independent of host TZ.
+ must(raw.initial.date==="2026-11-04","Original Farm calendar epoch mismatch");
  let sums={waterGal:0,electricityKWh:0,eggs:0};
  for(let i=0;i<req.days;i++){
   const day=raw.series[i];
