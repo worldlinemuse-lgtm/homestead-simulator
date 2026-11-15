@@ -80,7 +80,7 @@
           "eggs": "count",
           "water": "US gal",
           "electricity": "kWh",
-          "dates": "Gregorian UTC dates in original source simulator"
+          "dates": "Original Farm core advances local civil days from 2026-11-04; isolated worker validates the source local-midnight snapshot and publishes normalized Gregorian civil dates independent of host timezone (YYYY-MM-DD), not original UTC dates"
         }
       },
       "tests": [
