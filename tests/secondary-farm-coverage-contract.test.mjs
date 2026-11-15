@@ -123,3 +123,57 @@ test('Farm result validator preserves genuine zero but rejects missing, forged a
   }
   assert.deepEqual(validNativeResponse(req), valid, 'validation must not mutate the original fixture');
 });
+
+test('Farm 30/90-day native response preserves year-boundary chronology and conservation', () => {
+  for (const days of [30, 90]) {
+    const req = farmStudyRequest({days, seed: 4294967295});
+    const response = validNativeResponse(req);
+    response.series.forEach((row, i) => {
+      row.eggs = i % 4;
+      row.waterGal = (i + 1) / 8;
+      row.electricityKWh = i / 16;
+    });
+    response.final = {...response.series.at(-1)};
+    for (const key of ['eggs', 'waterGal', 'electricityKWh'])
+      response.totals[key] = response.series.reduce((sum, row) => sum + row[key], 0);
+    const before = structuredClone(response);
+    verifyFarmStudyResult(response, req);
+    assert.equal(response.series.at(-1).date, days === 90 ? '2027-02-02' : '2026-12-04');
+    assert.deepEqual(response, before, 'validation must not mutate native response');
+    for (const key of ['eggs', 'waterGal', 'electricityKWh']) {
+      const forged = structuredClone(response);
+      forged.totals[key] += 1;
+      assert.throws(() => verifyFarmStudyResult(forged, req), RangeError);
+    }
+    for (const key of ['animals', 'eggs', 'waterGal', 'electricityKWh']) {
+      const forged = structuredClone(response);
+      forged.series.at(-1)[key] = -0.001;
+      assert.throws(() => verifyFarmStudyResult(forged, req), RangeError);
+    }
+  }
+});
+
+test('Farm result rejects malformed identities, shapes, dates and initial measurements', () => {
+  const req = farmStudyRequest({days: 7});
+  const valid = validNativeResponse(req);
+  for (const change of [
+    r => { r.schema = '1'; },
+    r => { r.kind = 'unknown'; },
+    r => { r.source = []; },
+    r => { r.parameters = null; },
+    r => { r.series = {}; },
+    r => { r.series.pop(); },
+    r => { r.initial.animals = NaN; },
+    r => { r.initial.animals = -1; },
+    r => { r.initial.waterGal = 0; },
+    r => { r.series[0].animals = '1'; },
+    r => { r.series[0].date = '2026-11-06'; },
+    r => { r.final = null; },
+    r => { r.totals.eggs = NaN; },
+    r => { r.limitations = null; }
+  ]) {
+    const response = structuredClone(valid);
+    change(response);
+    assert.throws(() => verifyFarmStudyResult(response, req), RangeError);
+  }
+});
