@@ -72,7 +72,8 @@ function measure(snapshot,{initial=false}={}){
  if(initial&&!snapshot.daily)
   return Object.freeze({...base,eggs:null,waterGal:null,electricityKWh:null});
  return Object.freeze({...base,
-  eggs:value("eggs",snapshot.daily.eggs??0),
+  // The source daily record always includes eggs. Missing is not measured zero.
+  eggs:value("eggs",snapshot.daily.eggs),
   waterGal:value("waterGal",snapshot.daily.waterGal),
   electricityKWh:value("kWh",snapshot.daily.kWh)
  });
