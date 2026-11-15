@@ -54,3 +54,28 @@ test('unintegrated native Farm annual planner and 10-seed range checks cannot ma
     }
   }
 });
+
+test('Farm original controls reject forged keys, nonfinite inputs and boundary violations without mutating callers', () => {
+  const original = { mg_does: 0, mg_hens: 60, mg_roosters: 10, mg_set: 25 };
+  const snapshot = structuredClone(original);
+  const accepted = farmStudyRequest({ seed: 4294967295, days: 90, parameters: original });
+  assert.deepEqual(original, snapshot, 'caller configuration must remain untouched');
+  assert.deepEqual(accepted.parameters, original);
+  assert.ok(Object.isFrozen(accepted));
+  assert.ok(Object.isFrozen(accepted.parameters));
+  for (const seed of [-1, 4294967296, 1.5, NaN, Infinity, '7', null]) {
+    assert.throws(() => farmStudyRequest({ seed }), RangeError);
+  }
+  for (const days of [0, 6, 8, 29, 31, 89, 91, NaN, Infinity, '7']) {
+    assert.throws(() => farmStudyRequest({ days }), RangeError);
+  }
+  for (const parameters of [null, [], 'mg_does', { mg_does: NaN },
+    { mg_does: Infinity }, { mg_does: -1 }, { mg_does: 21 },
+    { mg_hens: 61 }, { mg_roosters: 11 }, { mg_set: 26 },
+    { mg_set: 1.5 }, { mg_does: '6' }, { __proto_forged: 1 }]) {
+    assert.throws(() => farmStudyRequest({ parameters }), RangeError);
+  }
+  assert.deepEqual(farmStudyRequest({ seed: 0, days: 7, parameters: {
+    mg_does: 0, mg_hens: 0, mg_roosters: 0, mg_set: 0
+  }}).parameters, { mg_does: 0, mg_hens: 0, mg_roosters: 0, mg_set: 0 });
+});
