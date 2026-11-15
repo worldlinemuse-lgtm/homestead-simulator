@@ -177,3 +177,41 @@ test('Farm result rejects malformed identities, shapes, dates and initial measur
     assert.throws(() => verifyFarmStudyResult(response, req), RangeError);
   }
 });
+
+
+test('Farm worker lifecycle rejects forged responses, errors and initialization failures without leaking workers', async () => {
+  const { runNativeFarmDailyStudy } = await import('../src/farm-native-study.mjs');
+  const req = farmStudyRequest({days: 7, seed: 11});
+  for (const scenario of ['valid', 'forged', 'worker-error', 'failed-response']) {
+    const calls = {terminated: 0, posted: null};
+    const worker = {
+      listeners: {},
+      addEventListener(type, handler) { this.listeners[type] = handler; },
+      terminate() { calls.terminated++; },
+      postMessage(value) {
+        calls.posted = value;
+        queueMicrotask(() => {
+          if (scenario === 'worker-error') this.listeners.error({message:'injected source failure'});
+          else if (scenario === 'failed-response') this.listeners.message({data:{ok:false,error:'source rejected'}});
+          else {
+            const response = validNativeResponse(req);
+            if (scenario === 'forged') response.source.revision = 'forged';
+            this.listeners.message({data:{ok:true,result:response}});
+          }
+        });
+      }
+    };
+    const promise = runNativeFarmDailyStudy({days:7,seed:11}, () => worker);
+    if (scenario === 'valid') {
+      assert.equal((await promise).totals.eggs, 0);
+    } else {
+      await assert.rejects(promise, scenario === 'forged' ? RangeError : Error);
+    }
+    assert.deepEqual(calls.posted, req, 'worker must receive the immutable normalized source request');
+    assert.equal(calls.terminated, 1, 'every terminal path must terminate its isolated worker');
+  }
+  await assert.rejects(
+    runNativeFarmDailyStudy({days:7}, () => ({postMessage() {}})),
+    /worker could not initialize/
+  );
+});
