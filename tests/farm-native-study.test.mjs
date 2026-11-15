@@ -169,3 +169,24 @@ test("client rejects uniformly shifted but otherwise authentic original Farm tim
    "uniformly forged Farm source calendar offset "+offset+" must fail");
  }
 });
+
+
+test("original Farm ledger must not silently replace missing egg measurements with zero",()=>{
+ const worker=workerContext();
+ const date=new Date(2026,10,5).toISOString().slice(0,10);
+ const valid={day:1,date,counts:{n:2},daily:{eggs:0,waterGal:0,kWh:0}};
+ worker.snapshotForTest=valid;
+ assert.equal(vm.runInContext("measure(snapshotForTest).eggs",worker),0,
+  "an authentic measured zero remains valid");
+ for(const broken of [
+  {day:1,date,counts:{n:2},daily:{waterGal:0,kWh:0}},
+  {day:1,date,counts:{n:2},daily:{eggs:null,waterGal:0,kWh:0}},
+  {day:1,date,counts:{n:2},daily:{eggs:NaN,waterGal:0,kWh:0}},
+  {day:1,date,counts:{n:2},daily:{eggs:Infinity,waterGal:0,kWh:0}},
+  {day:1,date,counts:{n:2},daily:{eggs:-1,waterGal:0,kWh:0}},
+ ]) {
+  worker.snapshotForTest=broken;
+  assert.throws(()=>vm.runInContext("measure(snapshotForTest)",worker),/invalid eggs/,
+   "missing or invalid original Farm egg measurements must fail closed");
+ }
+});
