@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { FARM_STUDY_SOURCE, farmStudyRequest } from '../src/farm-native-study.mjs';
+import { FARM_STUDY_SOURCE, farmStudyRequest, verifyFarmStudyResult } from '../src/farm-native-study.mjs';
 
 const matrix = JSON.parse(readFileSync(new URL('../utility-coverage.json', import.meta.url), 'utf8'));
 const byId = new Map(matrix.capabilities.map(c => [c.id, c]));
@@ -78,4 +78,48 @@ test('Farm original controls reject forged keys, nonfinite inputs and boundary v
   assert.deepEqual(farmStudyRequest({ seed: 0, days: 7, parameters: {
     mg_does: 0, mg_hens: 0, mg_roosters: 0, mg_set: 0
   }}).parameters, { mg_does: 0, mg_hens: 0, mg_roosters: 0, mg_set: 0 });
+});
+
+function validNativeResponse(req) {
+  const initial = { day: 0, date: '2026-11-04', animals: 1, eggs: null, waterGal: null, electricityKWh: null };
+  const series = Array.from({ length: req.days }, (_, i) => {
+    const date = new Date(Date.UTC(2026, 10, 5 + i)).toISOString().slice(0, 10);
+    return { day: i + 1, date, animals: 1, eggs: 0, waterGal: 0, electricityKWh: 0 };
+  });
+  return { schema: 1, kind: 'isolated-native-farm-daily-scenario',
+    source: { ...FARM_STUDY_SOURCE }, seed: req.seed, days: req.days,
+    parameters: { ...req.parameters }, initial, series,
+    final: { ...series.at(-1) }, totals: { eggs: 0, waterGal: 0, electricityKWh: 0 },
+    limitations: ['Isolated study, not a live mutation', 'Original source model assumptions apply'] };
+}
+
+test('Farm result validator preserves genuine zero but rejects missing, forged and nonfinite source ledgers', () => {
+  const req = farmStudyRequest({ days: 7, seed: 0 });
+  const valid = validNativeResponse(req);
+  assert.equal(verifyFarmStudyResult(structuredClone(valid), req).totals.eggs, 0);
+  for (const bad of [null, undefined, NaN, Infinity, -1, '0']) {
+    const response = structuredClone(valid);
+    if (bad === undefined) delete response.series[0].eggs;
+    else response.series[0].eggs = bad;
+    assert.throws(() => verifyFarmStudyResult(response, req), RangeError);
+  }
+  for (const tamper of [
+    r => { r.source.revision = 'forged'; },
+    r => { r.source.unexpected = true; },
+    r => { r.parameters.mg_hens += 1; },
+    r => { r.initial.eggs = 0; },
+    r => { r.initial.date = '2026-11-05'; },
+    r => { r.series[1].date = r.series[0].date; },
+    r => { r.series[1].date = '2026-02-30'; },
+    r => { r.series[1].day = 99; },
+    r => { r.series[1].waterGal = Infinity; },
+    r => { r.totals.waterGal = 1; },
+    r => { r.final.eggs = 2; },
+    r => { r.limitations = [' ', '']; }
+  ]) {
+    const response = structuredClone(valid);
+    tamper(response);
+    assert.throws(() => verifyFarmStudyResult(response, req), RangeError);
+  }
+  assert.deepEqual(validNativeResponse(req), valid, 'validation must not mutate the original fixture');
 });
