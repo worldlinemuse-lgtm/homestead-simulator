@@ -190,3 +190,23 @@ test("original Farm ledger must not silently replace missing egg measurements wi
    "missing or invalid original Farm egg measurements must fail closed");
  }
 });
+
+
+test("native Farm counts reject fractional forged source measurements while preserving measured zero",()=>{
+ const req=farmStudyRequest();
+ const worker=workerContext();worker.self.onmessage({data:req});
+ assert.equal(worker.messages[0].ok,true);
+ const valid=worker.messages[0].result;
+ const copy=()=>JSON.parse(JSON.stringify(valid));
+ assert.equal(verifyFarmStudyResult(valid,req),valid);
+ for(const mutate of [
+  x=>{x.initial.animals+=0.5;},
+  x=>{x.series[2].animals+=0.5;},
+  x=>{x.series[2].eggs+=0.5;x.totals.eggs+=0.5;},
+  x=>{x.totals.eggs+=0.5;}
+ ]){
+  const forged=copy();mutate(forged);
+  assert.throws(()=>verifyFarmStudyResult(forged,req),/integer/,
+   "fractional original Farm count must fail closed");
+ }
+});
