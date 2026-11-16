@@ -272,3 +272,33 @@ test('native integer-count integrity rejects fractional animal, egg and cumulati
     assert.throws(()=>verifyFarmStudyResult(forged,req),RangeError);
   }
 });
+
+test('Farm worker terminal events are idempotent and synchronous transport failures release isolation', async () => {
+  const { runNativeFarmDailyStudy } = await import('../src/farm-native-study.mjs');
+  let terminated = 0;
+  const request = farmStudyRequest({days:7,seed:13});
+  const worker = {
+    listeners: {},
+    addEventListener(type, fn) { this.listeners[type] = fn; },
+    terminate() { terminated++; },
+    postMessage(value) {
+      assert.deepEqual(value, request);
+      const good = validNativeResponse(request);
+      this.listeners.message({data:{ok:true,result:good}});
+      this.listeners.error({message:'late failure after successful response'});
+      this.listeners.message({data:{ok:false,error:'duplicate terminal event'}});
+    }
+  };
+  const result = await runNativeFarmDailyStudy({days:7,seed:13}, () => worker);
+  assert.equal(result.totals.eggs, 0);
+  assert.equal(terminated, 1, 'terminal callback races must terminate exactly once');
+
+  let failedWorkerTerminated = 0;
+  const failed = {
+    addEventListener() {},
+    terminate() { failedWorkerTerminated++; },
+    postMessage() { throw new Error('transport failed before worker accepted request'); }
+  };
+  await assert.rejects(runNativeFarmDailyStudy({days:7}, () => failed), /transport failed/);
+  assert.equal(failedWorkerTerminated, 1, 'synchronous worker transport failure must clean up');
+});
