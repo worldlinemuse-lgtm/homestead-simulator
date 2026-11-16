@@ -74,7 +74,8 @@ export function installFarmNativeStudy({$,coordinator,isPlaying,jumpToUtility,fo
  }
  $("farmStudyRun").addEventListener("click",async()=>{
   const host=$("farmStudyReport"),button=$("farmStudyRun"),id=++generation;
-  // An isolated study must not pause or alter the live scenario playback.\n  const wasPlaying=isPlaying();\n  const before=wasPlaying?null:JSON.stringify(coordinator.snapshot());
+  // An isolated study must not pause or alter the live scenario playback. 
+  const wasPlaying=isPlaying();\n  const before=wasPlaying?null:JSON.stringify(coordinator.snapshot());
   result=null;$("farmStudyCsv").disabled=true;button.disabled=true;
   host.dataset.resultState="running";
   host.textContent="Running original Farm biology in an isolated worker. No live resources are transferred.";
@@ -85,7 +86,8 @@ export function installFarmNativeStudy({$,coordinator,isPlaying,jumpToUtility,fo
     parameters:Object.fromEntries(inputFields.map(([element,key])=>[key,num(element)]))
    });
    if(id!==generation)return;
-   // Active playback legitimately advances the live model while the worker runs.\n   if(!wasPlaying&&!isPlaying()&&JSON.stringify(coordinator.snapshot())!==before)
+   // Active playback legitimately advances the live model while the worker runs. 
+   if(!wasPlaying&&!isPlaying()&&JSON.stringify(coordinator.snapshot())!==before)
     throw new Error("Native Farm study unexpectedly changed connected Homestead state");
    result=study;render(study);host.focus({preventScroll:true});
   }catch(error){
