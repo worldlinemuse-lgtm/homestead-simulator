@@ -674,7 +674,14 @@ try:
                 "Native Farm rail meshes accumulated or disappeared on reset",mobile)
             reset_sun=page.evaluate("window.HomesteadApp.world().visualSun")
             assert reset_sun["hour"]==initial_hour
-            assert abs(reset_sun["directIntensity"]-initial_sun["directIntensity"])<1e-9
+            # Reset returns to the coordinator's canonical scenario, not the
+            # pre-test lighting state (which can have a different scenario date).
+            # Assert the actual renderer's deterministic visual-light contract.
+            reset_clock=page.evaluate("window.HomesteadApp.time()")
+            assert reset_sun["date"]==reset_clock["date"]
+            assert abs(reset_sun["hour"]-reset_clock["hour"])<1e-6
+            expected_direct=(.06+2.8*reset_sun["sunLevel"]*reset_sun["syntheticClarity"]) if reset_sun["daylight"] else 0
+            assert abs(reset_sun["directIntensity"]-expected_direct)<1e-9, (reset_sun,expected_direct)
             assert reset_sun["decorativeLighting"]["intensity"]==0
             assert reset_sun["decorativeLighting"]["windowEmissive"]==0
             page.wait_for_timeout(350)
