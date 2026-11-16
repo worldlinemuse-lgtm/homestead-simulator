@@ -368,6 +368,23 @@ try:
             assert page.locator("#farmStudyReport").get_attribute("data-result-state")=="error"
             assert before_farm==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
             page.locator("#farmStudyDoes").fill("6")
+            # Regression: an isolated study must not pause a running live world.
+            page.locator("#playBtn").click()
+            assert "Pause" in page.locator("#playBtn").inner_text(), ("Playback did not start", mobile)
+            page.locator("#farmStudyRun").click()
+            assert "Pause" in page.locator("#playBtn").inner_text(), (
+                "Independent Farm study unexpectedly paused live playback", mobile)
+            page.wait_for_function("""() => {
+              const el=document.querySelector('#farmStudyReport');
+              return ['complete','error'].includes(el.dataset.resultState);
+            }""",timeout=45000)
+            assert page.locator("#farmStudyReport").get_attribute("data-result-state")=="complete", (
+                "Native Farm study failed during concurrent playback",mobile,
+                page.locator("#farmStudyReport").inner_text())
+            assert "Pause" in page.locator("#playBtn").inner_text(), (
+                "Farm worker completion unexpectedly paused live playback",mobile)
+            page.locator("#playBtn").click()
+            assert "Play" in page.locator("#playBtn").inner_text()
             page.locator("#farmStudyFocus").click()
             page.wait_for_function("""() => {
               const c=window.HomesteadApp.world().camera;
