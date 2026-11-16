@@ -598,18 +598,20 @@ try:
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
             # Visual sun and shadows are driven by coordinator hour, never
             # fed back into the Solar energy ledger. Check actual UI steps.
-            # A running-world test above can leave a pending visual frame after
-            # playback is paused. Require the renderer to converge to the
-            # authoritative paused clock, rather than sampling two frames.
+            # Playback advances the visual clock by minutes while the source
+            # model steps hourly. A paused visual hour is NOT necessarily the
+            # model's integer hour. Check the actual display-clock contract.
             page.wait_for_function("""() => {
                 const sun=window.HomesteadApp.world().visualSun;
-                const clock=window.HomesteadApp.snapshot().clock;
-                return sun && sun.hour===clock.hourOfDay && sun.date===clock.date;
+                const display=window.HomesteadApp.time();
+                return sun && sun.date===display.date &&
+                    Math.abs(sun.hour-display.hour)<1e-6;
             }""",timeout=10000)
             initial_sun=page.evaluate("window.HomesteadApp.world().visualSun")
-            initial_hour=page.evaluate("window.HomesteadApp.snapshot().clock.hourOfDay")
-            assert initial_sun and initial_sun["hour"]==initial_hour, initial_sun
-            assert initial_sun["date"]==page.evaluate("window.HomesteadApp.snapshot().clock.date")
+            display_clock=page.evaluate("window.HomesteadApp.time()")
+            assert initial_sun and abs(initial_sun["hour"]-display_clock["hour"])<1e-6, (
+                initial_sun,display_clock)
+            assert initial_sun["date"]==display_clock["date"]
             assert initial_sun["latitudeDeg"]==41.6
             assert abs(initial_sun["renderedElevationDeg"]-initial_sun["elevationDeg"])<1e-8, initial_sun
             az_error=(initial_sun["renderedAzimuthDeg"]-initial_sun["azimuthDeg"]+180)%360-180
