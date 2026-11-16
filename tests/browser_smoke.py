@@ -608,6 +608,7 @@ try:
                     Math.abs(sun.hour-display.hour)<1e-6;
             }""",timeout=10000)
             initial_sun=page.evaluate("window.HomesteadApp.world().visualSun")
+            initial_hour=page.evaluate("window.HomesteadApp.snapshot().clock.hourOfDay")
             display_clock=page.evaluate("window.HomesteadApp.time()")
             assert initial_sun and abs(initial_sun["hour"]-display_clock["hour"])<1e-6, (
                 initial_sun,display_clock)
