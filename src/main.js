@@ -340,7 +340,7 @@ for(const [id,dx,dz] of [["objectLeft",-1,0],["objectRight",1,0],
  $(id).addEventListener("click",()=>runEdit(()=>scene.editor.move(dx,dz)));
 }
 $("objectRotate").addEventListener("click",()=>runEdit(()=>scene.editor.rotate(Math.PI/2)));
-for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*100,0)+"%"],["houseLoad","houseLoadOut","backgroundLoadW",x=>fmt(x,0)+" W"],["pumpLoad","pumpLoadOut","pumpElectricalW",x=>fmt(x,0)+" W"]]){
+for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*100,0)+"%"],["houseLoad","houseLoadOut","backgroundLoadW",x=>fmt(x,0)+" W"],["pumpLoad","pumpLoadOut","pumpElectricalW",x=>fmt(x,0)+" W"],["pumpPressure","pumpPressureOut","pumpPressurePsi",x=>fmt(x,0)+" psi"]]){
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
 }
 
