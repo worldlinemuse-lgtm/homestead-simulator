@@ -75,7 +75,8 @@ export function installFarmNativeStudy({$,coordinator,isPlaying,jumpToUtility,fo
  $("farmStudyRun").addEventListener("click",async()=>{
   const host=$("farmStudyReport"),button=$("farmStudyRun"),id=++generation;
   // An isolated study must not pause or alter the live scenario playback. 
-  const wasPlaying=isPlaying();\n  const before=wasPlaying?null:JSON.stringify(coordinator.snapshot());
+  const wasPlaying=isPlaying();
+  const before=wasPlaying?null:JSON.stringify(coordinator.snapshot());
   result=null;$("farmStudyCsv").disabled=true;button.disabled=true;
   host.dataset.resultState="running";
   host.textContent="Running original Farm biology in an isolated worker. No live resources are transferred.";
