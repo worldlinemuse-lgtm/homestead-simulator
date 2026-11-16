@@ -253,6 +253,28 @@ try:
             assert page.evaluate("window.HomesteadApp.waterPreset()") is not None
             assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
             page.locator("#closeInspector").click()
+            # LIVE COUPLED WATER: adjust the visible pressure control, step the
+            # authoritative timeline, and inspect the actual original-source
+            # hydraulic output and energy/water conservation ledgers.
+            page.locator("#utilitiesBtn").click()
+            page.locator("#utilityLiveShortcut").click()
+            pressure=page.locator("#pumpPressure")
+            assert pressure.is_visible(),("Live pressure slider unreachable",mobile)
+            pressure.fill("35")
+            assert page.locator("#pumpPressureOut").inner_text()=="35 psi"
+            configured=page.evaluate("window.HomesteadApp.snapshot()")
+            assert configured["config"]["pumpPressurePsi"]==35
+            initial_hour=configured["clock"]["hours"]
+            page.evaluate("window.HomesteadApp.step()")
+            coupled=page.evaluate("window.HomesteadApp.snapshot()")
+            assert coupled["clock"]["hours"]==initial_hour+1
+            assert coupled["last"]["energy"]["pumpEnabled"],("Pump unexpectedly unpowered",mobile)
+            assert abs(coupled["last"]["energy"]["residualWh"])<1e-5
+            assert abs(coupled["last"]["water"]["waterResidual"])<1e-5
+            assert coupled["config"]["pumpPressurePsi"]==35
+            page.screenshot(path=str(preview_shots/(
+                "mobile-live-water-pressure.png" if mobile else "desktop-live-water-pressure.png")))
+            page.locator("#closeInspector").click()
             # SOURCE-NATIVE SOLAR BATTERY: directory -> configure -> run ->
             # actual source parity -> focus real 3D battery -> click -> return.
             before_solar=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
