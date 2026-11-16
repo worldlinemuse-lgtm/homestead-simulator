@@ -353,3 +353,38 @@ test('native Farm study cannot claim a completed annual planner without executab
     }
   }
 });
+
+test('presentation clock speed conversion, invalid inputs and preview are isolated from source state', async () => {
+  const { ScenarioTimeline, SPEEDS, formatHour } = await import('../src/sim-clock.mjs');
+  const snapshot = Object.freeze({ clock: Object.freeze({ date: '2026-11-16', hourOfDay: 10 }),
+    ledger: Object.freeze({ waterGal: 12.5, electricityKWh: 3.25 }) });
+  for (const speed of SPEEDS) {
+    const timeline = new ScenarioTimeline(speed);
+    let steps = 0;
+    assert.equal(timeline.advanceRealSeconds(0.25, () => { steps++; }), 0);
+    assert.equal(steps, 0, 'sub-hour real-time advance must not execute source models');
+    assert.equal(timeline.display(snapshot).minuteOfDay, 600 + speed * 0.25);
+    timeline.preview(1439);
+    assert.equal(timeline.display(snapshot).minuteOfDay, 1439);
+    timeline.resume();
+    assert.equal(timeline.display(snapshot).minuteOfDay, 600 + speed * 0.25);
+    timeline.reset();
+    assert.equal(timeline.display(snapshot).minuteOfDay, 600);
+  }
+  for (const bad of [NaN, Infinity, -Infinity, -0.01, 1440.01]) {
+    const timeline = new ScenarioTimeline();
+    assert.throws(() => timeline.advance(bad, () => {}), RangeError);
+    assert.equal(timeline.display(snapshot).minuteOfDay, 600);
+  }
+  for (const bad of [NaN, Infinity, -1, 1440, 1.5, '30', null]) {
+    const timeline = new ScenarioTimeline();
+    assert.throws(() => timeline.preview(bad), RangeError);
+  }
+  for (const bad of [NaN, Infinity, -1]) {
+    const timeline = new ScenarioTimeline();
+    assert.throws(() => timeline.advanceRealSeconds(bad, () => {}), RangeError);
+  }
+  for (const bad of [NaN, Infinity, -1, 24, '12']) assert.throws(() => formatHour(bad), RangeError);
+  assert.equal(formatHour(23.5), '23:30');
+  assert.deepEqual(snapshot.ledger, { waterGal: 12.5, electricityKWh: 3.25 });
+});
