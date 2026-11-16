@@ -14,7 +14,7 @@
     cloudTransmittance:0.82, // Assumed clear-sky transmission; NOT weather data
     batteryCapacityWh:10000,batteryStartWh:6000,batteryReserveWh:1000,
     chargeEfficiency:0.95,dischargeEfficiency:0.92,
-    backgroundLoadW:85,pumpElectricalW:120, // ASSUMED: maker pump electrical curve unavailable
+    backgroundLoadW:85,pumpElectricalW:120,pumpPressurePsi:50, // ASSUMED electrical curve; user-controlled hydraulic pressure
     waterStorageCapacityL:250,waterStartL:60,
     initialFarmSeed:7
   });
@@ -96,7 +96,7 @@
     for(const key of ["solarUtilization","cloudTransmittance","chargeEfficiency","dischargeEfficiency"]){
       number(key,c[key]);must(c[key]<=1,key+" must be <=1");
     }
-    for(const key of ["batteryCapacityWh","batteryStartWh","batteryReserveWh","backgroundLoadW","pumpElectricalW","waterStorageCapacityL","waterStartL"]){
+    for(const key of ["batteryCapacityWh","batteryStartWh","batteryReserveWh","backgroundLoadW","pumpElectricalW","pumpPressurePsi","waterStorageCapacityL","waterStartL"]){
       number(key,c[key]);
     }
     must(c.batteryReserveWh<=c.batteryStartWh&&c.batteryStartWh<=c.batteryCapacityWh,"Inconsistent battery inventory");
@@ -161,7 +161,7 @@
       const waterProducedBefore=nextWater.produced;
       const pump=nextWater.parts.find(p=>p.type==="pump_sky");
       must(!!pump,"Water reference preset is missing its pump");
-      pump.params.psi=energy.pumpEnabled?50:0;
+      pump.params.psi=energy.pumpEnabled?cfg.pumpPressurePsi:0;
       // Original network solver; dynamic storage/filter updates. Exact result from water core,
       // not an assumed gallons-per-hour constant.
       let elapsed=0,iterations=0,previousProduced=waterProducedBefore;
