@@ -251,7 +251,7 @@ try:
             page.locator("#waterPresetRun").click()
             assert "Selected 3D" not in page.locator("#waterPresetReport").inner_text()
             assert page.evaluate("window.HomesteadApp.waterPreset()") is not None
-            assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), ("Native Water study mutated live simulation", mobile, before_3d_selection, page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"))
             page.locator("#closeInspector").click()
             # LIVE COUPLED WATER: adjust the visible pressure control, step the
             # authoritative timeline, and inspect the actual original-source
