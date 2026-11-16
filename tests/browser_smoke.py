@@ -368,6 +368,23 @@ try:
             assert page.locator("#farmStudyReport").get_attribute("data-result-state")=="error"
             assert before_farm==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
             page.locator("#farmStudyDoes").fill("6")
+            # Regression: an isolated study must not pause a running live world.
+            page.locator("#playBtn").click()
+            assert "Pause" in page.locator("#playBtn").inner_text(), ("Playback did not start", mobile)
+            page.locator("#farmStudyRun").click()
+            assert "Pause" in page.locator("#playBtn").inner_text(), (
+                "Independent Farm study unexpectedly paused live playback", mobile)
+            page.wait_for_function("""() => {
+              const el=document.querySelector('#farmStudyReport');
+              return ['complete','error'].includes(el.dataset.resultState);
+            }""",timeout=45000)
+            assert page.locator("#farmStudyReport").get_attribute("data-result-state")=="complete", (
+                "Native Farm study failed during concurrent playback",mobile,
+                page.locator("#farmStudyReport").inner_text())
+            assert "Pause" in page.locator("#playBtn").inner_text(), (
+                "Farm worker completion unexpectedly paused live playback",mobile)
+            page.locator("#playBtn").click()
+            assert "Play" in page.locator("#playBtn").inner_text()
             page.locator("#farmStudyFocus").click()
             page.wait_for_function("""() => {
               const c=window.HomesteadApp.world().camera;
@@ -581,10 +598,21 @@ try:
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
             # Visual sun and shadows are driven by coordinator hour, never
             # fed back into the Solar energy ledger. Check actual UI steps.
+            # Playback advances the visual clock by minutes while the source
+            # model steps hourly. A paused visual hour is NOT necessarily the
+            # model's integer hour. Check the actual display-clock contract.
+            page.wait_for_function("""() => {
+                const sun=window.HomesteadApp.world().visualSun;
+                const display=window.HomesteadApp.time();
+                return sun && sun.date===display.date &&
+                    Math.abs(sun.hour-display.hour)<1e-6;
+            }""",timeout=10000)
             initial_sun=page.evaluate("window.HomesteadApp.world().visualSun")
             initial_hour=page.evaluate("window.HomesteadApp.snapshot().clock.hourOfDay")
-            assert initial_sun and initial_sun["hour"]==initial_hour, initial_sun
-            assert initial_sun["date"]==page.evaluate("window.HomesteadApp.snapshot().clock.date")
+            display_clock=page.evaluate("window.HomesteadApp.time()")
+            assert initial_sun and abs(initial_sun["hour"]-display_clock["hour"])<1e-6, (
+                initial_sun,display_clock)
+            assert initial_sun["date"]==display_clock["date"]
             assert initial_sun["latitudeDeg"]==41.6
             assert abs(initial_sun["renderedElevationDeg"]-initial_sun["elevationDeg"])<1e-8, initial_sun
             az_error=(initial_sun["renderedAzimuthDeg"]-initial_sun["azimuthDeg"]+180)%360-180
@@ -620,7 +648,11 @@ try:
                 page.locator("#stepBtn").click()
             advanced_sun=page.evaluate("window.HomesteadApp.world().visualSun")
             advanced_hour=page.evaluate("window.HomesteadApp.snapshot().clock.hourOfDay")
-            assert advanced_sun["hour"]==advanced_hour
+            # The rendered sun follows the minute-resolution visual timeline,
+            # not necessarily the hourly scientific model clock.
+            advanced_visual=page.evaluate("window.HomesteadApp.time()")
+            assert abs(advanced_sun["hour"]-advanced_visual["hour"])<1e-6, (advanced_sun,advanced_visual)
+            assert advanced_sun["date"]==advanced_visual["date"], (advanced_sun,advanced_visual)
             assert advanced_hour==(initial_hour+12)%24
             assert advanced_sun["daylight"] != initial_sun["daylight"], (initial_sun,advanced_sun)
             assert advanced_sun["directIntensity"]>=0
@@ -642,7 +674,14 @@ try:
                 "Native Farm rail meshes accumulated or disappeared on reset",mobile)
             reset_sun=page.evaluate("window.HomesteadApp.world().visualSun")
             assert reset_sun["hour"]==initial_hour
-            assert abs(reset_sun["directIntensity"]-initial_sun["directIntensity"])<1e-9
+            # Reset returns to the coordinator's canonical scenario, not the
+            # pre-test lighting state (which can have a different scenario date).
+            # Assert the actual renderer's deterministic visual-light contract.
+            reset_clock=page.evaluate("window.HomesteadApp.time()")
+            assert reset_sun["date"]==reset_clock["date"]
+            assert abs(reset_sun["hour"]-reset_clock["hour"])<1e-6
+            expected_direct=(.06+2.8*reset_sun["sunLevel"]*reset_sun["syntheticClarity"]) if reset_sun["daylight"] else 0
+            assert abs(reset_sun["directIntensity"]-expected_direct)<1e-9, (reset_sun,expected_direct)
             assert reset_sun["decorativeLighting"]["intensity"]==0
             assert reset_sun["decorativeLighting"]["windowEmissive"]==0
             page.wait_for_timeout(350)

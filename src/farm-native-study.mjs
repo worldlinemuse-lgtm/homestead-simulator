@@ -51,9 +51,14 @@ export function verifyFarmStudyResult(raw,req){
   if(initial){
    // Original Farm reset() exposes day 0 with null daily ledger, not measured zeros.
    finite("animals",row.animals);
+   must(Number.isSafeInteger(row.animals),"Original Farm animal count must be an integer");
    for(const key of ["eggs","waterGal","electricityKWh"])
     must(row[key]===null,"Original Farm day-zero ledger must be null until advanceDay()");
-  }else for(const key of dailyFields)finite(key,row[key]);
+  }else {
+   for(const key of dailyFields)finite(key,row[key]);
+   must(Number.isSafeInteger(row.animals)&&Number.isSafeInteger(row.eggs),
+    "Original Farm animal and egg counts must be integers");
+  }
   const dateMs=Date.parse(row.date+"T00:00:00Z");
   must(Number.isFinite(dateMs)&&new Date(dateMs).toISOString().startsWith(row.date),
    "Invalid original Farm calendar date");
@@ -78,6 +83,8 @@ export function verifyFarmStudyResult(raw,req){
   "Original Farm final state mismatch");
  for(const [k,total] of Object.entries(sums)){
   finite("total "+k,raw.totals?.[k]);
+  if(k==="eggs")must(Number.isSafeInteger(raw.totals[k]),
+   "Original Farm cumulative egg count must be an integer");
   must(Math.abs(raw.totals[k]-total)<=1e-8*Math.max(1,total),
    "Original Farm "+k+" conservation mismatch");
  }

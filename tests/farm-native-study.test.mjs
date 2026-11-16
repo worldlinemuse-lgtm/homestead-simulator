@@ -169,3 +169,44 @@ test("client rejects uniformly shifted but otherwise authentic original Farm tim
    "uniformly forged Farm source calendar offset "+offset+" must fail");
  }
 });
+
+
+test("original Farm ledger must not silently replace missing egg measurements with zero",()=>{
+ const worker=workerContext();
+ const date=new Date(2026,10,5).toISOString().slice(0,10);
+ const valid={day:1,date,counts:{n:2},daily:{eggs:0,waterGal:0,kWh:0}};
+ worker.snapshotForTest=valid;
+ assert.equal(vm.runInContext("measure(snapshotForTest).eggs",worker),0,
+  "an authentic measured zero remains valid");
+ for(const broken of [
+  {day:1,date,counts:{n:2},daily:{waterGal:0,kWh:0}},
+  {day:1,date,counts:{n:2},daily:{eggs:null,waterGal:0,kWh:0}},
+  {day:1,date,counts:{n:2},daily:{eggs:NaN,waterGal:0,kWh:0}},
+  {day:1,date,counts:{n:2},daily:{eggs:Infinity,waterGal:0,kWh:0}},
+  {day:1,date,counts:{n:2},daily:{eggs:-1,waterGal:0,kWh:0}},
+ ]) {
+  worker.snapshotForTest=broken;
+  assert.throws(()=>vm.runInContext("measure(snapshotForTest)",worker),/invalid eggs/,
+   "missing or invalid original Farm egg measurements must fail closed");
+ }
+});
+
+
+test("native Farm counts reject fractional forged source measurements while preserving measured zero",()=>{
+ const req=farmStudyRequest();
+ const worker=workerContext();worker.self.onmessage({data:req});
+ assert.equal(worker.messages[0].ok,true);
+ const valid=worker.messages[0].result;
+ const copy=()=>JSON.parse(JSON.stringify(valid));
+ assert.equal(verifyFarmStudyResult(valid,req),valid);
+ for(const mutate of [
+  x=>{x.initial.animals+=0.5;},
+  x=>{x.series[2].animals+=0.5;},
+  x=>{x.series[2].eggs+=0.5;x.totals.eggs+=0.5;},
+  x=>{x.totals.eggs+=0.5;}
+ ]){
+  const forged=copy();mutate(forged);
+  assert.throws(()=>verifyFarmStudyResult(forged,req),/integer/,
+   "fractional original Farm count must fail closed");
+ }
+});
