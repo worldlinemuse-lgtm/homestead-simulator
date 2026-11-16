@@ -248,3 +248,27 @@ test('authentic pinned Farm worker accepts naturally measured zero eggs without 
   context.onmessage({ data: req });
   assert.deepEqual(again[0], messages[0], 'same seed and management controls must replay deterministically');
 });
+
+test('native integer-count integrity rejects fractional animal, egg and cumulative values while preserving physical fractions', () => {
+  const req = farmStudyRequest({days:7,seed:9});
+  const good = validNativeResponse(req);
+  good.series[0].waterGal = 0.125;
+  good.series[0].electricityKWh = 0.0625;
+  good.totals.waterGal = 0.125;
+  good.totals.electricityKWh = 0.0625;
+  const baseline = structuredClone(good);
+  assert.equal(verifyFarmStudyResult(good,req),good);
+  assert.deepEqual(good,baseline,'validator cannot rewrite fractional physical measurements');
+  for (const mutate of [
+    r => {r.initial.animals=0.5;},
+    r => {r.series[0].animals=1.5;},
+    r => {r.series[0].eggs=0.5;},
+    r => {r.final.animals=1.5;r.series.at(-1).animals=1.5;},
+    r => {r.final.eggs=0.5;r.series.at(-1).eggs=0.5;r.totals.eggs=0.5;},
+    r => {r.totals.eggs=0.5;}
+  ]) {
+    const forged=structuredClone(good);
+    mutate(forged);
+    assert.throws(()=>verifyFarmStudyResult(forged,req),RangeError);
+  }
+});
