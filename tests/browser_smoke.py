@@ -647,7 +647,11 @@ try:
                 page.locator("#stepBtn").click()
             advanced_sun=page.evaluate("window.HomesteadApp.world().visualSun")
             advanced_hour=page.evaluate("window.HomesteadApp.snapshot().clock.hourOfDay")
-            assert advanced_sun["hour"]==advanced_hour
+            # The rendered sun follows the minute-resolution visual timeline,
+            # not necessarily the hourly scientific model clock.
+            advanced_visual=page.evaluate("window.HomesteadApp.time()")
+            assert abs(advanced_sun["hour"]-advanced_visual["hour"])<1e-6, (advanced_sun,advanced_visual)
+            assert advanced_sun["date"]==advanced_visual["date"], (advanced_sun,advanced_visual)
             assert advanced_hour==(initial_hour+12)%24
             assert advanced_sun["daylight"] != initial_sun["daylight"], (initial_sun,advanced_sun)
             assert advanced_sun["directIntensity"]>=0
