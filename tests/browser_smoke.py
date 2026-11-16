@@ -598,6 +598,14 @@ try:
             light_out=ROOT/"tests"/"artifacts";light_out.mkdir(parents=True,exist_ok=True)
             # Visual sun and shadows are driven by coordinator hour, never
             # fed back into the Solar energy ledger. Check actual UI steps.
+            # A running-world test above can leave a pending visual frame after
+            # playback is paused. Require the renderer to converge to the
+            # authoritative paused clock, rather than sampling two frames.
+            page.wait_for_function("""() => {
+                const sun=window.HomesteadApp.world().visualSun;
+                const clock=window.HomesteadApp.snapshot().clock;
+                return sun && sun.hour===clock.hourOfDay && sun.date===clock.date;
+            }""",timeout=10000)
             initial_sun=page.evaluate("window.HomesteadApp.world().visualSun")
             initial_hour=page.evaluate("window.HomesteadApp.snapshot().clock.hourOfDay")
             assert initial_sun and initial_sun["hour"]==initial_hour, initial_sun
