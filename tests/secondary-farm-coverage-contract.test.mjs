@@ -302,3 +302,54 @@ test('Farm worker terminal events are idempotent and synchronous transport failu
   await assert.rejects(runNativeFarmDailyStudy({days:7}, () => failed), /transport failed/);
   assert.equal(failedWorkerTerminated, 1, 'synchronous worker transport failure must clean up');
 });
+
+test('presentation timeline never mutates source model during preview, reset or fractional playback', async () => {
+  const { ScenarioTimeline } = await import('../src/sim-clock.mjs');
+  const model = { clock: { date: '2026-11-16', hourOfDay: 23 }, ledger: { waterGal: 2.75, energyKWh: 0.5 } };
+  const baseline = structuredClone(model);
+  const timeline = new ScenarioTimeline(5);
+  timeline.preview(17);
+  assert.deepEqual(timeline.display(model), {
+    date: '2026-11-16', hour: 17/60, hourOfDay: 0, minuteOfDay: 17,
+    preview: true, modelHour: 23, speed: 5
+  });
+  assert.deepEqual(model, baseline, 'visual preview must not change native ledgers or model clock');
+  let steps = 0;
+  assert.equal(timeline.advance(59, () => { steps++; }), 0);
+  assert.equal(steps, 0);
+  assert.equal(timeline.display(model).minuteOfDay, 23*60+59);
+  assert.deepEqual(model, baseline, 'fractional playback must remain visual only');
+  assert.equal(timeline.advance(1, () => { steps++; }), 1);
+  assert.equal(steps, 1);
+  assert.equal(timeline.display(model).minuteOfDay, 23*60);
+  timeline.reset();
+  assert.equal(timeline.display(model).hour, 23);
+  assert.deepEqual(model, baseline);
+});
+
+test('failed authoritative model step cannot commit fractional presentation progress', async () => {
+  const { ScenarioTimeline } = await import('../src/sim-clock.mjs');
+  const timeline = new ScenarioTimeline(5);
+  const snapshot = { clock: { date: '2026-11-16', hourOfDay: 10 } };
+  timeline.advance(35, () => assert.fail('partial minutes cannot step the engine'));
+  const before = timeline.display(snapshot);
+  assert.throws(() => timeline.advance(30, () => { throw new Error('source engine rejected step'); }),
+    /source engine rejected step/);
+  assert.deepEqual(timeline.display(snapshot), before,
+    'failed step must not silently commit a different presentation minute');
+  for (const minutes of [NaN, Infinity, -1, 1441]) {
+    assert.throws(() => timeline.advance(minutes, () => {}), RangeError);
+  }
+  assert.deepEqual(timeline.display(snapshot), before);
+});
+
+test('native Farm study cannot claim a completed annual planner without executable source access', () => {
+  for (const id of ['farm.native-year-planner', 'farm.native-range-check']) {
+    const c = byId.get(id);
+    assert.ok(c && c.sourcePath === 'source/src/planner/planner.js');
+    if (c.status !== 'integrated') {
+      assert.equal(c.adapter, null);
+      assert.equal(c.ui, null);
+    }
+  }
+});
