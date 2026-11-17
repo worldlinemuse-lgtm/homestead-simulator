@@ -176,7 +176,7 @@ function redraw(s){
  $("waterValue").textContent=fmt(s.waterStoredL,0)+" L";
  $("waterDetail").textContent=w?"Modeled treated "+fmt(w.treatedL,1)+" L/h · farm use "+fmt(w.consumedL,1)+" L":"Treated storage, not certified drinking water";
  $("farmValue").textContent=f.counts.n+" animals";
- $("farmDetail").textContent="Daily "+fmt(f.daily?.waterGal||0,1)+" gal water · "+fmt(f.daily?.kWh||0,2)+" kWh · "+(f.daily?.eggs||0)+" eggs";
+ $("farmDetail").textContent=s.last?"This hour: "+fmt(s.last.farm.waterDeliveredL,1)+"/"+fmt(s.last.farm.hourlyWaterDemandL,1)+" L water · "+fmt(s.last.farm.electricityServedWh,1)+"/"+fmt(s.last.farm.hourlyElectricityDemandWh,1)+" Wh electricity":"Daily "+fmt(f.daily?.waterGal||0,1)+" gal water · "+fmt(f.daily?.kWh||0,2)+" kWh · "+(f.daily?.eggs||0)+" eggs";
  updateVisibleClock(s);
  $("alerts").textContent=s.last?.warnings.length?s.last.warnings.join(" "):"See Details for the model assumptions and limitations.";
 }
