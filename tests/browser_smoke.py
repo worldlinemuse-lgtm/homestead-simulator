@@ -275,6 +275,10 @@ try:
             page.screenshot(path=str(preview_shots/(
                 "mobile-live-water-pressure.png" if mobile else "desktop-live-water-pressure.png")))
             page.locator("#closeInspector").click()
+            # The live pressure test deliberately advanced the authoritative hour.
+            # Rebase subsequent navigation-only assertions on that new state;
+            # comparing to the pre-step snapshot falsely reports a mutation.
+            before_3d_selection=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
             # SOURCE-NATIVE SOLAR BATTERY: directory -> configure -> run ->
             # actual source parity -> focus real 3D battery -> click -> return.
             before_solar=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
