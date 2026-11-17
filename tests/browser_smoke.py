@@ -1072,8 +1072,15 @@ try:
                 # Browser actions are genuine model steps, not fake snapshots.
                 before70=page.evaluate("window.HomesteadApp.world().animalLifecycle")
                 starting_hour=page.evaluate("window.HomesteadApp.snapshot().clock.hours")
-                for _ in range(70):
-                    page.locator("#dayBtn").click()
+                # Invoke the real day-button DOM handler, avoiding 70 separate
+                # Playwright actionability and scrolling round trips.
+                for batch in range(7):
+                    page.evaluate("""() => {
+                        const button = document.querySelector("#dayBtn");
+                        if (!button) throw new Error("Missing day button");
+                        for (let day = 0; day < 10; day++) button.click();
+                    }""")
+                    checkpoint(f"desktop:70-day-gpu-leak:days-{(batch+1)*10}")
                 after70=page.evaluate("window.HomesteadApp.world().animalLifecycle")
                 assert after70["active"] <= 50
                 assert after70["ownedGeometries"] <= 60*max(1,after70["active"])
