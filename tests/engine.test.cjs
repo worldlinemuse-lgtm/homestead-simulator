@@ -2,7 +2,7 @@
 const assert=require("node:assert/strict"),fs=require("node:fs"),vm=require("node:vm");
 const path=require("node:path"),test=require("node:test");
 const ctx=vm.createContext({console,Date,Math,Map,Set,Number,String,Array,Object,JSON,Error,Uint8Array,Float64Array,Float32Array,Int32Array,Infinity,NaN,performance:require('node:perf_hooks').performance});
-for(const p of ["vendor/solar-next-core.js","vendor/water-engine.js","vendor/farm-core.js","src/resource-contract.js","src/coordinator.js"]){
+for(const p of ["vendor/solar-next-core.js","vendor/solar-battery-native.js","vendor/water-engine.js","vendor/farm-core.js","src/resource-contract.js","src/coordinator.js"]){
  const code=fs.readFileSync(path.join(__dirname,"..",p),"utf8");
  vm.runInContext(code,ctx,{filename:p,timeout:60000});
 }
@@ -341,4 +341,25 @@ test("zero-power intervals still reconcile typed zero-pump transfers",()=>{
  assert.equal(a.water.balances["water.treatment_output"],0);
  assert.ok(Math.abs(a.electricity.residual)<1e-5);
  assert.ok(Math.abs(a.water.residual)<1e-5);
+});
+
+test("native Solar battery discharge and absorption affect live hourly dispatch",()=>{
+ const Core=ctx.HomesteadCoordinator;
+ const common={cloudTransmittance:0,batteryStartWh:6000,batteryReserveWh:1000,
+  batteryTemperatureC:20,backgroundLoadW:100,pumpElectricalW:0};
+ const lfp=Core.allocateEnergy({pvWh:0,baseWh:1000,pumpWh:0,initialBatteryWh:6000,
+   cfg:Core.configuration({...common,batteryChemistry:"lfp"})});
+ const agm=Core.allocateEnergy({pvWh:0,baseWh:1000,pumpWh:0,initialBatteryWh:6000,
+   cfg:Core.configuration({...common,batteryChemistry:"agm",batteryTemperatureC:-10})});
+ assert.equal(lfp.nativeBattery.dischargeMultiplier,1);
+ assert.ok(agm.nativeBattery.dischargeMultiplier>1);
+ assert.ok(agm.batteryWh<lfp.batteryWh);
+ assert.ok(Math.abs(agm.residualWh)<1e-5);
+ assert.ok(Math.abs(lfp.residualWh)<1e-5);
+ const nearFull=Core.allocateEnergy({pvWh:3000,baseWh:0,pumpWh:0,initialBatteryWh:9500,
+  cfg:Core.configuration({...common,batteryStartWh:9500,batteryChemistry:"agm"})});
+ assert.equal(nearFull.nativeBattery.chargePhase,"absorption");
+ assert.ok(nearFull.nativeBattery.chargeCurrentMultiplier<1);
+ assert.ok(nearFull.chargeStoredWh>0);
+ assert.ok(Math.abs(nearFull.residualWh)<1e-5);
 });
