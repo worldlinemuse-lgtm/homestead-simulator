@@ -397,3 +397,28 @@ test("native battery rejects zero-capacity and invalid direct electrical inputs 
      /capacity|positive|finite|overflow/i);
  }
 });
+
+test("native Solar hourly supply is explicitly reconciled to Farm electricity demand",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({
+   cloudTransmittance:0,batteryStartWh:1000,batteryReserveWh:1000,
+   backgroundLoadW:100,pumpElectricalW:0
+ });
+ const s=c.stepHour(),e=s.last.energy,f=s.last.farm;
+ assert.ok(f.hourlyElectricityDemandWh>=0);
+ assert.equal(f.electricityServedWh,0);
+ assert.equal(f.electricityDeficitWh,f.hourlyElectricityDemandWh);
+ assert.equal(e.servedBaseWh,0);
+ assert.equal(s.cumulative.farmElectricityServedWh,0);
+ assert.equal(s.cumulative.farmElectricityDeficitWh,f.electricityDeficitWh);
+ assert.ok(Math.abs(e.residualWh)<1e-5);
+ const powered=new ctx.HomesteadCoordinator.Coordinator({
+   cloudTransmittance:0,backgroundLoadW:100,pumpElectricalW:0
+ }).stepHour();
+ const p=powered.last.farm,energy=powered.last.energy;
+ assert.ok(Math.abs(p.electricityServedWh+p.electricityDeficitWh-
+   p.hourlyElectricityDemandWh)<1e-7);
+ assert.ok(Math.abs(Math.min(100,energy.servedBaseWh)+p.electricityServedWh-
+   energy.servedBaseWh)<1e-7);
+ assert.ok(Math.abs(powered.cumulative.farmElectricityServedWh-
+   p.electricityServedWh)<1e-7);
+});
