@@ -43,6 +43,7 @@
   }
   function allocateEnergy(params){
     const {pvWh,baseWh,pumpWh,initialBatteryWh,cfg}=params;
+    const absorptionMinutes=number("absorptionMinutes",params.absorptionMinutes??0);
     // All sources, demands, and stores are watt-hours. Reject unsafe arithmetic
     // before computing state; non-finite values can invalidate conservation proofs.
     must(cfg && typeof cfg==="object","Energy config must be an object");
@@ -96,13 +97,17 @@
       directPumpWh=pumpDelivery.direct;batteryPumpWh=pumpDelivery.fromBattery;
       servedPumpWh=pumpDelivery.served;
     }
-    const charge=native.absorption(chem,batteryWh/capacity,0,bankAh);
+    const charge=native.absorption(chem,batteryWh/capacity,absorptionMinutes,bankAh);
     must(Number.isFinite(charge.mult)&&charge.mult>=0&&charge.mult<=1,
       "Invalid native charging multiplier");
     const sourceChargeLimitWh=bulkLimitA*voltage*charge.mult;
     must(Number.isFinite(sourceChargeLimitWh),"Battery charge limit overflow");
     const chargeInWh=Math.min(remainingPv,Math.max(0,capacity-batteryWh)/etaC,sourceChargeLimitWh);
     const chargeStoredWh=chargeInWh*etaC;
+    // Native absorption timing accumulates only during active absorption charging.
+    // Bulk and float reset the timer; a one-hour interval is 60 minutes.
+    const nextAbsorptionMinutes=charge.phase==="absorption" && chargeInWh>EPS
+      ? absorptionMinutes+60 : 0;
     batteryWh+=chargeStoredWh;
     const curtailedWh=remainingPv-chargeInWh;
     const chargeLossWh=chargeInWh*(1-etaC);
@@ -116,12 +121,13 @@
     must(batteryWh<=capacity+EPS,"Energy inventory exceeds battery capacity");
     return {batteryWh,servedBaseWh,unservedBaseWh,servedPumpWh,pumpEnabled,
       pvWh,curtailedWh,chargeLossWh,dischargeLossWh,residualWh,
-      directBaseWh,batteryBaseWh,directPumpWh,batteryPumpWh,chargeStoredWh,
+      directBaseWh,batteryBaseWh,directPumpWh,batteryPumpWh,chargeStoredWh,nextAbsorptionMinutes,
       nativeBattery:{source:"solar-sandbox/source/battery.js@871dd8c0ef03a05feb339c9761ead900875f16b5",
         chemistry:chem,temperatureC:temperature,dischargeCurrentA:expectedCurrentA,
         dischargeMultiplier:discharge.m,dischargeRateFactor:discharge.rate,
         dischargeTemperatureFactor:discharge.temp,chargePhase:charge.phase,
         chargeCurrentMultiplier:charge.mult,chargeLimitWh:sourceChargeLimitWh,
+        absorptionMinutesBefore:absorptionMinutes,absorptionMinutesAfter:nextAbsorptionMinutes,
         effectiveDischargeEfficiency:nativeDischargeEfficiency}};
   }
   function configuration(overrides={}){
@@ -158,6 +164,7 @@
       // Farm biology still advances only when this local timeline crosses midnight.
       this.startHour=9;
       this.hours=0;this.batteryWh=this.cfg.batteryStartWh;
+      this.absorptionMinutes=0;
       this.waterStoredL=this.cfg.waterStartL;
       this.cumulative={pvWh:0,baseWh:0,pumpWh:0,treatedL:0,waterConsumedL:0,overflowL:0,waterDeficitL:0,energyDeficitWh:0,farmElectricityServedWh:0,farmElectricityDeficitWh:0,farmWaterDeliveredL:0,farmWaterDeficitL:0};
       this.last=null;
@@ -190,7 +197,7 @@
       const baseWh=cfg.backgroundLoadW+farmDemandWh; // hourly farm demand, background priority
       const requestedPumpWh=cfg.pumpPressurePsi>0?cfg.pumpElectricalW:0;
       const energy=allocateEnergy({pvWh,baseWh,pumpWh:requestedPumpWh,
-        initialBatteryWh:this.batteryWh,cfg});
+        initialBatteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,cfg});
       // Explicit native Solar -> Farm transfer: allocate background load first.
       const backgroundServedWh=Math.min(cfg.backgroundLoadW,energy.servedBaseWh);
       const farmServedWh=Math.min(farmDemandWh,
@@ -253,6 +260,7 @@
       this.water=nextWater;
       this.waterStoredL=nextWaterStoredL;
       this.batteryWh=energy.batteryWh;
+      this.absorptionMinutes=energy.nextAbsorptionMinutes;
       this.cumulative.pvWh+=pvWh;
       this.cumulative.baseWh+=energy.servedBaseWh;
       this.cumulative.pumpWh+=energy.servedPumpWh;
@@ -287,7 +295,7 @@
     }
     snapshot(){
       return {schema:1,model:"experimental-coupled-scenario",clock:{hours:this.hours,hourOfDay:(this.hours+this.startHour)%24,startHour:this.startHour,date:this.farmSnapshot.date},
-        batteryWh:this.batteryWh,waterStoredL:this.waterStoredL,config:{...this.cfg},farm:this.farmSnapshot,
+        batteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,waterStoredL:this.waterStoredL,config:{...this.cfg},farm:this.farmSnapshot,
         cumulative:{...this.cumulative},last:this.last};
     }
   }
