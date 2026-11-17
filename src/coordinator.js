@@ -188,7 +188,8 @@
       const pvWh=pv.envelopeW*cfg.solarUtilization; // 1h scenario power estimate (Wh)
       const farmDemandWh=farmDailyKWh*1000/24;
       const baseWh=cfg.backgroundLoadW+farmDemandWh; // hourly farm demand, background priority
-      const energy=allocateEnergy({pvWh,baseWh,pumpWh:cfg.pumpElectricalW,
+      const requestedPumpWh=cfg.pumpPressurePsi>0?cfg.pumpElectricalW:0;
+      const energy=allocateEnergy({pvWh,baseWh,pumpWh:requestedPumpWh,
         initialBatteryWh:this.batteryWh,cfg});
       // Explicit native Solar -> Farm transfer: allocate background load first.
       const backgroundServedWh=Math.min(cfg.backgroundLoadW,energy.servedBaseWh);
