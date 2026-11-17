@@ -159,7 +159,7 @@
       this.startHour=9;
       this.hours=0;this.batteryWh=this.cfg.batteryStartWh;
       this.waterStoredL=this.cfg.waterStartL;
-      this.cumulative={pvWh:0,baseWh:0,pumpWh:0,treatedL:0,waterConsumedL:0,overflowL:0,waterDeficitL:0,energyDeficitWh:0,farmElectricityServedWh:0,farmElectricityDeficitWh:0};
+      this.cumulative={pvWh:0,baseWh:0,pumpWh:0,treatedL:0,waterConsumedL:0,overflowL:0,waterDeficitL:0,energyDeficitWh:0,farmElectricityServedWh:0,farmElectricityDeficitWh:0,farmWaterDeliveredL:0,farmWaterDeficitL:0};
       this.last=null;
       return this.snapshot();
     }
@@ -228,6 +228,10 @@
       const beforeUse=waterBefore+treatedL;
       const consumedL=Math.min(beforeUse,wantL);
       const shortfallL=wantL-consumedL;
+      // Source Farm daily demand is allocated from the physically available
+      // treated-water inventory. No unmet liters enter Farm delivery.
+      must(Math.abs(wantL-consumedL-shortfallL)<1e-7,
+        "Farm water demand allocation failure");
       const afterUse=beforeUse-consumedL;
       const overflowL=Math.max(0,afterUse-cfg.waterStorageCapacityL);
       const nextWaterStoredL=afterUse-overflowL;
@@ -258,6 +262,8 @@
       this.cumulative.energyDeficitWh+=energy.unservedBaseWh;
       this.cumulative.farmElectricityServedWh+=farmServedWh;
       this.cumulative.farmElectricityDeficitWh+=farmUnservedWh;
+      this.cumulative.farmWaterDeliveredL+=consumedL;
+      this.cumulative.farmWaterDeficitL+=shortfallL;
       this.hours++;
       if((this.hours+this.startHour)%24===0){
         this.farm.advanceDay();
@@ -268,7 +274,9 @@
         resourceAudit,
         farm:{dailyDemandWaterL:farmDailyWaterL,dailyDemandKWh:farmDailyKWh,
           hourlyElectricityDemandWh:farmDemandWh,electricityServedWh:farmServedWh,
-          electricityDeficitWh:farmUnservedWh,counts:this.farmSnapshot.counts},
+          electricityDeficitWh:farmUnservedWh,
+          hourlyWaterDemandL:wantL,waterDeliveredL:consumedL,waterDeficitL:shortfallL,
+          counts:this.farmSnapshot.counts},
         warnings:[
           ...(energy.unservedBaseWh>EPS?["Essential energy demand was not met. Farm biological effects NOT modeled."]:[]),
           ...(shortfallL>EPS?["Farm water demand was not met. Farm biological effects NOT modeled."]:[]),
