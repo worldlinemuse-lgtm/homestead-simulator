@@ -87,7 +87,7 @@
     // An electrically powered pump must have strictly positive demand AND
     // enough allocatable energy. No EPS subsidy for tiny pump requests.
     const pumpEnabled=pumpWh>0 && servedBaseWh>=baseWh-EPS &&
-        remainingPv+Math.max(0,batteryWh-reserve)*etaD>=pumpWh;
+        remainingPv+Math.max(0,batteryWh-reserve)*nativeDischargeEfficiency>=pumpWh;
     if(pumpEnabled){
       const pumpDelivery=deliver(pumpWh);
       directPumpWh=pumpDelivery.direct;batteryPumpWh=pumpDelivery.fromBattery;
