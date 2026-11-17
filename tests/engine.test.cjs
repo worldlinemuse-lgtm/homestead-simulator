@@ -493,3 +493,24 @@ test("native Solar absorption clock advances only while charging and resets on b
  assert.equal(idle.nextAbsorptionMinutes,0);
  assert.throws(()=>run(9600,-1,1000),/absorptionMinutes/);
 });
+
+test("native dispatch never enables a partially funded hydraulic pump at sub-epsilon shortages",()=>{
+ const core=ctx.HomesteadCoordinator;
+ const cfg=core.configuration({batteryStartWh:1000,batteryReserveWh:1000});
+ const pumpShort=core.allocateEnergy({pvWh:99.999999999,baseWh:0,pumpWh:100,
+   initialBatteryWh:1000,cfg});
+ assert.equal(pumpShort.pumpEnabled,false);
+ assert.equal(pumpShort.servedPumpWh,0);
+ assert.ok(Math.abs(pumpShort.residualWh)<1e-5);
+ const baseShort=core.allocateEnergy({pvWh:99.999999999,baseWh:100,pumpWh:1,
+   initialBatteryWh:1000,cfg});
+ assert.equal(baseShort.pumpEnabled,false);
+ assert.equal(baseShort.servedPumpWh,0);
+ assert.ok(baseShort.unservedBaseWh>0);
+ assert.ok(Math.abs(baseShort.residualWh)<1e-5);
+ const exact=core.allocateEnergy({pvWh:100,baseWh:0,pumpWh:100,
+   initialBatteryWh:1000,cfg});
+ assert.equal(exact.pumpEnabled,true);
+ assert.equal(exact.servedPumpWh,100);
+ assert.ok(Math.abs(exact.residualWh)<1e-5);
+});
