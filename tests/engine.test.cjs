@@ -375,3 +375,25 @@ test("3D battery inspector exposes actual native dispatch and conservation telem
  assert.ok(Number.isFinite(e.nativeBattery.chargeCurrentMultiplier));
  assert.ok(Math.abs(e.residualWh)<1e-5);
 });
+
+test("native battery rejects zero-capacity and invalid direct electrical inputs before state mutation",()=>{
+ const Core=ctx.HomesteadCoordinator;
+ assert.throws(()=>Core.configuration({batteryCapacityWh:0,batteryStartWh:0,batteryReserveWh:0}),/capacity/i);
+ const c=new Core.Coordinator();
+ const before=JSON.stringify(c.snapshot());
+ assert.throws(()=>c.configure({batteryCapacityWh:0,batteryStartWh:0,batteryReserveWh:0}),/capacity/i);
+ assert.equal(JSON.stringify(c.snapshot()),before);
+ const cfg=Core.configuration();
+ const input={pvWh:500,baseWh:100,pumpWh:0,initialBatteryWh:6000,cfg};
+ for(const overrides of [
+   {batteryCapacityWh:0,batteryReserveWh:0},
+   {batteryBusVoltageV:0},
+   {batteryBankAh:0},
+   {batteryBulkCurrentLimitA:0},
+   {batteryBulkCurrentLimitA:Infinity},
+   {batteryBulkCurrentLimitA:1e308,batteryBusVoltageV:1e308}
+ ]){
+   assert.throws(()=>Core.allocateEnergy({...input,cfg:{...cfg,...overrides}}),
+     /capacity|positive|finite|overflow/i);
+ }
+});
