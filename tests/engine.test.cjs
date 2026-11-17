@@ -470,3 +470,26 @@ test("3D farm summary reports delivered resource fractions, not only theoretical
  assert.ok(ui.includes("s.last.farm.electricityServedWh"));
  assert.ok(ui.includes("s.last.farm.hourlyElectricityDemandWh"));
 });
+
+test("native Solar absorption clock advances only while charging and resets on bulk/float",()=>{
+ const core=ctx.HomesteadCoordinator;
+ const cfg=core.configuration({batteryChemistry:"lfp",batteryCapacityWh:10000,
+   batteryStartWh:9600,batteryReserveWh:0,batteryBankAh:100,batteryBulkCurrentLimitA:30});
+ const run=(initialBatteryWh,absorptionMinutes,pvWh)=>core.allocateEnergy({
+   pvWh,baseWh:0,pumpWh:0,initialBatteryWh,absorptionMinutes,cfg});
+ const first=run(9600,0,1000);
+ assert.equal(first.nativeBattery.chargePhase,"absorption");
+ assert.equal(first.nextAbsorptionMinutes,60);
+ assert.ok(first.chargeStoredWh>0);
+ const second=run(9600,60,1000);
+ assert.equal(second.nativeBattery.absorptionMinutesBefore,60);
+ assert.equal(second.nativeBattery.chargePhase,"float");
+ assert.equal(second.chargeStoredWh,0);
+ assert.equal(second.nextAbsorptionMinutes,0);
+ const bulk=run(5000,60,1000);
+ assert.equal(bulk.nativeBattery.chargePhase,"bulk");
+ assert.equal(bulk.nextAbsorptionMinutes,0);
+ const idle=run(9600,0,0);
+ assert.equal(idle.nextAbsorptionMinutes,0);
+ assert.throws(()=>run(9600,-1,1000),/absorptionMinutes/);
+});
