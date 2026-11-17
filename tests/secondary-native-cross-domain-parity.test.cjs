@@ -12,7 +12,7 @@ const path=require("node:path");
 const ctx=vm.createContext({console,Date,Math,Map,Set,Number,String,Array,Object,
  JSON,Error,Uint8Array,Float64Array,Float32Array,Int32Array,Infinity,NaN,
  performance:require("node:perf_hooks").performance});
-for(const file of ["vendor/solar-next-core.js","vendor/water-engine.js",
+for(const file of ["vendor/solar-next-core.js","vendor/solar-battery-native.js","vendor/water-engine.js",
  "vendor/farm-core.js","src/resource-contract.js","src/coordinator.js"])
  vm.runInContext(fs.readFileSync(path.join(__dirname,"..",file),"utf8"),ctx,
   {filename:file,timeout:60000});
