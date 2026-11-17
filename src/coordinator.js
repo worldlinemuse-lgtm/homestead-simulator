@@ -58,6 +58,8 @@
     const native=root.BATTMODEL;
     const voltage=number("batteryBusVoltageV",cfg.batteryBusVoltageV);
     const bankAh=number("batteryBankAh",cfg.batteryBankAh);
+    const bulkLimitA=number("batteryBulkCurrentLimitA",cfg.batteryBulkCurrentLimitA);
+    must(voltage>0&&bankAh>0&&bulkLimitA>0,"Battery electrical parameters must be positive");
     const temperature=cfg.batteryTemperatureC;
     must(Number.isFinite(temperature)&&temperature>=-30&&temperature<=60,"Battery temperature out of range");
     const chem=cfg.batteryChemistry;
@@ -69,6 +71,7 @@
     must(nativeDischargeEfficiency>0&&nativeDischargeEfficiency<=1,"Invalid effective discharge efficiency");
     const capacity=number("batteryCapacityWh",cfg.batteryCapacityWh);
     const reserve=number("batteryReserveWh",cfg.batteryReserveWh);
+    must(capacity>0,"Battery capacity must be positive");
     must(reserve<=initialBatteryWh&&initialBatteryWh<=capacity,
       "Energy inventory outside battery capacity/reserve");
     must(Number.isFinite(initialBatteryWh+pvWh),"Energy input sum overflow");
@@ -96,7 +99,8 @@
     const charge=native.absorption(chem,batteryWh/capacity,0,bankAh);
     must(Number.isFinite(charge.mult)&&charge.mult>=0&&charge.mult<=1,
       "Invalid native charging multiplier");
-    const sourceChargeLimitWh=cfg.batteryBulkCurrentLimitA*voltage*charge.mult;
+    const sourceChargeLimitWh=bulkLimitA*voltage*charge.mult;
+    must(Number.isFinite(sourceChargeLimitWh),"Battery charge limit overflow");
     const chargeInWh=Math.min(remainingPv,Math.max(0,capacity-batteryWh)/etaC,sourceChargeLimitWh);
     const chargeStoredWh=chargeInWh*etaC;
     batteryWh+=chargeStoredWh;
@@ -133,6 +137,7 @@
     for(const key of ["batteryCapacityWh","batteryStartWh","batteryReserveWh","backgroundLoadW","pumpElectricalW","pumpPressurePsi","waterStorageCapacityL","waterStartL"]){
       number(key,c[key]);
     }
+    must(c.batteryCapacityWh>0,"Battery capacity must be positive");
     must(c.batteryReserveWh<=c.batteryStartWh&&c.batteryStartWh<=c.batteryCapacityWh,"Inconsistent battery inventory");
     must(c.waterStartL<=c.waterStorageCapacityL,"Inconsistent water inventory");
     must(c.chargeEfficiency>0&&c.dischargeEfficiency>0,"Efficiencies must be positive");
