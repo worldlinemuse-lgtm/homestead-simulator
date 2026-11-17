@@ -363,3 +363,15 @@ test("native Solar battery discharge and absorption affect live hourly dispatch"
  assert.ok(nearFull.chargeStoredWh>0);
  assert.ok(Math.abs(nearFull.residualWh)<1e-5);
 });
+
+test("3D battery inspector exposes actual native dispatch and conservation telemetry",()=>{
+ const ui=fs.readFileSync(path.join(__dirname,"../src/main.js"),"utf8");
+ for(const field of ["e.nativeBattery.chemistry","e.nativeBattery.dischargeMultiplier","e.nativeBattery.chargePhase","e.nativeBattery.chargeLimitWh","e.batteryBaseWh+e.batteryPumpWh","e.chargeStoredWh","e.dischargeLossWh+e.chargeLossWh"])
+   assert.ok(ui.includes(field),"Missing 3D live telemetry: "+field);
+ const c=new ctx.HomesteadCoordinator.Coordinator();
+ const s=c.stepHour(),e=s.last.energy;
+ assert.equal(e.nativeBattery.source.includes("solar-sandbox/source/battery.js"),true);
+ assert.ok(Number.isFinite(e.nativeBattery.dischargeMultiplier));
+ assert.ok(Number.isFinite(e.nativeBattery.chargeCurrentMultiplier));
+ assert.ok(Math.abs(e.residualWh)<1e-5);
+});
