@@ -110,11 +110,16 @@ function renderAsset(s){
   "Livestock waterer":[
     ["Farm delivery",l?fmt(w.consumedL,2)+" L":"—"],
     ["Unmet demand",l?fmt(w.shortfallL,2)+" L":"—"],
+    ["Hourly modeled demand",l?fmt(l.farm.hourlyWaterDemandL,2)+" L":"—"],
+    ["Cumulative farm water delivered",fmt(s.cumulative.farmWaterDeliveredL||0,2)+" L"],
+    ["Cumulative farm water deficit",fmt(s.cumulative.farmWaterDeficitL||0,2)+" L"],
     ["Daily modeled demand",fmt(d?.waterGal||0,2)+" US gal"]
   ],
   "Henhouse":[
     ["Chickens, all ages",s.farm.animals.filter(a=>a.sp==="chicken").length],
     ["Farm electricity/day",fmt(d?.kWh||0,2)+" kWh"],
+    ["Farm electricity served",l?fmt(l.farm.electricityServedWh,1)+" Wh this hour":"—"],
+    ["Farm electricity unmet",l?fmt(l.farm.electricityDeficitWh,1)+" Wh this hour":"—"],
     ["Eggs in last simulated day",d?.eggs??0],
     ["Shortage effects","Not modeled biologically yet"]
   ],
