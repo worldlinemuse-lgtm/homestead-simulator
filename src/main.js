@@ -63,14 +63,20 @@ function renderAsset(s){
   ],
   "Battery storage module":[
     ["Battery energy",fmt(s.batteryWh/1000,2)+" kWh (experimental live model)"],
-    ["Live dispatch","Experimental; not original Solar battery characterization"],
-    ["Engineering controls","Select source AGM/LFP charging and discharge study below"]
+    ["Native Solar chemistry",l?(e.nativeBattery.chemistry.toUpperCase()+" · "+fmt(e.nativeBattery.temperatureC,0)+" °C"):"Awaiting first hour"],
+    ["Native discharge factor",l?fmt(e.nativeBattery.dischargeMultiplier,3)+" × at "+fmt(e.nativeBattery.dischargeCurrentA,2)+" A":"—"],
+    ["Native charging phase",l?(e.nativeBattery.chargePhase+" · "+fmt(e.nativeBattery.chargeCurrentMultiplier,3)+" × taper"):"—"],
+    ["Charging limit",l?fmt(e.nativeBattery.chargeLimitWh,1)+" Wh this hour":"—"],
+    ["Native source","Original Solar battery chemistry/rate/temperature and absorption; scenario electrical assumptions remain"]
   ],
   "Solar inverter and battery":[
     ["Battery energy",fmt(s.batteryWh/1000,2)+" kWh"],
     ["Battery maximum",fmt(s.config.batteryCapacityWh/1000,1)+" kWh assumed"],
     ["Supply to site",l?fmt(e.servedBaseWh,1)+" Wh this hour":"—"],
-    ["Authority","Experimental dispatch; not the original live Solar dispatcher"]
+    ["Battery discharge to loads",l?fmt(e.batteryBaseWh+e.batteryPumpWh,1)+" Wh":"—"],
+    ["Battery charging",l?fmt(e.chargeStoredWh,1)+" Wh stored":"—"],
+    ["Battery losses",l?fmt(e.dischargeLossWh+e.chargeLossWh,1)+" Wh":"—"],
+    ["Authority","Original Solar battery rate and absorption functions; full inverter/MPPT dispatch not yet native"]
   ],
   "Home and utility loads":[
     ["Site background demand",fmt(s.config.backgroundLoadW,0)+" W assumed"],
