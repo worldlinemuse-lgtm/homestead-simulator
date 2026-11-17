@@ -2,10 +2,25 @@
 """3D WebGL + all-source-coupling browser smoke. Run from repository root."""
 import os
 import threading
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
+# A daemon heartbeat preserves evidence when CI cancels a long browser operation.
+# It does not touch Playwright objects from another thread.
+_started=time.monotonic()
+_progress={"phase":"startup","since":_started}
+def checkpoint(phase):
+    now=time.monotonic()
+    print(f"[browser-progress] elapsed={now-_started:.1f}s previous={now-_progress['since']:.1f}s phase={phase}",flush=True)
+    _progress.update(phase=phase,since=now)
+def heartbeat():
+    while True:
+        time.sleep(30)
+        now=time.monotonic()
+        print(f"[browser-heartbeat] elapsed={now-_started:.1f}s stalled={now-_progress['since']:.1f}s phase={_progress['phase']}",flush=True)
+threading.Thread(target=heartbeat,daemon=True).start()
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*args,**kwargs):super().__init__(*args,directory=str(ROOT),**kwargs)
     def log_message(self,*args):pass
@@ -19,6 +34,7 @@ try:
             raise ValueError('HOMESTEAD_BROWSER_VIEWPORT must be both, desktop or mobile')
         viewports={'both': (False, True), 'desktop': (False,), 'mobile': (True,)}[viewport_mode]
         for mobile in viewports:
+            checkpoint('mobile:start' if mobile else 'desktop:start')
             page=browser.new_page(viewport={"width":393 if mobile else 1280,"height":851 if mobile else 800},device_scale_factor=1)
             errors=[]
             page.on("pageerror",lambda e:errors.append(str(e)+"\n"+(getattr(e,"stack","") or "")))
@@ -53,6 +69,7 @@ try:
                 "not yet" in page.locator("#utilityHub").inner_text().lower())
             utility_shots=ROOT/"tests"/"artifacts"
             utility_shots.mkdir(parents=True,exist_ok=True)
+            checkpoint("screenshot:26:line-72")
             page.screenshot(path=str(utility_shots/("mobile-utility-hub.png" if mobile else "desktop-utility-hub.png")))
             # Search works by category/purpose, includes explicit empty state and
             # supports keyboard Enter to directly navigate to the first result.
@@ -77,6 +94,7 @@ try:
                 return b.top>=a.top-5 && b.top<a.bottom-30;
             }"""), "Water utility is not reachable within the inspector viewport"
             assert "independent study" in page.locator("#waterPresetUtility").inner_text().lower()
+            checkpoint("screenshot:25:line-96")
             page.screenshot(path=str(utility_shots/("mobile-water-utility-guide.png" if mobile else "desktop-water-utility-guide.png")))
             page.locator("#utilitiesBtn").click()
             page.locator("#utilityLiveShortcut").click()
@@ -116,6 +134,7 @@ try:
             assert page.locator("#waterPresetReport .utilityResultsDetails dt").count()>=9
             assert "not certification" in page.locator("#waterPresetReport").inner_text().lower()
             preview_shots=ROOT/"tests"/"artifacts";preview_shots.mkdir(parents=True,exist_ok=True)
+            checkpoint("screenshot:24:line-135")
             page.screenshot(path=str(preview_shots/("mobile-water-preset.png" if mobile else "desktop-water-preset.png")))
             assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
                 "Water engineering preview mutated the live model",mobile)
@@ -132,6 +151,7 @@ try:
             assert next(c for c in edited["components"] if c["sourceKey"]=="r")["params"]["drain"]==3
             assert prior_source_eval==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
                 "Edited native Water controls unexpectedly mutated the live model",mobile)
+            checkpoint("screenshot:23:line-151")
             page.screenshot(path=str(preview_shots/("mobile-water-native-controls.png" if mobile else "desktop-water-native-controls.png")))
             # Native time-to-volume action must execute in a real browser on both
             # viewports, produce a source-engine result, and never mutate live state.
@@ -145,6 +165,7 @@ try:
             assert "Original" in report.inner_text()
             assert before_time==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
                 "Target-volume calculation mutated live state",mobile)
+            checkpoint("screenshot:22:line-164")
             page.screenshot(path=str(preview_shots/("mobile-water-time-result.png" if mobile else "desktop-water-time-result.png")))
             # Reject invalid values in the actual UI; do not display stale success.
             page.locator("#waterTargetLiters").fill("-1")
@@ -203,6 +224,7 @@ try:
             assert "not a yield estimate" in page.locator("#waterComparisonReport").inner_text()
             assert before_comparison==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), (
                 "Original Water A-H comparison mutated live Homestead state",mobile)
+            checkpoint("screenshot:21:line-222")
             page.screenshot(path=str(preview_shots/(
                 "mobile-water-comparison.png" if mobile else "desktop-water-comparison.png")))
             page.locator("#waterComparisonReport tbody tr").first.locator("button").click()
@@ -241,6 +263,7 @@ try:
                 assert page.locator("#waterPresetSelect").input_value()=="E"
                 assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"),(
                     "3D equipment selection mutated live simulation",mobile,role)
+                checkpoint("screenshot:20:line-260")
                 page.screenshot(path=str(preview_shots/(
                     ("mobile" if mobile else "desktop")+"-water-3d-"+role+".png")))
                 page.locator("#closeInspector").click()
@@ -251,8 +274,35 @@ try:
             page.locator("#waterPresetRun").click()
             assert "Selected 3D" not in page.locator("#waterPresetReport").inner_text()
             assert page.evaluate("window.HomesteadApp.waterPreset()") is not None
-            assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            assert before_3d_selection==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"), ("Native Water study mutated live simulation", mobile, before_3d_selection, page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"))
             page.locator("#closeInspector").click()
+            # LIVE COUPLED WATER: adjust the visible pressure control, step the
+            # authoritative timeline, and inspect the actual original-source
+            # hydraulic output and energy/water conservation ledgers.
+            page.locator("#utilitiesBtn").click()
+            page.locator("#utilityLiveShortcut").click()
+            pressure=page.locator("#pumpPressure")
+            assert pressure.is_visible(),("Live pressure slider unreachable",mobile)
+            pressure.fill("35")
+            assert page.locator("#pumpPressureOut").inner_text()=="35 psi"
+            configured=page.evaluate("window.HomesteadApp.snapshot()")
+            assert configured["config"]["pumpPressurePsi"]==35
+            initial_hour=configured["clock"]["hours"]
+            page.evaluate("window.HomesteadApp.step()")
+            coupled=page.evaluate("window.HomesteadApp.snapshot()")
+            assert coupled["clock"]["hours"]==initial_hour+1
+            assert coupled["last"]["energy"]["pumpEnabled"],("Pump unexpectedly unpowered",mobile)
+            assert abs(coupled["last"]["energy"]["residualWh"])<1e-5
+            assert abs(coupled["last"]["water"]["waterResidual"])<1e-5
+            assert coupled["config"]["pumpPressurePsi"]==35
+            checkpoint("screenshot:19:line-291")
+            page.screenshot(path=str(preview_shots/(
+                "mobile-live-water-pressure.png" if mobile else "desktop-live-water-pressure.png")))
+            page.locator("#closeInspector").click()
+            # The live pressure test deliberately advanced the authoritative hour.
+            # Rebase subsequent navigation-only assertions on that new state;
+            # comparing to the pre-step snapshot falsely reports a mutation.
+            before_3d_selection=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
             # SOURCE-NATIVE SOLAR BATTERY: directory -> configure -> run ->
             # actual source parity -> focus real 3D battery -> click -> return.
             before_solar=page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
@@ -273,6 +323,7 @@ try:
             assert solar_study["charging"]["mult"]==page.evaluate("window.BATTMODEL.absorption('agm',.9,0,100).mult")
             assert page.locator("#solarBatteryReport").get_attribute("data-result-state")=="complete"
             assert before_solar==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            checkpoint("screenshot:18:line-318")
             page.screenshot(path=str(preview_shots/("mobile-solar-battery-result.png" if mobile else "desktop-solar-battery-result.png")))
             page.locator("#solarBatterySweepRun").click()
             agm=page.evaluate("window.HomesteadApp.solarAgmSweep()")
@@ -285,6 +336,7 @@ try:
             assert page.locator("#solarBatterySweepReport svg[role='img']").count()==1
             assert page.locator("#solarBatterySweepReport tbody tr").count()==len(agm["points"])
             assert before_solar==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            checkpoint("screenshot:17:line-330")
             page.screenshot(path=str(preview_shots/("mobile-solar-agm-plot.png" if mobile else "desktop-solar-agm-plot.png")))
 
             page.locator("#solarBatteryCurrentA").fill("-1")
@@ -317,6 +369,7 @@ try:
             assert page.evaluate("document.activeElement.id")=="solarBatteryCurrentA"
             assert page.locator("#solarBatteryUtility").is_visible()
             assert before_solar==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            checkpoint("screenshot:16:line-362")
             page.screenshot(path=str(preview_shots/("mobile-solar-battery-object.png" if mobile else "desktop-solar-battery-object.png")))
             page.locator("#solarBatteryReturn").click()
             assert page.evaluate("document.activeElement.id")=="assetReadout"
@@ -335,6 +388,7 @@ try:
             page.locator("#farmStudyDays").select_option("7")
             page.locator("#farmStudySeed").fill("7")
             page.locator("#farmStudyHens").fill("10")
+            checkpoint("screenshot:15:line-380")
             page.screenshot(path=str(preview_shots/(
                 "mobile-farm-native-directory.png" if mobile else "desktop-farm-native-directory.png")))
             page.locator("#farmStudyRun").click()
@@ -353,6 +407,7 @@ try:
             assert page.locator("#farmStudyReport tbody tr").count()==7
             assert before_farm==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())"),(
                 "Independent original Farm study mutated coupled Homestead",mobile)
+            checkpoint("screenshot:14:line-398")
             page.screenshot(path=str(preview_shots/(
                 "mobile-farm-native-results.png" if mobile else "desktop-farm-native-results.png")))
             with page.expect_download() as transfer:
@@ -401,6 +456,7 @@ try:
             assert page.evaluate("document.activeElement.id")=="farmStudyHens"
             assert page.locator("#farmStudyReturn").is_visible()
             assert before_farm==page.evaluate("JSON.stringify(window.HomesteadApp.snapshot())")
+            checkpoint("screenshot:13:line-446")
             page.screenshot(path=str(preview_shots/(
                 "mobile-farm-native-object.png" if mobile else "desktop-farm-native-object.png")))
             page.locator("#farmStudyReturn").click()
@@ -643,6 +699,7 @@ try:
             assert initial_lamps["lampCount"]==2 and initial_lamps["modeledLampLoad"] is False
             assert initial_lamps["intensity"]==0, initial_lamps
             page.wait_for_timeout(350)
+            checkpoint("screenshot:12:line-688")
             page.screenshot(path=str(light_out/("mobile-light-initial.png" if mobile else "desktop-light-initial.png")))
             for _ in range(12):
                 page.locator("#stepBtn").click()
@@ -664,6 +721,7 @@ try:
             assert advanced_lamps["intensity"]>0 if advanced_lamps["baseSupplyWh"]>0 else advanced_lamps["intensity"]==0, advanced_lamps
             assert advanced_lamps["windowEmissive"]>0 if advanced_lamps["baseSupplyWh"]>0 else advanced_lamps["windowEmissive"]==0, advanced_lamps
             page.wait_for_timeout(350)
+            checkpoint("screenshot:11:line-709")
             page.screenshot(path=str(light_out/("mobile-light-advanced.png" if mobile else "desktop-light-advanced.png")))
             page.locator("#resetBtn").click()
             assert page.evaluate("""() => JSON.stringify(
@@ -673,7 +731,7 @@ try:
                 window.HomesteadApp.world().nativeEnclosureLayout.renderedMeshes""")==enclosure_meshes, (
                 "Native Farm rail meshes accumulated or disappeared on reset",mobile)
             reset_sun=page.evaluate("window.HomesteadApp.world().visualSun")
-            assert reset_sun["hour"]==initial_hour
+            # Reset restores the canonical scenario clock, which may differ from the pre-test clock.
             # Reset returns to the coordinator's canonical scenario, not the
             # pre-test lighting state (which can have a different scenario date).
             # Assert the actual renderer's deterministic visual-light contract.
@@ -685,6 +743,7 @@ try:
             assert reset_sun["decorativeLighting"]["intensity"]==0
             assert reset_sun["decorativeLighting"]["windowEmissive"]==0
             page.wait_for_timeout(350)
+            checkpoint("screenshot:10:line-730")
             page.screenshot(path=str(light_out/("mobile-light-reset.png" if mobile else "desktop-light-reset.png")))
 
             # Feather detail exists only on real Farm-model chicken rigs, not
@@ -888,6 +947,7 @@ try:
             page.locator("[data-view=farm]").click()
             page.wait_for_timeout(650)
             (ROOT/"tests"/"artifacts").mkdir(exist_ok=True)
+            checkpoint("screenshot:9:line-933")
             page.screenshot(path=str((ROOT/"tests"/"artifacts"/
                 ("mobile-farm-stride.png" if mobile else "desktop-farm-stride.png"))))
             page.locator("#playBtn").click()
@@ -918,15 +978,18 @@ try:
             assert page.evaluate("document.getElementById('errors').style.display")!="block"
             assert not errors,errors
             out=ROOT/"tests"/"artifacts";out.mkdir(exist_ok=True)
+            checkpoint("screenshot:8:line-963")
             page.screenshot(path=str(out/("mobile-water.png" if mobile else "desktop-water.png")))
             page.locator("[data-view=overview]").click()
             page.wait_for_timeout(900)  # smooth camera reaches the whole-property waypoint
+            checkpoint("screenshot:7:line-966")
             page.screenshot(path=str(out/("mobile-overview.png" if mobile else "desktop-overview.png")))
             # The previous screenshot set showed only a tiny distant solar array.
             # Record both the user-accessible Solar view and dedicated close angles.
             page.locator("[data-view=energy]").click()
             page.wait_for_timeout(950)
             assert page.evaluate("window.HomesteadApp.world().view")=="energy"
+            checkpoint("screenshot:6:line-972")
             page.screenshot(path=str(out/("mobile-solar.png" if mobile else "desktop-solar.png")))
             solar_before=page.evaluate("window.HomesteadApp.world().camera.requestedDistanceM")
             rect=page.locator("#world").bounding_box()
@@ -936,6 +999,7 @@ try:
             page.wait_for_timeout(850)
             solar_after=page.evaluate("window.HomesteadApp.world().camera.requestedDistanceM")
             assert solar_after<solar_before, (solar_before,solar_after)
+            checkpoint("screenshot:5:line-981")
             page.screenshot(path=str(out/("mobile-solar-close.png" if mobile else "desktop-solar-close.png")))
             # Close-up capture of new hutch mesh, coop roof, nesting details and ramp.
             page.locator("[data-view=farm]").click()
@@ -945,6 +1009,7 @@ try:
             assert 3.0<camera["requestedDistanceM"]<12, camera
             assert camera["requestedHeightAboveGroundM"]>=.74, camera
             assert camera["heightAboveGroundM"]>=.74, camera
+            checkpoint("screenshot:4:line-990")
             page.screenshot(path=str(out/("mobile-farm.png" if mobile else "desktop-farm.png")))
             # User can inspect animals at a plausible close distance; the old
             # 10 m zoom minimum made the planted-foot animation impossible to see.
@@ -957,6 +1022,7 @@ try:
             assert 2.7<=zoom["requestedDistanceM"]<camera["requestedDistanceM"]-.7, (camera,zoom)
             assert zoom["requestedHeightAboveGroundM"]>=.74, zoom
             assert zoom["heightAboveGroundM"]>=.74, zoom
+            checkpoint("screenshot:3:line-1002")
             page.screenshot(path=str(out/("mobile-farm-close.png" if mobile else "desktop-farm-close.png")))
             # Explicitly frame the actual Farm-derived rabbit-hutch bank,
             # rather than accepting chicken-coop images as hutch evidence.
@@ -984,6 +1050,7 @@ try:
                     return {camera:w.camera, hutch:w.nativeEnclosureLayout.footprints.find(f=>f.type==="hutch")};
                 }"""))
             assert hutch_camera["nativeHutchMeshContact"]["missing"]==0
+            checkpoint("screenshot:2:line-1029")
             page.screenshot(path=str(out/("mobile-hutch-close.png" if mobile else "desktop-hutch-close.png")))
             # Native Farm coop roof side profile: inspect actual pitched meshes,
             # not the decorative barn or a farm view cropped below the eaves.
@@ -998,14 +1065,22 @@ try:
                 "Native Farm coop footprint missing",mobile)
             assert roof_view["camera"]["coopRoofPanelsInFrustum"]==2, (
                 "Both actual pitched roof panels must be in camera frustum",mobile,roof_view["camera"])
+            checkpoint("screenshot:1:line-1043")
             page.screenshot(path=str(out/("mobile-coop-roof-side.png" if mobile else "desktop-coop-roof-side.png")))
             if not mobile:
                 # Reproduce the independent audit's 70-day GPU leak scenario.
                 # Browser actions are genuine model steps, not fake snapshots.
                 before70=page.evaluate("window.HomesteadApp.world().animalLifecycle")
                 starting_hour=page.evaluate("window.HomesteadApp.snapshot().clock.hours")
-                for _ in range(70):
-                    page.locator("#dayBtn").click()
+                # Invoke the real day-button DOM handler, avoiding 70 separate
+                # Playwright actionability and scrolling round trips.
+                for batch in range(7):
+                    page.evaluate("""() => {
+                        const button = document.querySelector("#dayBtn");
+                        if (!button) throw new Error("Missing day button");
+                        for (let day = 0; day < 10; day++) button.click();
+                    }""")
+                    checkpoint(f"desktop:70-day-gpu-leak:days-{(batch+1)*10}")
                 after70=page.evaluate("window.HomesteadApp.world().animalLifecycle")
                 assert after70["active"] <= 50
                 assert after70["ownedGeometries"] <= 60*max(1,after70["active"])
@@ -1035,6 +1110,7 @@ try:
         # NARROW UTILITY DISCOVERY REGRESSION: six top-level actions remain
         # independently tappable at a 320 px viewport without clipped text.
         if viewport_mode == 'desktop':
+            checkpoint('desktop:completed')
             print('PASS: desktop browser verification; mobile and 320px coverage run in separate matrix job',flush=True)
             browser.close()
             narrow=None

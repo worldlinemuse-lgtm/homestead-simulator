@@ -15,7 +15,9 @@ jobs:
       fail-fast: false
       matrix:
         viewport: [desktop, mobile]
-    timeout-minutes: 12
+    # Desktop's 70-day native animal/GPU regression requires ~14 minutes on hosted Chromium.
+    # Preserve all 70 days and numerical assertions; allow headroom for runner variance.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

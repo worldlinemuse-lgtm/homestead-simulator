@@ -86,7 +86,8 @@ function renderAsset(s){
   "Water pressure pump":[
     ["Pump energized",l?(e.pumpEnabled?"Yes":"No"):"Not run"],
     ["Electrical pump allocation",l?fmt(e.servedPumpWh,1)+" Wh":"—"],
-    ["Original source study","Pump pressure in psi can be varied independently; no live changes"],
+    ["Live hydraulic pressure",fmt(s.config.pumpPressurePsi,0)+" psi configured · "+(l?(e.pumpEnabled?"energized":"power-gated"):"awaiting next step")],
+    ["Original source solver","The live pump uses the configured pressure during the next simulated hour"],
     ["Live pump sizing","Assumed electrical demand, not source catalog calibration"]
   ],
   "Reverse-osmosis treatment stage":[
@@ -340,7 +341,7 @@ for(const [id,dx,dz] of [["objectLeft",-1,0],["objectRight",1,0],
  $(id).addEventListener("click",()=>runEdit(()=>scene.editor.move(dx,dz)));
 }
 $("objectRotate").addEventListener("click",()=>runEdit(()=>scene.editor.rotate(Math.PI/2)));
-for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*100,0)+"%"],["houseLoad","houseLoadOut","backgroundLoadW",x=>fmt(x,0)+" W"],["pumpLoad","pumpLoadOut","pumpElectricalW",x=>fmt(x,0)+" W"]]){
+for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*100,0)+"%"],["houseLoad","houseLoadOut","backgroundLoadW",x=>fmt(x,0)+" W"],["pumpLoad","pumpLoadOut","pumpElectricalW",x=>fmt(x,0)+" W"],["pumpPressure","pumpPressureOut","pumpPressurePsi",x=>fmt(x,0)+" psi"]]){
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
 }
 
