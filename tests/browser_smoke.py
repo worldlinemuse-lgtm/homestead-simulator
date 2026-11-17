@@ -699,7 +699,7 @@ try:
                 window.HomesteadApp.world().nativeEnclosureLayout.renderedMeshes""")==enclosure_meshes, (
                 "Native Farm rail meshes accumulated or disappeared on reset",mobile)
             reset_sun=page.evaluate("window.HomesteadApp.world().visualSun")
-            assert reset_sun["hour"]==initial_hour
+            # Reset restores the canonical scenario clock, which may differ from the pre-test clock.
             # Reset returns to the coordinator's canonical scenario, not the
             # pre-test lighting state (which can have a different scenario date).
             # Assert the actual renderer's deterministic visual-light contract.
