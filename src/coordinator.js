@@ -169,7 +169,7 @@
       this.hours=0;this.batteryWh=this.cfg.batteryStartWh;
       this.absorptionMinutes=0;
       this.waterStoredL=this.cfg.waterStartL;
-      this.cumulative={pvWh:0,baseWh:0,pumpWh:0,treatedL:0,waterConsumedL:0,overflowL:0,waterDeficitL:0,energyDeficitWh:0,farmElectricityServedWh:0,farmElectricityDeficitWh:0,farmWaterDeliveredL:0,farmWaterDeficitL:0};
+      this.cumulative={pvWh:0,baseWh:0,pumpWh:0,treatedL:0,waterConsumedL:0,overflowL:0,waterDeficitL:0,energyDeficitWh:0,farmElectricityServedWh:0,farmElectricityDeficitWh:0,farmWaterDeliveredL:0,farmWaterDeficitL:0,pumpElectricityRequestedWh:0,pumpElectricityDeficitWh:0,backgroundElectricityServedWh:0,backgroundElectricityDeficitWh:0};
       this.last=null;
       return this.snapshot();
     }
@@ -206,6 +206,11 @@
       const farmServedWh=Math.min(farmDemandWh,
         Math.max(0,energy.servedBaseWh-backgroundServedWh));
       const farmUnservedWh=farmDemandWh-farmServedWh;
+      const backgroundDeficitWh=cfg.backgroundLoadW-backgroundServedWh;
+      const pumpDeficitWh=requestedPumpWh-energy.servedPumpWh;
+      must(pumpDeficitWh>=-EPS && backgroundDeficitWh>=-EPS &&
+        Math.abs(backgroundDeficitWh+farmUnservedWh-energy.unservedBaseWh)<1e-6,
+        "Electrical demand reconciliation failure");
       must(Math.abs(backgroundServedWh+farmServedWh-energy.servedBaseWh)<1e-6,
         "Farm electrical allocation conservation failure");
       // Execute hydraulic substeps against a working copy. A failed solver must
@@ -276,6 +281,10 @@
       this.cumulative.farmElectricityDeficitWh+=farmUnservedWh;
       this.cumulative.farmWaterDeliveredL+=consumedL;
       this.cumulative.farmWaterDeficitL+=shortfallL;
+      this.cumulative.pumpElectricityRequestedWh+=requestedPumpWh;
+      this.cumulative.pumpElectricityDeficitWh+=pumpDeficitWh;
+      this.cumulative.backgroundElectricityServedWh+=backgroundServedWh;
+      this.cumulative.backgroundElectricityDeficitWh+=backgroundDeficitWh;
       this.hours++;
       if((this.hours+this.startHour)%24===0){
         this.farm.advanceDay();
@@ -284,6 +293,9 @@
       this.last={hour,day:this.farmSnapshot.date,
         pv,energy,water:{treatedL,waterStoredL:this.waterStoredL,consumedL,shortfallL,overflowL,waterResidual},
         resourceAudit,
+        electricalLoads:{backgroundRequestedWh:cfg.backgroundLoadW,backgroundServedWh,backgroundDeficitWh,
+          pumpRequestedWh:requestedPumpWh,pumpServedWh:energy.servedPumpWh,pumpDeficitWh,
+          farmRequestedWh:farmDemandWh,farmServedWh,farmDeficitWh:farmUnservedWh},
         farm:{dailyDemandWaterL:farmDailyWaterL,dailyDemandKWh:farmDailyKWh,
           hourlyElectricityDemandWh:farmDemandWh,electricityServedWh:farmServedWh,
           electricityDeficitWh:farmUnservedWh,
