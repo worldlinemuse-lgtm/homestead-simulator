@@ -5,9 +5,10 @@ const fs=require("node:fs");
 const vm=require("node:vm");
 const path=require("node:path");
 const ctx=vm.createContext({});
+vm.runInContext(fs.readFileSync(path.join(__dirname,"../vendor/solar-battery-native.js"),"utf8"),ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname,"../src/coordinator.js"),"utf8"),ctx);
 const allocate=ctx.HomesteadCoordinator.allocateEnergy;
-const cfg={dischargeEfficiency:0.92,chargeEfficiency:0.95,batteryCapacityWh:10000,batteryReserveWh:1000};
+const cfg={dischargeEfficiency:0.92,chargeEfficiency:0.95,batteryCapacityWh:10000,batteryReserveWh:1000,batteryChemistry:"lfp",batteryBusVoltageV:24,batteryBankAh:416.6666666667,batteryTemperatureC:20,batteryBulkCurrentLimitA:30};
 const good={pvWh:800,baseWh:300,pumpWh:120,initialBatteryWh:6000,cfg};
 test("finite energy transfers conserve input and inventory",()=>{
  const result=allocate(good);
