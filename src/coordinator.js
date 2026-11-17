@@ -90,7 +90,10 @@
     servedBaseWh=baseDelivery.served;
     // An electrically powered pump must have strictly positive demand AND
     // enough allocatable energy. No EPS subsidy for tiny pump requests.
-    const pumpEnabled=pumpWh>0 && servedBaseWh>=baseWh-EPS &&
+    // Pump operation is atomic: a fractional watt-hour shortfall cannot
+    // authorize a full hour of hydraulic pressure. Do not apply the general
+    // conservation epsilon to equipment-start eligibility.
+    const pumpEnabled=pumpWh>0 && servedBaseWh>=baseWh &&
         remainingPv+Math.max(0,batteryWh-reserve)*nativeDischargeEfficiency>=pumpWh;
     if(pumpEnabled){
       const pumpDelivery=deliver(pumpWh);
