@@ -422,3 +422,30 @@ test("native Solar hourly supply is explicitly reconciled to Farm electricity de
  assert.ok(Math.abs(powered.cumulative.farmElectricityServedWh-
    p.electricityServedWh)<1e-7);
 });
+
+test("native Farm water and energy fulfillment share conservative hourly ledgers",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({
+   cloudTransmittance:0,batteryStartWh:1000,batteryReserveWh:1000,
+   backgroundLoadW:0,pumpElectricalW:120,waterStartL:0
+ });
+ for(let hour=0;hour<5;hour++){
+   const before=c.snapshot(),after=c.stepHour(),last=after.last;
+   assert.ok(Math.abs(last.farm.hourlyWaterDemandL-
+     last.farm.waterDeliveredL-last.farm.waterDeficitL)<1e-7);
+   assert.equal(last.farm.waterDeliveredL,last.water.consumedL);
+   assert.equal(last.farm.waterDeficitL,last.water.shortfallL);
+   assert.ok(Math.abs(last.farm.hourlyElectricityDemandWh-
+     last.farm.electricityServedWh-last.farm.electricityDeficitWh)<1e-7);
+   assert.ok(Math.abs(after.cumulative.farmWaterDeliveredL-
+     before.cumulative.farmWaterDeliveredL-last.farm.waterDeliveredL)<1e-7);
+   assert.ok(Math.abs(after.cumulative.farmWaterDeficitL-
+     before.cumulative.farmWaterDeficitL-last.farm.waterDeficitL)<1e-7);
+   assert.equal(last.energy.pumpEnabled,false);
+   assert.equal(last.farm.waterDeliveredL,0);
+ }
+ const replay=()=>{const x=new ctx.HomesteadCoordinator.Coordinator({
+   cloudTransmittance:0,batteryStartWh:1000,batteryReserveWh:1000,
+   backgroundLoadW:0,pumpElectricalW:120,waterStartL:0
+ });for(let i=0;i<5;i++)x.stepHour();return JSON.stringify(x.snapshot());};
+ assert.equal(replay(),replay());
+});
