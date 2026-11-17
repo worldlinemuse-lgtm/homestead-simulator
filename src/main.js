@@ -81,7 +81,11 @@ function renderAsset(s){
   "Home and utility loads":[
     ["Site background demand",fmt(s.config.backgroundLoadW,0)+" W assumed"],
     ["Demand served",l?fmt(e.servedBaseWh,1)+" Wh total":"—"],
-    ["Unserved demand",l?fmt(e.unservedBaseWh,1)+" Wh":"—"]
+    ["Unserved demand",l?fmt(e.unservedBaseWh,1)+" Wh":"—"],
+    ["Background electricity",l?fmt(l.electricalLoads.backgroundServedWh,1)+"/"+fmt(l.electricalLoads.backgroundRequestedWh,1)+" Wh":"—"],
+    ["Farm electricity",l?fmt(l.electricalLoads.farmServedWh,1)+"/"+fmt(l.electricalLoads.farmRequestedWh,1)+" Wh":"—"],
+    ["Pump electricity",l?fmt(l.electricalLoads.pumpServedWh,1)+"/"+fmt(l.electricalLoads.pumpRequestedWh,1)+" Wh":"—"],
+    ["Total electrical deficit",l?fmt(l.electricalLoads.backgroundDeficitWh+l.electricalLoads.farmDeficitWh+l.electricalLoads.pumpDeficitWh,1)+" Wh":"—"]
   ],
   "Water treatment and storage":[
     ["Pump energized",l?(e.pumpEnabled?"Yes":"No"):"Not run"],
@@ -172,7 +176,7 @@ function redraw(s){
  scene?.update({...s,farmWorld:farmVisual.world(),farmWorldOriginM});renderAsset(s);
  const e=s.last?.energy,w=s.last?.water,f=s.farm;
  $("energyValue").textContent=fmt(s.batteryWh/1000,2)+" kWh";
- $("energyDetail").textContent=e?"PV "+fmt(e.pvWh/1000,2)+" kWh/h · "+(e.pumpEnabled?"pump on":"pump off")+" · residual "+fmt(e.residualWh,4)+" Wh":"Battery remaining · awaiting interval";
+ $("energyDetail").textContent=e?"PV "+fmt(e.pvWh/1000,2)+" kWh/h · loads "+fmt(s.last.electricalLoads.backgroundServedWh+s.last.electricalLoads.farmServedWh+s.last.electricalLoads.pumpServedWh,0)+" Wh delivered · "+fmt(s.last.electricalLoads.backgroundDeficitWh+s.last.electricalLoads.farmDeficitWh+s.last.electricalLoads.pumpDeficitWh,0)+" Wh unmet · "+(e.pumpEnabled?"pump on":"pump off"):"Battery remaining · awaiting interval";
  $("waterValue").textContent=fmt(s.waterStoredL,0)+" L";
  $("waterDetail").textContent=w?"Modeled treated "+fmt(w.treatedL,1)+" L/h · farm use "+fmt(w.consumedL,1)+" L":"Treated storage, not certified drinking water";
  $("farmValue").textContent=f.counts.n+" animals";
