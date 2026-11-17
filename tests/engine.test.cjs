@@ -534,3 +534,21 @@ test("hourly coupled ledger reconciles all three electrical consumers and cumula
  }
  assert.ok(c.snapshot().cumulative.pumpElectricityDeficitWh>0);
 });
+
+
+test("3D electrical inspector and live HUD expose all three conserved load allocations",()=>{
+ const ui=fs.readFileSync(path.join(__dirname,"../src/main.js"),"utf8");
+ for(const key of ["backgroundRequestedWh","backgroundServedWh","backgroundDeficitWh",
+   "farmRequestedWh","farmServedWh","farmDeficitWh",
+   "pumpRequestedWh","pumpServedWh","pumpDeficitWh"]){
+   assert.ok(ui.includes("electricalLoads."+key),`Missing live 3D electrical readout: ${key}`);
+ }
+ const c=new ctx.HomesteadCoordinator.Coordinator({cloudTransmittance:0,
+   batteryStartWh:1000,batteryReserveWh:1000,backgroundLoadW:50});
+ const s=c.stepHour(),loads=s.last.electricalLoads;
+ const requested=loads.backgroundRequestedWh+loads.farmRequestedWh+loads.pumpRequestedWh;
+ const served=loads.backgroundServedWh+loads.farmServedWh+loads.pumpServedWh;
+ const deficit=loads.backgroundDeficitWh+loads.farmDeficitWh+loads.pumpDeficitWh;
+ assert.ok(Math.abs(requested-served-deficit)<1e-7);
+ assert.ok(Math.abs(served-s.last.energy.servedBaseWh-s.last.energy.servedPumpWh)<1e-7);
+});
