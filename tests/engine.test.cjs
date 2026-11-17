@@ -514,3 +514,23 @@ test("native dispatch never enables a partially funded hydraulic pump at sub-eps
  assert.equal(exact.servedPumpWh,100);
  assert.ok(Math.abs(exact.residualWh)<1e-5);
 });
+
+test("hourly coupled ledger reconciles all three electrical consumers and cumulative deficits",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({
+   cloudTransmittance:0,batteryStartWh:1000,batteryReserveWh:1000,
+   backgroundLoadW:50,pumpElectricalW:120,waterStartL:0
+ });
+ for(let i=0;i<3;i++){
+   const before=c.snapshot().cumulative;
+   const after=c.stepHour(),e=after.last.energy,loads=after.last.electricalLoads;
+   assert.ok(Math.abs(loads.backgroundRequestedWh-loads.backgroundServedWh-loads.backgroundDeficitWh)<1e-7);
+   assert.ok(Math.abs(loads.pumpRequestedWh-loads.pumpServedWh-loads.pumpDeficitWh)<1e-7);
+   assert.ok(Math.abs(loads.farmRequestedWh-loads.farmServedWh-loads.farmDeficitWh)<1e-7);
+   assert.ok(Math.abs(loads.backgroundServedWh+loads.farmServedWh-e.servedBaseWh)<1e-7);
+   assert.equal(loads.pumpServedWh,e.servedPumpWh);
+   assert.ok(Math.abs(after.cumulative.pumpElectricityRequestedWh-before.pumpElectricityRequestedWh-loads.pumpRequestedWh)<1e-7);
+   assert.ok(Math.abs(after.cumulative.pumpElectricityDeficitWh-before.pumpElectricityDeficitWh-loads.pumpDeficitWh)<1e-7);
+   assert.ok(Math.abs(after.cumulative.backgroundElectricityDeficitWh-before.backgroundElectricityDeficitWh-loads.backgroundDeficitWh)<1e-7);
+ }
+ assert.ok(c.snapshot().cumulative.pumpElectricityDeficitWh>0);
+});
