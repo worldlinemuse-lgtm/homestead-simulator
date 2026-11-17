@@ -159,7 +159,7 @@
       this.startHour=9;
       this.hours=0;this.batteryWh=this.cfg.batteryStartWh;
       this.waterStoredL=this.cfg.waterStartL;
-      this.cumulative={pvWh:0,baseWh:0,pumpWh:0,treatedL:0,waterConsumedL:0,overflowL:0,waterDeficitL:0,energyDeficitWh:0};
+      this.cumulative={pvWh:0,baseWh:0,pumpWh:0,treatedL:0,waterConsumedL:0,overflowL:0,waterDeficitL:0,energyDeficitWh:0,farmElectricityServedWh:0,farmElectricityDeficitWh:0};
       this.last=null;
       return this.snapshot();
     }
@@ -186,9 +186,17 @@
       const farmDailyWaterL=number("farm gal",dayRecord?.waterGal||0)*GALLON_TO_LITER;
       const pv=solarEnvelopeW(hour,cfg);
       const pvWh=pv.envelopeW*cfg.solarUtilization; // 1h scenario power estimate (Wh)
-      const baseWh=cfg.backgroundLoadW+farmDailyKWh*1000/24; // estimated uniform hourly farm demand
+      const farmDemandWh=farmDailyKWh*1000/24;
+      const baseWh=cfg.backgroundLoadW+farmDemandWh; // hourly farm demand, background priority
       const energy=allocateEnergy({pvWh,baseWh,pumpWh:cfg.pumpElectricalW,
         initialBatteryWh:this.batteryWh,cfg});
+      // Explicit native Solar -> Farm transfer: allocate background load first.
+      const backgroundServedWh=Math.min(cfg.backgroundLoadW,energy.servedBaseWh);
+      const farmServedWh=Math.min(farmDemandWh,
+        Math.max(0,energy.servedBaseWh-backgroundServedWh));
+      const farmUnservedWh=farmDemandWh-farmServedWh;
+      must(Math.abs(backgroundServedWh+farmServedWh-energy.servedBaseWh)<1e-6,
+        "Farm electrical allocation conservation failure");
       // Execute hydraulic substeps against a working copy. A failed solver must
       // not partially advance the authoritative water state or scenario clock.
       const waterBefore=this.waterStoredL;
@@ -248,6 +256,8 @@
       this.cumulative.overflowL+=overflowL;
       this.cumulative.waterDeficitL+=shortfallL;
       this.cumulative.energyDeficitWh+=energy.unservedBaseWh;
+      this.cumulative.farmElectricityServedWh+=farmServedWh;
+      this.cumulative.farmElectricityDeficitWh+=farmUnservedWh;
       this.hours++;
       if((this.hours+this.startHour)%24===0){
         this.farm.advanceDay();
@@ -256,7 +266,9 @@
       this.last={hour,day:this.farmSnapshot.date,
         pv,energy,water:{treatedL,waterStoredL:this.waterStoredL,consumedL,shortfallL,overflowL,waterResidual},
         resourceAudit,
-        farm:{dailyDemandWaterL:farmDailyWaterL,dailyDemandKWh:farmDailyKWh,counts:this.farmSnapshot.counts},
+        farm:{dailyDemandWaterL:farmDailyWaterL,dailyDemandKWh:farmDailyKWh,
+          hourlyElectricityDemandWh:farmDemandWh,electricityServedWh:farmServedWh,
+          electricityDeficitWh:farmUnservedWh,counts:this.farmSnapshot.counts},
         warnings:[
           ...(energy.unservedBaseWh>EPS?["Essential energy demand was not met. Farm biological effects NOT modeled."]:[]),
           ...(shortfallL>EPS?["Farm water demand was not met. Farm biological effects NOT modeled."]:[]),
