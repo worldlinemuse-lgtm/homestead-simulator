@@ -16,6 +16,8 @@
     chargeEfficiency:0.95,dischargeEfficiency:0.92,
     backgroundLoadW:85,pumpElectricalW:120,pumpPressurePsi:50, // ASSUMED electrical curve; user-controlled hydraulic pressure
     waterStorageCapacityL:250,waterStartL:60,
+    batteryChemistry:"lfp",batteryBusVoltageV:24,batteryBankAh:416.6666666667,
+    batteryTemperatureC:20,batteryBulkCurrentLimitA:30,
     initialFarmSeed:7
   });
   function solarEnvelopeW(hour,c){
@@ -48,6 +50,23 @@
     const etaD=number("dischargeEfficiency",cfg.dischargeEfficiency);
     const etaC=number("chargeEfficiency",cfg.chargeEfficiency);
     must(etaD>0&&etaD<=1&&etaC>0&&etaC<=1,"Energy efficiencies must be in (0,1]");
+    // Native original Solar chemistry/rate/temperature and absorption functions.
+    // A 1-hour dispatch uses DC bus amps for the source model; current limit is
+    // a declared scenario assumption, not a manufacturer's charging certification.
+    must(root.BATTMODEL && typeof root.BATTMODEL.drainMult==="function" &&
+      typeof root.BATTMODEL.absorption==="function","Original Solar battery engine unavailable");
+    const native=root.BATTMODEL;
+    const voltage=number("batteryBusVoltageV",cfg.batteryBusVoltageV);
+    const bankAh=number("batteryBankAh",cfg.batteryBankAh);
+    const temperature=cfg.batteryTemperatureC;
+    must(Number.isFinite(temperature)&&temperature>=-30&&temperature<=60,"Battery temperature out of range");
+    const chem=cfg.batteryChemistry;
+    must(chem==="agm"||chem==="lfp","Unsupported battery chemistry");
+    const expectedCurrentA=Math.max(0,baseWh+pumpWh-pvWh)/voltage;
+    const discharge=native.drainMult(chem,expectedCurrentA,temperature);
+    must(Number.isFinite(discharge.m)&&discharge.m>0,"Invalid native discharge factor");
+    const nativeDischargeEfficiency=etaD/discharge.m;
+    must(nativeDischargeEfficiency>0&&nativeDischargeEfficiency<=1,"Invalid effective discharge efficiency");
     const capacity=number("batteryCapacityWh",cfg.batteryCapacityWh);
     const reserve=number("batteryReserveWh",cfg.batteryReserveWh);
     must(reserve<=initialBatteryWh&&initialBatteryWh<=capacity,
@@ -57,8 +76,8 @@
     let directBaseWh=0,batteryBaseWh=0,directPumpWh=0,batteryPumpWh=0;
     const deliver=(need)=>{
       const direct=Math.min(need,remainingPv);remainingPv-=direct;
-      const fromBattery=Math.min(need-direct,Math.max(0,batteryWh-reserve)*etaD);
-      batteryWh-=fromBattery/etaD;
+      const fromBattery=Math.min(need-direct,Math.max(0,batteryWh-reserve)*nativeDischargeEfficiency);
+      batteryWh-=fromBattery/nativeDischargeEfficiency;
       batteryOutputWh+=fromBattery;
       return {direct,fromBattery,served:direct+fromBattery};
     };
@@ -74,12 +93,16 @@
       directPumpWh=pumpDelivery.direct;batteryPumpWh=pumpDelivery.fromBattery;
       servedPumpWh=pumpDelivery.served;
     }
-    const chargeInWh=Math.min(remainingPv,Math.max(0,cfg.batteryCapacityWh-batteryWh)/etaC);
+    const charge=native.absorption(chem,batteryWh/capacity,0,bankAh);
+    must(Number.isFinite(charge.mult)&&charge.mult>=0&&charge.mult<=1,
+      "Invalid native charging multiplier");
+    const sourceChargeLimitWh=cfg.batteryBulkCurrentLimitA*voltage*charge.mult;
+    const chargeInWh=Math.min(remainingPv,Math.max(0,capacity-batteryWh)/etaC,sourceChargeLimitWh);
     const chargeStoredWh=chargeInWh*etaC;
     batteryWh+=chargeStoredWh;
     const curtailedWh=remainingPv-chargeInWh;
     const chargeLossWh=chargeInWh*(1-etaC);
-    const dischargeLossWh=batteryOutputWh*(1/etaD-1);
+    const dischargeLossWh=batteryOutputWh*(1/nativeDischargeEfficiency-1);
     const residualWh=initialBatteryWh+pvWh-batteryWh-servedBaseWh-servedPumpWh-curtailedWh-chargeLossWh-dischargeLossWh;
     must(Number.isFinite(residualWh)&&Math.abs(residualWh)<1e-5,
       "Energy conservation failure "+residualWh);
@@ -89,13 +112,24 @@
     must(batteryWh<=capacity+EPS,"Energy inventory exceeds battery capacity");
     return {batteryWh,servedBaseWh,unservedBaseWh,servedPumpWh,pumpEnabled,
       pvWh,curtailedWh,chargeLossWh,dischargeLossWh,residualWh,
-      directBaseWh,batteryBaseWh,directPumpWh,batteryPumpWh,chargeStoredWh};
+      directBaseWh,batteryBaseWh,directPumpWh,batteryPumpWh,chargeStoredWh,
+      nativeBattery:{source:"solar-sandbox/source/battery.js@871dd8c0ef03a05feb339c9761ead900875f16b5",
+        chemistry:chem,temperatureC:temperature,dischargeCurrentA:expectedCurrentA,
+        dischargeMultiplier:discharge.m,dischargeRateFactor:discharge.rate,
+        dischargeTemperatureFactor:discharge.temp,chargePhase:charge.phase,
+        chargeCurrentMultiplier:charge.mult,chargeLimitWh:sourceChargeLimitWh,
+        effectiveDischargeEfficiency:nativeDischargeEfficiency}};
   }
   function configuration(overrides={}){
     const c={...configDefaults,...overrides};
     for(const key of ["solarUtilization","cloudTransmittance","chargeEfficiency","dischargeEfficiency"]){
       number(key,c[key]);must(c[key]<=1,key+" must be <=1");
     }
+    must(["agm","lfp"].includes(c.batteryChemistry),"Unsupported battery chemistry");
+    must(Number.isFinite(c.batteryTemperatureC)&&c.batteryTemperatureC>=-30&&c.batteryTemperatureC<=60,
+      "Battery temperature must be between -30 and 60 C");
+    for(const key of ["batteryBusVoltageV","batteryBankAh","batteryBulkCurrentLimitA"])
+      {number(key,c[key]);must(c[key]>0,key+" must be positive");}
     for(const key of ["batteryCapacityWh","batteryStartWh","batteryReserveWh","backgroundLoadW","pumpElectricalW","pumpPressurePsi","waterStorageCapacityL","waterStartL"]){
       number(key,c[key]);
     }
