@@ -449,3 +449,24 @@ test("native Farm water and energy fulfillment share conservative hourly ledgers
  });for(let i=0;i<5;i++)x.stepHour();return JSON.stringify(x.snapshot());};
  assert.equal(replay(),replay());
 });
+
+
+test("zero configured pump pressure cannot consume energy or generate pressurized water",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({pumpPressurePsi:0,pumpElectricalW:120,backgroundLoadW:0});
+ const before=c.water.produced;
+ const s=c.stepHour();
+ assert.equal(s.last.energy.pumpEnabled,false);
+ assert.equal(s.last.energy.servedPumpWh,0);
+ assert.equal(s.cumulative.pumpWh,0);
+ assert.equal(c.water.parts.find(p=>p.type==="pump_sky").params.psi,0);
+ assert.ok(Math.abs(c.water.produced-before)<1e-8);
+ assert.ok(Math.abs(s.last.energy.residualWh)<1e-5);
+});
+
+test("3D farm summary reports delivered resource fractions, not only theoretical daily demand",()=>{
+ const ui=fs.readFileSync(path.join(__dirname,"../src/main.js"),"utf8");
+ assert.ok(ui.includes("s.last.farm.waterDeliveredL"));
+ assert.ok(ui.includes("s.last.farm.hourlyWaterDemandL"));
+ assert.ok(ui.includes("s.last.farm.electricityServedWh"));
+ assert.ok(ui.includes("s.last.farm.hourlyElectricityDemandWh"));
+});
