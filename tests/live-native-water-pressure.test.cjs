@@ -1,7 +1,7 @@
 "use strict";
 const {test}=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs"),vm=require("node:vm"),path=require("node:path");
 const ctx=vm.createContext({console,Date,Math,Map,Set,Number,String,Array,Object,JSON,Error,Uint8Array,Float64Array,Float32Array,Int32Array,Infinity,NaN,performance:require("node:perf_hooks").performance});
-for(const p of ["vendor/solar-next-core.js","vendor/water-engine.js","vendor/farm-core.js","src/resource-contract.js","src/coordinator.js"])
+for(const p of ["vendor/solar-next-core.js","vendor/solar-battery-native.js","vendor/water-engine.js","vendor/farm-core.js","src/resource-contract.js","src/coordinator.js"])
  vm.runInContext(fs.readFileSync(path.join(__dirname,"..",p),"utf8"),ctx,{filename:p,timeout:60000});
 const Core=ctx.HomesteadCoordinator;
 test("live pump pressure has validated nonnegative finite source units and no mutation on rejection",()=>{
