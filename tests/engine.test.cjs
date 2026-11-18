@@ -526,7 +526,7 @@ test("hourly coupled ledger reconciles all three electrical consumers and cumula
    assert.ok(Math.abs(loads.backgroundRequestedWh-loads.backgroundServedWh-loads.backgroundDeficitWh)<1e-7);
    assert.ok(Math.abs(loads.pumpRequestedWh-loads.pumpServedWh-loads.pumpDeficitWh)<1e-7);
    assert.ok(Math.abs(loads.farmRequestedWh-loads.farmServedWh-loads.farmDeficitWh)<1e-7);
-   assert.ok(Math.abs(loads.backgroundServedWh+loads.farmServedWh-e.servedBaseWh)<1e-7);
+   assert.ok(Math.abs(loads.backgroundServedWh+loads.farmServedWh-e.servedBaseWh-e.servedFarmWh)<1e-7);
    assert.equal(loads.pumpServedWh,e.servedPumpWh);
    assert.ok(Math.abs(after.cumulative.pumpElectricityRequestedWh-before.pumpElectricityRequestedWh-loads.pumpRequestedWh)<1e-7);
    assert.ok(Math.abs(after.cumulative.pumpElectricityDeficitWh-before.pumpElectricityDeficitWh-loads.pumpDeficitWh)<1e-7);
@@ -550,7 +550,7 @@ test("3D electrical inspector and live HUD expose all three conserved load alloc
  const served=loads.backgroundServedWh+loads.farmServedWh+loads.pumpServedWh;
  const deficit=loads.backgroundDeficitWh+loads.farmDeficitWh+loads.pumpDeficitWh;
  assert.ok(Math.abs(requested-served-deficit)<1e-7);
- assert.ok(Math.abs(served-s.last.energy.servedBaseWh-s.last.energy.servedPumpWh)<1e-7);
+ assert.ok(Math.abs(served-s.last.energy.servedBaseWh-s.last.energy.servedPumpWh-s.last.energy.servedFarmWh)<1e-7);
 });
 
 
@@ -643,4 +643,21 @@ test("live 3D Solar weather editor configures the same coupled coordinator",()=>
  }
  assert.ok(ui.includes("coordinator.configure({solarHourlyWeather:records})"));
  assert.ok(ui.includes("coordinator.configure({solarHourlyWeather:null})"));
+});
+
+
+test("pump has priority over Farm electricity and conservation holds across all consumers",()=>{
+ const core=ctx.HomesteadCoordinator;
+ const cfg=core.configuration({batteryStartWh:1000,batteryReserveWh:1000,backgroundLoadW:0});
+ const e=core.allocateEnergy({pvWh:120,baseWh:0,pumpWh:120,farmWh:50,
+   initialBatteryWh:1000,cfg});
+ assert.equal(e.pumpEnabled,true);
+ assert.equal(e.servedPumpWh,120);
+ assert.equal(e.servedFarmWh,0);
+ assert.equal(e.unservedFarmWh,50);
+ assert.ok(Math.abs(e.residualWh)<1e-5);
+ const f=core.allocateEnergy({pvWh:170,baseWh:0,pumpWh:120,farmWh:50,
+   initialBatteryWh:1000,cfg});
+ assert.equal(f.servedFarmWh,50);
+ assert.ok(Math.abs(f.residualWh)<1e-5);
 });
