@@ -48,7 +48,7 @@ function auditHour({hour,energy,initialBatteryWh,waterBeforeL,treatedL,consumedL
  if(!energy||typeof energy!=="object")throw new TypeError("Missing energy record");
  const enames=["pvWh","servedBaseWh","servedPumpWh","directBaseWh","batteryBaseWh",
    "directPumpWh","batteryPumpWh","chargeStoredWh","chargeLossWh","dischargeLossWh",
-   "curtailedWh","batteryWh"];
+   "curtailedWh","batteryWh","servedFarmWh","directFarmWh","batteryFarmWh"];
  for(const name of enames)
    if(!finite(energy[name])||energy[name]<0)throw new RangeError("Invalid energy "+name);
  for(const [name,value] of Object.entries({initialBatteryWh,waterBeforeL,treatedL,
@@ -62,11 +62,13 @@ function auditHour({hour,energy,initialBatteryWh,waterBeforeL,treatedL,consumedL
  add(energyTransfers,"electricity",energy.pvWh,"solar.synthetic_source","solar.bus","synthetic");
  add(energyTransfers,"electricity",energy.directBaseWh,"solar.bus","site.base_load","assumed");
  add(energyTransfers,"electricity",energy.directPumpWh,"solar.bus","water.pump","assumed");
+ add(energyTransfers,"electricity",energy.directFarmWh,"solar.bus","farm.electric_load","assumed");
  add(energyTransfers,"electricity",energy.chargeStoredWh,"solar.bus","battery.inventory","assumed");
  add(energyTransfers,"electricity",energy.chargeLossWh,"solar.bus","energy.loss.charge","assumed");
  add(energyTransfers,"electricity",energy.curtailedWh,"solar.bus","solar.curtailed","assumed");
  add(energyTransfers,"electricity",energy.batteryBaseWh,"battery.inventory","site.base_load","assumed");
  add(energyTransfers,"electricity",energy.batteryPumpWh,"battery.inventory","water.pump","assumed");
+ add(energyTransfers,"electricity",energy.batteryFarmWh,"battery.inventory","farm.electric_load","assumed");
  add(energyTransfers,"electricity",energy.dischargeLossWh,"battery.inventory","energy.loss.discharge","assumed");
  add(waterTransfers,"water",treatedL,"water.treatment_output","tank.inventory","published_model");
  add(waterTransfers,"water",consumedL,"tank.inventory","farm.livestock","assumed");
@@ -82,6 +84,7 @@ function auditHour({hour,energy,initialBatteryWh,waterBeforeL,treatedL,consumedL
  for(const [node,expected] of [
    ["solar.synthetic_source",-energy.pvWh],["solar.bus",0],
    ["site.base_load",energy.servedBaseWh],["water.pump",energy.servedPumpWh],
+   ["farm.electric_load",energy.servedFarmWh],
    ["battery.inventory",energy.batteryWh-initialBatteryWh],
    ["solar.curtailed",energy.curtailedWh],
    ["energy.loss.charge",energy.chargeLossWh],
