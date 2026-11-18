@@ -688,3 +688,22 @@ test("native Farm day boundary preserves actual delivered resource ledger",()=>{
  s.completedResourceDays[0].waterDeliveredL=-999;
  assert.equal(c.snapshot().completedResourceDays[0].waterDeliveredL,before);
 });
+
+
+test("aggregate energy shortfall includes unpowered Water pump and native Farm load",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({
+   cloudTransmittance:0,batteryStartWh:1000,batteryReserveWh:1000,
+   backgroundLoadW:50,pumpElectricalW:120,waterStartL:0
+ });
+ let total=0;
+ for(let i=0;i<3;i++){
+   const state=c.stepHour(),loads=state.last.electricalLoads;
+   const hourly=loads.backgroundDeficitWh+loads.pumpDeficitWh+loads.farmDeficitWh;
+   total+=hourly;
+   assert.ok(Math.abs(state.cumulative.energyDeficitWh-total)<1e-6);
+   assert.ok(state.last.warnings.some(w=>w.includes("Water pump electricity demand was not met")));
+   assert.ok(Math.abs(hourly-(loads.backgroundRequestedWh+loads.pumpRequestedWh+loads.farmRequestedWh-
+     loads.backgroundServedWh-loads.pumpServedWh-loads.farmServedWh))<1e-6);
+ }
+ assert.ok(total>=3*120);
+});
