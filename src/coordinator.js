@@ -23,10 +23,14 @@
     // Null preserves the explicitly illustrative sky; no synthetic data is labeled measured.
     solarHourlyWeather:null
   });
-  function solarEnvelopeW(hour,c){
+  function solarEnvelopeW(hour,c,dayIndex=0){
+    must(Number.isSafeInteger(dayIndex)&&dayIndex>=0,"Invalid Solar weather day index");
     // Deterministic illustrative sky input (not NASA/NSRDB measured or forecast weather).
     const sun=Math.max(0,Math.sin(Math.PI*(hour+0.5-6)/12));
-    const record=c.solarHourlyWeather?.[hour];
+    const weatherIndex=dayIndex*24+hour;
+    must(!c.solarHourlyWeather || weatherIndex<c.solarHourlyWeather.length,
+      "Solar hourly weather exhausted; provide additional days before advancing");
+    const record=c.solarHourlyWeather?.[weatherIndex];
     const irradiance=record?record.irradianceWm2:sun*1000*c.cloudTransmittance;
     const cellC=record?record.cellTemperatureC:18+sun*22;
     const provenance=record?"supplied_hourly_weather":"illustrative_sky";
@@ -141,8 +145,9 @@
   function configuration(overrides={}){
     const c={...configDefaults,...overrides};
     if(c.solarHourlyWeather!==null){
-      must(Array.isArray(c.solarHourlyWeather)&&c.solarHourlyWeather.length===24,
-        "solarHourlyWeather requires exactly 24 hourly records");
+      must(Array.isArray(c.solarHourlyWeather)&&c.solarHourlyWeather.length>=24&&
+        c.solarHourlyWeather.length%24===0,
+        "solarHourlyWeather requires complete 24-hour days");
       c.solarHourlyWeather=c.solarHourlyWeather.map((record,i)=>{
         must(record&&typeof record==="object","Invalid solar weather record "+i);
         const irradianceWm2=number("irradianceWm2 hour "+i,record.irradianceWm2);
@@ -212,7 +217,8 @@
       const cfg=this.cfg, hour=(this.hours+this.startHour)%24, dayRecord=this.farmSnapshot.daily;
       const farmDailyKWh=number("farm kWh",dayRecord?.kWh||0);
       const farmDailyWaterL=number("farm gal",dayRecord?.waterGal||0)*GALLON_TO_LITER;
-      const pv=solarEnvelopeW(hour,cfg);
+      const weatherDay=Math.floor((this.hours+this.startHour)/24);
+      const pv=solarEnvelopeW(hour,cfg,weatherDay);
       const pvWh=pv.envelopeW*cfg.solarUtilization; // 1h scenario power estimate (Wh)
       const farmDemandWh=farmDailyKWh*1000/24;
       const baseWh=cfg.backgroundLoadW+farmDemandWh; // hourly farm demand, background priority
