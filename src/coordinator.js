@@ -18,14 +18,19 @@
     waterStorageCapacityL:250,waterStartL:60,
     batteryChemistry:"lfp",batteryBusVoltageV:24,batteryBankAh:416.6666666667,
     batteryTemperatureC:20,batteryBulkCurrentLimitA:30,
-    initialFarmSeed:7
+    initialFarmSeed:7,
+    // Optional 24-hour measured/scenario irradiance and cell-temperature series.
+    // Null preserves the explicitly illustrative sky; no synthetic data is labeled measured.
+    solarHourlyWeather:null
   });
   function solarEnvelopeW(hour,c){
     // Deterministic illustrative sky input (not NASA/NSRDB measured or forecast weather).
     const sun=Math.max(0,Math.sin(Math.PI*(hour+0.5-6)/12));
-    const irradiance=sun*1000*c.cloudTransmittance;
-    if(irradiance<0.01)return {envelopeW:0,irradiance,cellC:18,status:"no_sun"};
-    const cellC=18+sun*22;
+    const record=c.solarHourlyWeather?.[hour];
+    const irradiance=record?record.irradianceWm2:sun*1000*c.cloudTransmittance;
+    const cellC=record?record.cellTemperatureC:18+sun*22;
+    const provenance=record?"supplied_hourly_weather":"illustrative_sky";
+    if(irradiance<0.01)return {envelopeW:0,irradiance,cellC,status:"no_sun",provenance};
     const estimate=root.SolarNextCore.shadowPv({
       panelId:"lg435",controllerId:"150/70",
       irradianceWm2:irradiance,cellTemperatureC:cellC,
@@ -38,8 +43,8 @@
       pvCableLoopOhm:0.06,controllerCableLoopOhm:0.02,busVoltageV:24,
       legacyControllerOutputW:null,legacySnowFraction:0
     });
-    if(estimate.status!=="estimated")return {envelopeW:0,irradiance,cellC,status:estimate.status,reason:estimate.reason||"Unsupported"};
-    return {envelopeW:number("envelope",estimate.controllerMaximumEnvelopeW),irradiance,cellC,status:"estimated"};
+    if(estimate.status!=="estimated")return {envelopeW:0,irradiance,cellC,status:estimate.status,reason:estimate.reason||"Unsupported",provenance};
+    return {envelopeW:number("envelope",estimate.controllerMaximumEnvelopeW),irradiance,cellC,status:"estimated",provenance};
   }
   function allocateEnergy(params){
     const {pvWh,baseWh,pumpWh,initialBatteryWh,cfg}=params;
@@ -135,6 +140,19 @@
   }
   function configuration(overrides={}){
     const c={...configDefaults,...overrides};
+    if(c.solarHourlyWeather!==null){
+      must(Array.isArray(c.solarHourlyWeather)&&c.solarHourlyWeather.length===24,
+        "solarHourlyWeather requires exactly 24 hourly records");
+      c.solarHourlyWeather=c.solarHourlyWeather.map((record,i)=>{
+        must(record&&typeof record==="object","Invalid solar weather record "+i);
+        const irradianceWm2=number("irradianceWm2 hour "+i,record.irradianceWm2);
+        must(irradianceWm2<=1200,"Irradiance exceeds design envelope hour "+i);
+        must(Number.isFinite(record.cellTemperatureC)&&
+          record.cellTemperatureC>=-25&&record.cellTemperatureC<=70,
+          "Cell temperature outside design envelope hour "+i);
+        return {irradianceWm2,cellTemperatureC:record.cellTemperatureC};
+      });
+    }
     for(const key of ["solarUtilization","cloudTransmittance","chargeEfficiency","dischargeEfficiency"]){
       number(key,c[key]);must(c[key]<=1,key+" must be <=1");
     }
@@ -310,7 +328,7 @@
     }
     snapshot(){
       return {schema:1,model:"experimental-coupled-scenario",clock:{hours:this.hours,hourOfDay:(this.hours+this.startHour)%24,startHour:this.startHour,date:this.farmSnapshot.date},
-        batteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,waterStoredL:this.waterStoredL,config:{...this.cfg},farm:this.farmSnapshot,
+        batteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,waterStoredL:this.waterStoredL,config:{...this.cfg,solarHourlyWeather:this.cfg.solarHourlyWeather?.map(r=>({...r}))??null},farm:this.farmSnapshot,
         cumulative:{...this.cumulative},last:this.last};
     }
   }
