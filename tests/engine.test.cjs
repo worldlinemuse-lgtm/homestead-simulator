@@ -633,3 +633,14 @@ test("weather exhaustion rejects the next step before changing inventories or ti
  assert.equal(c.stepHour().last.pv.irradiance,600);
  assert.throws(()=>Core.configuration({solarHourlyWeather:extended.slice(0,25)}),/complete 24-hour days/);
 });
+
+test("live 3D Solar weather editor configures the same coupled coordinator",()=>{
+ const html=fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8");
+ const ui=fs.readFileSync(path.join(__dirname,"..","src/main.js"),"utf8");
+ for(const id of ["solarWeatherJson","solarWeatherApply","solarWeatherClear","solarWeatherStatus"]){
+  assert.ok(html.includes('id="'+id+'"'));
+  assert.ok(ui.includes('$("'+id+'")'));
+ }
+ assert.ok(ui.includes("coordinator.configure({solarHourlyWeather:records})"));
+ assert.ok(ui.includes("coordinator.configure({solarHourlyWeather:null})"));
+});
