@@ -52,11 +52,12 @@
   }
   function allocateEnergy(params){
     const {pvWh,baseWh,pumpWh,initialBatteryWh,cfg}=params;
+    const farmWh=number("farmWh",params.farmWh??0);
     const absorptionMinutes=number("absorptionMinutes",params.absorptionMinutes??0);
     // All sources, demands, and stores are watt-hours. Reject unsafe arithmetic
     // before computing state; non-finite values can invalidate conservation proofs.
     must(cfg && typeof cfg==="object","Energy config must be an object");
-    for(const [name,value] of Object.entries({pvWh,baseWh,pumpWh,initialBatteryWh}))number(name,value);
+    for(const [name,value] of Object.entries({pvWh,baseWh,pumpWh,farmWh,initialBatteryWh}))number(name,value);
     const etaD=number("dischargeEfficiency",cfg.dischargeEfficiency);
     const etaC=number("chargeEfficiency",cfg.chargeEfficiency);
     must(etaD>0&&etaD<=1&&etaC>0&&etaC<=1,"Energy efficiencies must be in (0,1]");
@@ -74,7 +75,7 @@
     must(Number.isFinite(temperature)&&temperature>=-30&&temperature<=60,"Battery temperature out of range");
     const chem=cfg.batteryChemistry;
     must(chem==="agm"||chem==="lfp","Unsupported battery chemistry");
-    const expectedCurrentA=Math.max(0,baseWh+pumpWh-pvWh)/voltage;
+    const expectedCurrentA=Math.max(0,baseWh+pumpWh+farmWh-pvWh)/voltage;
     const discharge=native.drainMult(chem,expectedCurrentA,temperature);
     must(Number.isFinite(discharge.m)&&discharge.m>0,"Invalid native discharge factor");
     const nativeDischargeEfficiency=etaD/discharge.m;
@@ -87,6 +88,7 @@
     must(Number.isFinite(initialBatteryWh+pvWh),"Energy input sum overflow");
     let batteryWh=initialBatteryWh, remainingPv=pvWh, batteryOutputWh=0, servedBaseWh=0, servedPumpWh=0;
     let directBaseWh=0,batteryBaseWh=0,directPumpWh=0,batteryPumpWh=0;
+    let servedFarmWh=0,directFarmWh=0,batteryFarmWh=0;
     const deliver=(need)=>{
       const direct=Math.min(need,remainingPv);remainingPv-=direct;
       const fromBattery=Math.min(need-direct,Math.max(0,batteryWh-reserve)*nativeDischargeEfficiency);
@@ -109,6 +111,12 @@
       directPumpWh=pumpDelivery.direct;batteryPumpWh=pumpDelivery.fromBattery;
       servedPumpWh=pumpDelivery.served;
     }
+    // Farm demand is dispatched after essential background and water pumping.
+    // This prevents noncritical Farm electrical loads from starving the pump
+    // needed to supply Farm water. All three use the same physical inventory.
+    const farmDelivery=deliver(farmWh);
+    servedFarmWh=farmDelivery.served;
+    directFarmWh=farmDelivery.direct;batteryFarmWh=farmDelivery.fromBattery;
     const charge=native.absorption(chem,batteryWh/capacity,absorptionMinutes,bankAh);
     must(Number.isFinite(charge.mult)&&charge.mult>=0&&charge.mult<=1,
       "Invalid native charging multiplier");
@@ -124,16 +132,16 @@
     const curtailedWh=remainingPv-chargeInWh;
     const chargeLossWh=chargeInWh*(1-etaC);
     const dischargeLossWh=batteryOutputWh*(1/nativeDischargeEfficiency-1);
-    const residualWh=initialBatteryWh+pvWh-batteryWh-servedBaseWh-servedPumpWh-curtailedWh-chargeLossWh-dischargeLossWh;
+    const residualWh=initialBatteryWh+pvWh-batteryWh-servedBaseWh-servedPumpWh-servedFarmWh-curtailedWh-chargeLossWh-dischargeLossWh;
     must(Number.isFinite(residualWh)&&Math.abs(residualWh)<1e-5,
       "Energy conservation failure "+residualWh);
     const unservedBaseWh=baseWh-servedBaseWh;
     for(const [name,value] of Object.entries({batteryWh,servedBaseWh,unservedBaseWh,
-      servedPumpWh,curtailedWh,chargeLossWh,dischargeLossWh}))number(name,value);
+      servedPumpWh,servedFarmWh,curtailedWh,chargeLossWh,dischargeLossWh}))number(name,value);
     must(batteryWh<=capacity+EPS,"Energy inventory exceeds battery capacity");
-    return {batteryWh,servedBaseWh,unservedBaseWh,servedPumpWh,pumpEnabled,
+    return {batteryWh,servedBaseWh,unservedBaseWh,servedPumpWh,servedFarmWh,unservedFarmWh:farmWh-servedFarmWh,pumpEnabled,
       pvWh,curtailedWh,chargeLossWh,dischargeLossWh,residualWh,
-      directBaseWh,batteryBaseWh,directPumpWh,batteryPumpWh,chargeStoredWh,nextAbsorptionMinutes,
+      directBaseWh,batteryBaseWh,directPumpWh,batteryPumpWh,directFarmWh,batteryFarmWh,chargeStoredWh,nextAbsorptionMinutes,
       nativeBattery:{source:"solar-sandbox/source/battery.js@871dd8c0ef03a05feb339c9761ead900875f16b5",
         chemistry:chem,temperatureC:temperature,dischargeCurrentA:expectedCurrentA,
         dischargeMultiplier:discharge.m,dischargeRateFactor:discharge.rate,
@@ -221,10 +229,10 @@
       const pv=solarEnvelopeW(hour,cfg,weatherDay);
       const pvWh=pv.envelopeW*cfg.solarUtilization; // 1h scenario power estimate (Wh)
       const farmDemandWh=farmDailyKWh*1000/24;
-      const baseWh=cfg.backgroundLoadW+farmDemandWh; // hourly farm demand, background priority
+      const baseWh=cfg.backgroundLoadW; // essential background; pump next, then Farm electricity
       const requestedPumpWh=cfg.pumpPressurePsi>0?cfg.pumpElectricalW:0;
       const energy=allocateEnergy({pvWh,baseWh,pumpWh:requestedPumpWh,
-        initialBatteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,cfg});
+        initialBatteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,farmWh:farmDemandWh,cfg});
       // Explicit native Solar -> Farm transfer: allocate background load first.
       const backgroundServedWh=Math.min(cfg.backgroundLoadW,energy.servedBaseWh);
       const farmServedWh=Math.min(farmDemandWh,
@@ -233,9 +241,9 @@
       const backgroundDeficitWh=cfg.backgroundLoadW-backgroundServedWh;
       const pumpDeficitWh=requestedPumpWh-energy.servedPumpWh;
       must(pumpDeficitWh>=-EPS && backgroundDeficitWh>=-EPS &&
-        Math.abs(backgroundDeficitWh+farmUnservedWh-energy.unservedBaseWh)<1e-6,
+        Math.abs(backgroundDeficitWh-energy.unservedBaseWh)<1e-6,
         "Electrical demand reconciliation failure");
-      must(Math.abs(backgroundServedWh+farmServedWh-energy.servedBaseWh)<1e-6,
+      must(Math.abs(backgroundServedWh-energy.servedBaseWh)<1e-6,
         "Farm electrical allocation conservation failure");
       // Execute hydraulic substeps against a working copy. A failed solver must
       // not partially advance the authoritative water state or scenario clock.
@@ -294,13 +302,13 @@
       this.batteryWh=energy.batteryWh;
       this.absorptionMinutes=energy.nextAbsorptionMinutes;
       this.cumulative.pvWh+=pvWh;
-      this.cumulative.baseWh+=energy.servedBaseWh;
+      this.cumulative.baseWh+=energy.servedBaseWh+energy.servedFarmWh;
       this.cumulative.pumpWh+=energy.servedPumpWh;
       this.cumulative.treatedL+=treatedL;
       this.cumulative.waterConsumedL+=consumedL;
       this.cumulative.overflowL+=overflowL;
       this.cumulative.waterDeficitL+=shortfallL;
-      this.cumulative.energyDeficitWh+=energy.unservedBaseWh;
+      this.cumulative.energyDeficitWh+=energy.unservedBaseWh+energy.unservedFarmWh;
       this.cumulative.farmElectricityServedWh+=farmServedWh;
       this.cumulative.farmElectricityDeficitWh+=farmUnservedWh;
       this.cumulative.farmWaterDeliveredL+=consumedL;
