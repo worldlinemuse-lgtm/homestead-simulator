@@ -707,3 +707,22 @@ test("aggregate energy shortfall includes unpowered Water pump and native Farm l
  }
  assert.ok(total>=3*120);
 });
+
+test("native Farm midnight rejection leaves physical hourly state uncommitted",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator();
+ for(let i=0;i<14;i++)c.stepHour();
+ const before=JSON.stringify(c.snapshot());
+ const native=c.farm, original=native.advanceDay;
+ try{
+   native.advanceDay=()=>{throw new Error("injected Farm midnight failure");};
+   assert.throws(()=>c.stepHour(),/injected Farm midnight failure/);
+   assert.equal(JSON.stringify(c.snapshot()),before);
+ }finally{
+   native.advanceDay=original;
+ }
+ const resumed=c.stepHour();
+ assert.equal(resumed.completedResourceDays.length,1);
+ assert.equal(resumed.completedResourceDays[0].hours,15);
+ assert.equal(resumed.clock.hours,15);
+});
+
