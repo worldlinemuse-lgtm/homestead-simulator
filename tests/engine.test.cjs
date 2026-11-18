@@ -661,3 +661,13 @@ test("pump has priority over Farm electricity and conservation holds across all 
  assert.equal(f.servedFarmWh,50);
  assert.ok(Math.abs(f.residualWh)<1e-5);
 });
+
+test("pump-first dispatch commits actual Farm electricity, not background allocation",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({backgroundLoadW:0,pumpElectricalW:120});
+ const result=c.stepHour(),e=result.last.energy;
+ assert.ok(e.servedFarmWh>=0);
+ assert.ok(Math.abs(result.cumulative.farmElectricityServedWh-e.servedFarmWh)<1e-7);
+ assert.ok(Math.abs(result.cumulative.baseWh-e.servedBaseWh)<1e-7);
+ assert.ok(Math.abs(result.cumulative.pumpWh-e.servedPumpWh)<1e-7);
+ assert.ok(Math.abs(e.residualWh)<1e-5);
+});
