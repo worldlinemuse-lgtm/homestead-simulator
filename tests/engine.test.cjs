@@ -671,3 +671,20 @@ test("pump-first dispatch commits actual Farm electricity, not background alloca
  assert.ok(Math.abs(result.cumulative.pumpWh-e.servedPumpWh)<1e-7);
  assert.ok(Math.abs(e.residualWh)<1e-5);
 });
+
+test("native Farm day boundary preserves actual delivered resource ledger",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({batteryStartWh:1000,batteryReserveWh:1000,cloudTransmittance:0,backgroundLoadW:0});
+ for(let i=0;i<15;i++)c.stepHour(); // scenario starts at 09:00; midnight closes first partial day
+ const s=c.snapshot();
+ assert.equal(s.completedResourceDays.length,1);
+ const d=s.completedResourceDays[0];
+ assert.equal(d.hours,15);
+ assert.equal(d.endingHour,15);
+ assert.ok(Math.abs(d.waterRequestedL-d.waterDeliveredL-d.waterDeficitL)<1e-6);
+ assert.ok(Math.abs(d.electricityRequestedWh-d.electricityDeliveredWh-d.electricityDeficitWh)<1e-6);
+ assert.equal(s.dailyResourceDelivery.hours,0);
+ assert.ok(d.electricityDeficitWh>=0&&d.waterDeficitL>=0);
+ const before=d.waterDeliveredL;
+ s.completedResourceDays[0].waterDeliveredL=-999;
+ assert.equal(c.snapshot().completedResourceDays[0].waterDeliveredL,before);
+});
