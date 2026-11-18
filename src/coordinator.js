@@ -316,8 +316,18 @@
         // Native Farm is a singleton without a clone/rollback API. This ordering
         // protects physical state on a thrown advancement, but a Farm exception
         // after internal mutation still requires native engine rollback support.
+        const previousFarmDay=this.farmSnapshot.day;
         this.farm.advanceDay();
         nextFarmSnapshot=this.farm.snapshot();
+        // Reject a silently failed or malformed native advance before committing
+        // electricity, water, clock, or the completed delivery record.
+        must(nextFarmSnapshot && Number.isSafeInteger(nextFarmSnapshot.day) &&
+          nextFarmSnapshot.day===previousFarmDay+1,
+          "Native Farm must advance exactly one biological day");
+        must(nextFarmSnapshot.daily && Number.isFinite(nextFarmSnapshot.daily.waterGal) &&
+          nextFarmSnapshot.daily.waterGal>=0 && Number.isFinite(nextFarmSnapshot.daily.kWh) &&
+          nextFarmSnapshot.daily.kWh>=0,
+          "Native Farm returned invalid daily resource demand");
       }
       // Hydraulic state, tank inventory and electricity commit together.
       this.water=nextWater;
