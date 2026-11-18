@@ -201,6 +201,8 @@
       this.absorptionMinutes=0;
       this.waterStoredL=this.cfg.waterStartL;
       this.cumulative={pvWh:0,baseWh:0,pumpWh:0,treatedL:0,waterConsumedL:0,overflowL:0,waterDeficitL:0,energyDeficitWh:0,farmElectricityServedWh:0,farmElectricityDeficitWh:0,farmWaterDeliveredL:0,farmWaterDeficitL:0,pumpElectricityRequestedWh:0,pumpElectricityDeficitWh:0,backgroundElectricityServedWh:0,backgroundElectricityDeficitWh:0};
+      this.dailyResourceDelivery={hours:0,waterRequestedL:0,waterDeliveredL:0,electricityRequestedWh:0,electricityDeliveredWh:0};
+      this.completedResourceDays=[];
       this.last=null;
       return this.snapshot();
     }
@@ -316,10 +318,22 @@
       this.cumulative.pumpElectricityDeficitWh+=pumpDeficitWh;
       this.cumulative.backgroundElectricityServedWh+=backgroundServedWh;
       this.cumulative.backgroundElectricityDeficitWh+=backgroundDeficitWh;
+      this.dailyResourceDelivery.hours++;
+      this.dailyResourceDelivery.waterRequestedL+=wantL;
+      this.dailyResourceDelivery.waterDeliveredL+=consumedL;
+      this.dailyResourceDelivery.electricityRequestedWh+=farmDemandWh;
+      this.dailyResourceDelivery.electricityDeliveredWh+=farmServedWh;
       this.hours++;
       if((this.hours+this.startHour)%24===0){
+        // A measured delivery ledger is retained at the native Farm day boundary.
+        // Do not silently turn deficits into invented biological coefficients.
+        const delivery={...this.dailyResourceDelivery,endingHour:this.hours,
+          waterDeficitL:this.dailyResourceDelivery.waterRequestedL-this.dailyResourceDelivery.waterDeliveredL,
+          electricityDeficitWh:this.dailyResourceDelivery.electricityRequestedWh-this.dailyResourceDelivery.electricityDeliveredWh};
         this.farm.advanceDay();
         this.farmSnapshot=this.farm.snapshot();
+        this.completedResourceDays.push(delivery);
+        this.dailyResourceDelivery={hours:0,waterRequestedL:0,waterDeliveredL:0,electricityRequestedWh:0,electricityDeliveredWh:0};
       }
       this.last={hour,day:this.farmSnapshot.date,
         pv,energy,water:{treatedL,waterStoredL:this.waterStoredL,consumedL,shortfallL,overflowL,waterResidual},
@@ -342,7 +356,8 @@
     snapshot(){
       return {schema:1,model:"experimental-coupled-scenario",clock:{hours:this.hours,hourOfDay:(this.hours+this.startHour)%24,startHour:this.startHour,date:this.farmSnapshot.date},
         batteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,waterStoredL:this.waterStoredL,config:{...this.cfg,solarHourlyWeather:this.cfg.solarHourlyWeather?.map(r=>({...r}))??null},farm:this.farmSnapshot,
-        cumulative:{...this.cumulative},last:this.last};
+        cumulative:{...this.cumulative},dailyResourceDelivery:{...this.dailyResourceDelivery},
+        completedResourceDays:this.completedResourceDays.map(d=>({...d})),last:this.last};
     }
   }
   root.HomesteadCoordinator=Object.freeze({Coordinator,solarEnvelopeW,allocateEnergy,configuration});
