@@ -297,6 +297,28 @@
         hour:this.hours,energy,initialBatteryWh:this.batteryWh,
         waterBeforeL:waterBefore,treatedL,consumedL,overflowL,waterAfterL:nextWaterStoredL
       });
+      // Stage the midnight biological boundary before committing physical inventories.
+      // A rejected native Farm advancement must not commit an hour of energy/water.
+      const nextDailyDelivery={
+        hours:this.dailyResourceDelivery.hours+1,
+        waterRequestedL:this.dailyResourceDelivery.waterRequestedL+wantL,
+        waterDeliveredL:this.dailyResourceDelivery.waterDeliveredL+consumedL,
+        electricityRequestedWh:this.dailyResourceDelivery.electricityRequestedWh+farmDemandWh,
+        electricityDeliveredWh:this.dailyResourceDelivery.electricityDeliveredWh+farmServedWh
+      };
+      const nextHours=this.hours+1;
+      const midnight=(nextHours+this.startHour)%24===0;
+      let nextFarmSnapshot=this.farmSnapshot, completedDelivery=null;
+      if(midnight){
+        completedDelivery={...nextDailyDelivery,endingHour:nextHours,
+          waterDeficitL:nextDailyDelivery.waterRequestedL-nextDailyDelivery.waterDeliveredL,
+          electricityDeficitWh:nextDailyDelivery.electricityRequestedWh-nextDailyDelivery.electricityDeliveredWh};
+        // Native Farm is a singleton without a clone/rollback API. This ordering
+        // protects physical state on a thrown advancement, but a Farm exception
+        // after internal mutation still requires native engine rollback support.
+        this.farm.advanceDay();
+        nextFarmSnapshot=this.farm.snapshot();
+      }
       // Hydraulic state, tank inventory and electricity commit together.
       this.water=nextWater;
       this.waterStoredL=nextWaterStoredL;
@@ -318,22 +340,13 @@
       this.cumulative.pumpElectricityDeficitWh+=pumpDeficitWh;
       this.cumulative.backgroundElectricityServedWh+=backgroundServedWh;
       this.cumulative.backgroundElectricityDeficitWh+=backgroundDeficitWh;
-      this.dailyResourceDelivery.hours++;
-      this.dailyResourceDelivery.waterRequestedL+=wantL;
-      this.dailyResourceDelivery.waterDeliveredL+=consumedL;
-      this.dailyResourceDelivery.electricityRequestedWh+=farmDemandWh;
-      this.dailyResourceDelivery.electricityDeliveredWh+=farmServedWh;
-      this.hours++;
-      if((this.hours+this.startHour)%24===0){
-        // A measured delivery ledger is retained at the native Farm day boundary.
-        // Do not silently turn deficits into invented biological coefficients.
-        const delivery={...this.dailyResourceDelivery,endingHour:this.hours,
-          waterDeficitL:this.dailyResourceDelivery.waterRequestedL-this.dailyResourceDelivery.waterDeliveredL,
-          electricityDeficitWh:this.dailyResourceDelivery.electricityRequestedWh-this.dailyResourceDelivery.electricityDeliveredWh};
-        this.farm.advanceDay();
-        this.farmSnapshot=this.farm.snapshot();
-        this.completedResourceDays.push(delivery);
+      this.hours=nextHours;
+      this.farmSnapshot=nextFarmSnapshot;
+      if(midnight){
+        this.completedResourceDays.push(completedDelivery);
         this.dailyResourceDelivery={hours:0,waterRequestedL:0,waterDeliveredL:0,electricityRequestedWh:0,electricityDeliveredWh:0};
+      }else{
+        this.dailyResourceDelivery=nextDailyDelivery;
       }
       this.last={hour,day:this.farmSnapshot.date,
         pv,energy,water:{treatedL,waterStoredL:this.waterStoredL,consumedL,shortfallL,overflowL,waterResidual},
