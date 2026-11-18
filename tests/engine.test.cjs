@@ -742,3 +742,35 @@ test("native Farm invalid daily demand cannot silently become zero demand",()=>{
  assert.equal(JSON.stringify(c.snapshot()),before);
  assert.equal(c.stepHour().clock.hours,1);
 });
+
+
+test("Farm operational supply reports measured shortages without invented biology",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({
+   batteryStartWh:1000,batteryReserveWh:1000,
+   solarHourlyWeather:Array.from({length:48},()=>({irradianceWm2:0,cellTemperatureC:20})),
+   waterStartL:0,backgroundLoadW:0
+ });
+ for(let i=0;i<15;i++)c.stepHour();
+ const s=c.snapshot(),d=s.completedResourceDays[0];
+ assert.equal(d.hours,15);
+ assert.ok(d.waterRequestedL>0);
+ assert.ok(d.electricityRequestedWh>0);
+ assert.equal(d.waterDeliveredL,0);
+ assert.equal(d.electricityDeliveredWh,0);
+ assert.equal(d.operationalSupply.waterCoverage,0);
+ assert.equal(d.operationalSupply.electricityCoverage,0);
+ assert.equal(d.operationalSupply.waterSatisfied,false);
+ assert.equal(d.operationalSupply.electricitySatisfied,false);
+ assert.equal(d.operationalSupply.biologicalEffectsApplied,false);
+ assert.equal(s.last.farm.operationalSupply.source,"metered_solar_water_farm_delivery");
+ assert.equal(s.farm.day,2,"native Farm advances independently until resource interface exists");
+});
+test("Farm operational coverage is bounded and cannot overstate supply",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator();
+ for(let i=0;i<15;i++)c.stepHour();
+ const d=c.snapshot().completedResourceDays[0];
+ for(const k of ["waterCoverage","electricityCoverage"])
+   assert.ok(Number.isFinite(d.operationalSupply[k])&&d.operationalSupply[k]>=0&&d.operationalSupply[k]<=1);
+ assert.equal(d.operationalSupply.waterSatisfied,d.waterDeficitL<=1e-8);
+ assert.equal(d.operationalSupply.electricitySatisfied,d.electricityDeficitWh<=1e-8);
+});
