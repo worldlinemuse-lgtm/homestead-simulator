@@ -225,8 +225,9 @@
     }
     stepHour(){
       const cfg=this.cfg, hour=(this.hours+this.startHour)%24, dayRecord=this.farmSnapshot.daily;
-      const farmDailyKWh=number("farm kWh",dayRecord?.kWh||0);
-      const farmDailyWaterL=number("farm gal",dayRecord?.waterGal||0)*GALLON_TO_LITER;
+      must(dayRecord && typeof dayRecord==="object", "Native Farm daily demand unavailable");
+      const farmDailyKWh=number("farm kWh",dayRecord.kWh);
+      const farmDailyWaterL=number("farm gal",dayRecord.waterGal)*GALLON_TO_LITER;
       const weatherDay=Math.floor((this.hours+this.startHour)/24);
       const pv=solarEnvelopeW(hour,cfg,weatherDay);
       const pvWh=pv.envelopeW*cfg.solarUtilization; // 1h scenario power estimate (Wh)
