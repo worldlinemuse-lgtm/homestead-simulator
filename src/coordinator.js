@@ -307,13 +307,25 @@
         electricityRequestedWh:this.dailyResourceDelivery.electricityRequestedWh+farmDemandWh,
         electricityDeliveredWh:this.dailyResourceDelivery.electricityDeliveredWh+farmServedWh
       };
+      // Operational supply is an observed physical delivery, not a fabricated
+      // biological multiplier. Expose it at the Farm boundary for UI and future
+      // native commands; shortages must never be reported as full operation.
+      const coverage=(delivered,requested)=>requested===0?1:Math.min(1,delivered/requested);
+      const nextOperationalSupply={
+        waterCoverage:coverage(nextDailyDelivery.waterDeliveredL,nextDailyDelivery.waterRequestedL),
+        electricityCoverage:coverage(nextDailyDelivery.electricityDeliveredWh,nextDailyDelivery.electricityRequestedWh),
+        waterSatisfied:nextDailyDelivery.waterDeliveredL+EPS>=nextDailyDelivery.waterRequestedL,
+        electricitySatisfied:nextDailyDelivery.electricityDeliveredWh+EPS>=nextDailyDelivery.electricityRequestedWh,
+        source:"metered_solar_water_farm_delivery",
+        biologicalEffectsApplied:false
+      };
       const nextHours=this.hours+1;
       const midnight=(nextHours+this.startHour)%24===0;
       let nextFarmSnapshot=this.farmSnapshot, completedDelivery=null;
       if(midnight){
         completedDelivery={...nextDailyDelivery,endingHour:nextHours,
           waterDeficitL:nextDailyDelivery.waterRequestedL-nextDailyDelivery.waterDeliveredL,
-          electricityDeficitWh:nextDailyDelivery.electricityRequestedWh-nextDailyDelivery.electricityDeliveredWh};
+          electricityDeficitWh:nextDailyDelivery.electricityRequestedWh-nextDailyDelivery.electricityDeliveredWh,\n          operationalSupply:{...nextOperationalSupply}};
         // Native Farm is a singleton without a clone/rollback API. This ordering
         // protects physical state on a thrown advancement, but a Farm exception
         // after internal mutation still requires native engine rollback support.
@@ -369,7 +381,7 @@
           hourlyElectricityDemandWh:farmDemandWh,electricityServedWh:farmServedWh,
           electricityDeficitWh:farmUnservedWh,
           hourlyWaterDemandL:wantL,waterDeliveredL:consumedL,waterDeficitL:shortfallL,
-          counts:this.farmSnapshot.counts},
+          counts:this.farmSnapshot.counts,operationalSupply:{...nextOperationalSupply}},
         warnings:[
           ...(energy.unservedBaseWh>EPS?["Essential energy demand was not met. Farm biological effects NOT modeled."]:[]),
           ...(pumpDeficitWh>EPS?["Water pump electricity demand was not met; hydraulic production may be unavailable."]:[]),
