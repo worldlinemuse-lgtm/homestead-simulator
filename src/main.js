@@ -360,6 +360,27 @@ for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
 }
 
+// Live weather is validated atomically by the shared coordinator; failed input leaves state unchanged.
+function syncLiveSolarWeather(){
+ const series=coordinator.snapshot().config.solarHourlyWeather;
+ $("solarWeatherJson").value=series?JSON.stringify(series,null,2):"";
+ $("solarWeatherStatus").textContent=series?
+   series.length+" hourly records ("+(series.length/24)+" days) active in the coupled world.":
+   "Illustrative sky active; no supplied weather series.";
+}
+$("solarWeatherApply").addEventListener("click",()=>{
+ try{
+  const records=JSON.parse($("solarWeatherJson").value);
+  const next=coordinator.configure({solarHourlyWeather:records});
+  redraw(next);syncLiveSolarWeather();
+ }catch(error){$("solarWeatherStatus").textContent="Weather not applied: "+error.message;}
+});
+$("solarWeatherClear").addEventListener("click",()=>{
+ try{redraw(coordinator.configure({solarHourlyWeather:null}));syncLiveSolarWeather();}
+ catch(error){$("solarWeatherStatus").textContent="Weather not cleared: "+error.message;}
+});
+syncLiveSolarWeather();
+
 const farmStudyUI=installFarmNativeStudy({$,coordinator,isPlaying:()=>playing,jumpToUtility,fmt,
  focusFarm:()=>{
   if(!scene)throw new Error("Original Farm 3D scene unavailable");
