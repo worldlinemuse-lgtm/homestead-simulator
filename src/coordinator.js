@@ -235,8 +235,7 @@
         initialBatteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,farmWh:farmDemandWh,cfg});
       // Explicit native Solar -> Farm transfer: allocate background load first.
       const backgroundServedWh=Math.min(cfg.backgroundLoadW,energy.servedBaseWh);
-      const farmServedWh=Math.min(farmDemandWh,
-        Math.max(0,energy.servedBaseWh-backgroundServedWh));
+      const farmServedWh=energy.servedFarmWh;
       const farmUnservedWh=farmDemandWh-farmServedWh;
       const backgroundDeficitWh=cfg.backgroundLoadW-backgroundServedWh;
       const pumpDeficitWh=requestedPumpWh-energy.servedPumpWh;
@@ -302,7 +301,7 @@
       this.batteryWh=energy.batteryWh;
       this.absorptionMinutes=energy.nextAbsorptionMinutes;
       this.cumulative.pvWh+=pvWh;
-      this.cumulative.baseWh+=energy.servedBaseWh+energy.servedFarmWh;
+      this.cumulative.baseWh+=energy.servedBaseWh;
       this.cumulative.pumpWh+=energy.servedPumpWh;
       this.cumulative.treatedL+=treatedL;
       this.cumulative.waterConsumedL+=consumedL;
