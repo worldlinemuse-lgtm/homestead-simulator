@@ -726,3 +726,19 @@ test("native Farm midnight rejection leaves physical hourly state uncommitted",(
  assert.equal(resumed.clock.hours,15);
 });
 
+
+test("native Farm invalid daily demand cannot silently become zero demand",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator();
+ const original=c.farmSnapshot;
+ const before=JSON.stringify(c.snapshot());
+ for(const daily of [null,{waterGal:NaN,kWh:1},{waterGal:1,kWh:NaN},{waterGal:undefined,kWh:1}]){
+   c.farmSnapshot={...original,daily};
+   assert.throws(()=>c.stepHour(),/Native Farm daily demand unavailable|farm gal|farm kWh/);
+   assert.equal(c.hours,0);
+   assert.equal(c.waterStoredL,c.cfg.waterStartL);
+   assert.equal(c.batteryWh,c.cfg.batteryStartWh);
+ }
+ c.farmSnapshot=original;
+ assert.equal(JSON.stringify(c.snapshot()),before);
+ assert.equal(c.stepHour().clock.hours,1);
+});
