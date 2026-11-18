@@ -592,3 +592,44 @@ test("invalid solar hourly series cannot mutate coupled state",()=>{
    assert.equal(JSON.stringify(c.snapshot()),before);
  }
 });
+
+
+test("multi-day Solar weather follows calendar days without repeating first-day inputs",()=>{
+ const Core=ctx.HomesteadCoordinator;
+ const weather=Array.from({length:48},(_,i)=>({
+   irradianceWm2:i<24?0:700,cellTemperatureC:25
+ }));
+ const c=new Core.Coordinator({solarHourlyWeather:weather,solarUtilization:1});
+ for(let i=0;i<15;i++){
+   const s=c.stepHour();
+   assert.equal(s.last.pv.irradiance,0);
+   assert.equal(s.last.pv.provenance,"supplied_hourly_weather");
+ }
+ const next=c.stepHour();
+ assert.equal(next.last.hour,0);
+ assert.equal(next.last.pv.irradiance,700);
+ assert.ok(next.last.energy.pvWh>0);
+ assert.ok(Math.abs(next.last.energy.residualWh)<1e-5);
+ const replay=()=>{
+   const x=new Core.Coordinator({solarHourlyWeather:weather,solarUtilization:1});
+   for(let i=0;i<16;i++)x.stepHour();
+   return JSON.stringify(x.snapshot());
+ };
+ assert.equal(replay(),replay());
+});
+
+test("weather exhaustion rejects the next step before changing inventories or time",()=>{
+ const Core=ctx.HomesteadCoordinator;
+ const weather=Array.from({length:24},()=>({irradianceWm2:0,cellTemperatureC:20}));
+ const c=new Core.Coordinator({solarHourlyWeather:weather});
+ for(let i=0;i<15;i++)c.stepHour();
+ const before=JSON.stringify(c.snapshot());
+ assert.throws(()=>c.stepHour(),/weather exhausted/i);
+ assert.equal(JSON.stringify(c.snapshot()),before);
+ const extended=weather.concat(Array.from({length:24},()=>({
+   irradianceWm2:600,cellTemperatureC:25
+ })));
+ c.configure({solarHourlyWeather:extended});
+ assert.equal(c.stepHour().last.pv.irradiance,600);
+ assert.throws(()=>Core.configuration({solarHourlyWeather:extended.slice(0,25)}),/complete 24-hour days/);
+});
