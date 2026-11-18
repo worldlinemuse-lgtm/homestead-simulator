@@ -309,7 +309,7 @@
       this.cumulative.waterConsumedL+=consumedL;
       this.cumulative.overflowL+=overflowL;
       this.cumulative.waterDeficitL+=shortfallL;
-      this.cumulative.energyDeficitWh+=energy.unservedBaseWh+energy.unservedFarmWh;
+      this.cumulative.energyDeficitWh+=energy.unservedBaseWh+energy.unservedFarmWh+pumpDeficitWh;
       this.cumulative.farmElectricityServedWh+=farmServedWh;
       this.cumulative.farmElectricityDeficitWh+=farmUnservedWh;
       this.cumulative.farmWaterDeliveredL+=consumedL;
@@ -348,6 +348,8 @@
           counts:this.farmSnapshot.counts},
         warnings:[
           ...(energy.unservedBaseWh>EPS?["Essential energy demand was not met. Farm biological effects NOT modeled."]:[]),
+          ...(pumpDeficitWh>EPS?["Water pump electricity demand was not met; hydraulic production may be unavailable."]:[]),
+          ...(farmUnservedWh>EPS?["Farm electrical demand was not met. Farm biological effects NOT modeled."]:[]),
           ...(shortfallL>EPS?["Farm water demand was not met. Farm biological effects NOT modeled."]:[]),
           ...(pv.status!=="estimated"&&pv.status!=="no_sun"?["Solar PV reference unavailable: "+pv.status]:[])
         ]};
