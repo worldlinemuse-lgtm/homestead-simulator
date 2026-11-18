@@ -552,3 +552,43 @@ test("3D electrical inspector and live HUD expose all three conserved load alloc
  assert.ok(Math.abs(requested-served-deficit)<1e-7);
  assert.ok(Math.abs(served-s.last.energy.servedBaseWh-s.last.energy.servedPumpWh)<1e-7);
 });
+
+
+test("supplied chronological weather drives original PV core without illustrative sky",()=>{
+ const Core=ctx.HomesteadCoordinator;
+ const weather=Array.from({length:24},(_,hour)=>({
+   irradianceWm2:hour===9?800:0,cellTemperatureC:25
+ }));
+ const c=new Core.Coordinator({solarHourlyWeather:weather,solarUtilization:1});
+ const first=c.stepHour();
+ assert.equal(first.last.pv.provenance,"supplied_hourly_weather");
+ assert.equal(first.last.pv.irradiance,800);
+ assert.ok(first.last.pv.envelopeW>0);
+ assert.ok(first.last.energy.pvWh>0);
+ const next=c.stepHour();
+ assert.equal(next.last.pv.status,"no_sun");
+ assert.equal(next.last.pv.provenance,"supplied_hourly_weather");
+ assert.equal(next.last.energy.pvWh,0);
+ assert.ok(Math.abs(next.last.energy.residualWh)<1e-5);
+ const snapshot=c.snapshot();
+ snapshot.config.solarHourlyWeather[9].irradianceWm2=0;
+ assert.equal(c.snapshot().config.solarHourlyWeather[9].irradianceWm2,800);
+});
+
+test("invalid solar hourly series cannot mutate coupled state",()=>{
+ const Core=ctx.HomesteadCoordinator;
+ const c=new Core.Coordinator();
+ const before=JSON.stringify(c.snapshot());
+ const valid=Array.from({length:24},()=>({irradianceWm2:500,cellTemperatureC:25}));
+ for(const bad of [
+   valid.slice(1),
+   valid.map((x,i)=>i===0?{...x,irradianceWm2:Infinity}:x),
+   valid.map((x,i)=>i===0?{...x,irradianceWm2:-1}:x),
+   valid.map((x,i)=>i===0?{...x,cellTemperatureC:90}:x),
+   valid.map((x,i)=>i===0?{...x,irradianceWm2:1300}:x)
+ ]){
+   assert.throws(()=>c.configure({solarHourlyWeather:bad}),
+     /solarHourlyWeather|irradiance|temperature/i);
+   assert.equal(JSON.stringify(c.snapshot()),before);
+ }
+});
