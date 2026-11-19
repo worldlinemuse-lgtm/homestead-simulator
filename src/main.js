@@ -332,7 +332,7 @@ function resetScenario(){
   return next;
 }
 $("resetBtn").addEventListener("click",()=>{stop();try{resetScenario();$("errors").style.display="none"}catch(e){fail(e)}});
-document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=null;selectArea(b.dataset.view);$("sceneHint").textContent=selected==="farm"
+document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=b.dataset.view==="farm"?"Henhouse":null;selectArea(b.dataset.view);if(selected==="farm")jumpToUtility("assetReadout");$("sceneHint").textContent=selected==="farm"
   ?"Tap an animal to follow · Drag to orbit · Pinch to zoom"
   :"Drag to orbit · Pinch to zoom · Select equipment";renderAsset(coordinator.snapshot())}));
 // Navigation is generated from the executable capability registry. A source
@@ -929,8 +929,12 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
    $("solarBatteryCurrentA").focus({preventScroll:true});
   }
   else if(selectedFarm){
-   jumpToUtility("farmStudyUtility");
-   $(selectedAsset?.startsWith("Rabbit")?"farmStudyDoes":"farmStudyHens").focus({preventScroll:true});
+   if(["Henhouse","Rabbit hutches","Pasture, hutches and livestock"].includes(selectedAsset))
+     jumpToUtility("assetReadout");
+   else{
+     jumpToUtility("farmStudyUtility");
+     $(selectedAsset?.startsWith("Rabbit")?"farmStudyDoes":"farmStudyHens").focus({preventScroll:true});
+   }
   }
   else setInspectorOpen(true);
 },farmVisual);selectArea("overview");redraw(coordinator.snapshot());
