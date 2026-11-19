@@ -824,7 +824,7 @@ test("native rabbit biology uses measured water coverage and preserves full-supp
    "fully supplied integrated Farm must match native standalone behavior");
  f.reset(29);
  const dry=f.advanceDay({waterCoverage:0});
- assert.equal(dry.daily.rFeed,0);
+ assert.equal(dry.daily.rabbitFeedLb,0);
  assert.equal(dry.daily.waterGal>=0,true);
  const rabbits0=baseline.animals.filter(a=>a.sp==="rabbit");
  const rabbitsDry=dry.animals.filter(a=>a.sp==="rabbit");
@@ -845,7 +845,7 @@ test("coupled midnight sends metered shortage into native Farm biology",()=>{
  assert.equal(day.waterDeliveredL,0);
  assert.equal(day.operationalSupply.waterCoverage,0);
  assert.equal(day.operationalSupply.biologicalEffectsApplied,true);
- assert.equal(result.farm.daily.rFeed,0);
+ assert.equal(result.farm.daily.rabbitFeedLb,0);
 });
 
 test("metered partial rabbit water supply scales native intake and preserves replay",()=>{
@@ -853,9 +853,9 @@ test("metered partial rabbit water supply scales native intake and preserves rep
  const run=coverage=>{f.reset(29);return f.advanceDay({waterCoverage:coverage});};
  const full=run(1),half=run(0.5),repeat=run(0.5),dry=run(0);
  assert.equal(JSON.stringify(half),JSON.stringify(repeat),"partial-supply replay must be deterministic");
- assert.ok(Math.abs(half.daily.rFeed-full.daily.rFeed*0.5)<1e-8,
-   "rabbit feed ledger must scale with measured supply");
- assert.ok(Math.abs(dry.daily.rFeed)<1e-8);
+ assert.ok(Math.abs(half.daily.rabbitFeedLb-full.daily.rabbitFeedLb*0.5)<=0.01,
+   "rabbit feed ledger (rounded by original source to 0.01 lb) must scale with measured supply");
+ assert.equal(dry.daily.rabbitFeedLb,0);
  const fullR=full.animals.filter(a=>a.sp==="rabbit");
  const halfR=half.animals.filter(a=>a.sp==="rabbit");
  const dryR=dry.animals.filter(a=>a.sp==="rabbit");
@@ -872,6 +872,10 @@ test("native chicken laying stops under a full day of zero delivered water",()=>
  const f=ctx.HomesteadFarmCore;
  const simulate=coverage=>{
   f.reset(29);
+  // Source Farm starts in November, when short natural days prevent laying.
+  // Enable the original coop's own photoperiod control in both scenarios.
+  const coop=f.equipmentSnapshot().find(e=>e.type==="coop");
+  f.setEquipmentParameter(coop.id,"lights",1);
   const days=[];
   for(let i=0;i<30;i++)days.push(f.advanceDay({waterCoverage:coverage}));
   return days;
