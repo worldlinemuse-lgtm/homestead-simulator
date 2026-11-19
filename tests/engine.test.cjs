@@ -1059,3 +1059,60 @@ test("partial native equipment duty is reproducible and never increases metered 
  assert.ok(first.daily.kWh<=full.daily.kWh+1e-9);
  assert.ok(first.daily.nativeElectricityRequestedKWh>=first.daily.kWh);
 });
+
+
+test("original Farm c-prefixed coop lighting edits flow into live Solar dispatch immediately",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({
+   solarUtilization:0,batteryStartWh:1000,batteryReserveWh:1000,
+   backgroundLoadW:0,pumpElectricalW:0
+ });
+ const first=c.snapshot();
+ const coop=first.farmEquipment.find(d=>d.type==="coop");
+ assert.ok(coop && /^c[0-9]+$/.test(String(coop.id)));
+ assert.equal(coop.lights,false);
+ const before=JSON.stringify(c.snapshot());
+ assert.throws(()=>c.setFarmEquipmentParameter(coop.id,"lights",2),/toggle/);
+ assert.throws(()=>c.setFarmEquipmentParameter("c-no-such-part","lights",1),/Unknown native/);
+ assert.throws(()=>c.setFarmEquipmentParameter(coop.id,"fakeScienceParameter",10),/Unsupported original/);
+ assert.equal(JSON.stringify(c.snapshot()),before,"invalid source command must be atomic");
+ const updated=c.setFarmEquipmentParameter(coop.id,"lights",1);
+ assert.equal(updated.clock.hours,0,"equipment edit must not silently advance time");
+ const edited=updated.farmEquipment.find(d=>d.id===coop.id);
+ assert.equal(edited.lights,true);
+ assert.ok(edited.nativeDailyDemandWh>0,"native coop lighting must create real electrical demand");
+ const hour=c.stepHour();
+ assert.ok(hour.last.electricalLoads.farmRequestedWh>0);
+ assert.equal(hour.last.electricalLoads.farmServedWh,0);
+ assert.equal(hour.last.electricalLoads.equipment.find(d=>d.id===coop.id).servedWh,0);
+ let last=hour;
+ for(let i=1;i<15;i++)last=c.stepHour();
+ const day=last.completedResourceDays[0];
+ const actual=day.equipment.find(d=>d.id===coop.id);
+ assert.ok(actual && actual.requestedWh>0);
+ assert.equal(actual.servedWh,0);
+ assert.equal(actual.coverage,0);
+ assert.ok(last.farm.daily.nativeElectricityRequestedKWh>0,
+   "blackout must not erase native fixture demand on the following day");
+});
+
+test("partial native fixture delivery is conserved and deterministic with active coop lights",()=>{
+ const run=()=>{
+   const c=new ctx.HomesteadCoordinator.Coordinator({
+     solarUtilization:0,batteryStartWh:1030,batteryReserveWh:1000,
+     backgroundLoadW:0,pumpElectricalW:0
+   });
+   const coop=c.snapshot().farmEquipment.find(d=>d.type==="coop");
+   c.setFarmEquipmentParameter(coop.id,"lights",1);
+   let state;
+   for(let i=0;i<15;i++)state=c.stepHour();
+   return JSON.stringify(state);
+ };
+ const a=JSON.parse(run()),b=JSON.parse(run());
+ assert.deepEqual(a,b,"same weather, native equipment and seed must replay exactly");
+ const day=a.completedResourceDays[0];
+ assert.ok(day.electricityRequestedWh>day.electricityDeliveredWh);
+ assert.ok(day.electricityDeliveredWh>0,"available battery must supply some native fixture energy");
+ const coop=day.equipment.find(e=>e.type==="coop");
+ assert.ok(coop && coop.coverage>0 && coop.coverage<1);
+ assert.ok(Math.abs(day.equipment.reduce((sum,e)=>sum+e.servedWh,0)-day.electricityDeliveredWh)<1e-6);
+});
