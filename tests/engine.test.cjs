@@ -838,7 +838,9 @@ test("native rabbit biology uses measured water coverage and preserves full-supp
  assert.throws(()=>f.advanceDay({waterCoverage:NaN}),/water coverage/);
 });
 test("coupled midnight sends metered shortage into native Farm biology",()=>{
- const c=new ctx.HomesteadCoordinator.Coordinator({waterStorageCapacityL:0,waterStartL:0});
+ // Zero storage does not forbid direct pump-to-animal consumption. Disable the
+ // pump explicitly to isolate the genuinely dry biological input.
+ const c=new ctx.HomesteadCoordinator.Coordinator({waterStorageCapacityL:0,waterStartL:0,pumpPressurePsi:0});
  let result;
  for(let i=0;i<24;i++)result=c.stepHour();
  const day=result.completedResourceDays[0];
