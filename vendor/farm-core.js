@@ -2082,7 +2082,7 @@ function step(supply) {
         aF = rgAccF(a), // hopper and drinker access factor
         gm0 = hF * cF * tF * aF, // all factors but the diet
         gm = (dg === 1 ? gm0 : gm0 * dg) * waterCoverage; // FAO: rabbit feed intake falls proportionally with water supply
-      if (S.gw && (a.st === 'kit' || a.st === 'grower')) growTally(a, dg === 1 ? pot : pot * dg, hF, cF, tF, aF);
+      if (S.gw && (a.st === 'kit' || a.st === 'grower')) growTally(a, (dg === 1 ? pot : pot * dg) * waterCoverage, hF, cF, tF, aF);
       a.wt = Math.min(P.rb_adult_wt * 1.1, a.wt + pot * gm);
       {
         const it = intake(a, m); // today's feed, hay, grain, forage and water for this animal (lb, gal)
