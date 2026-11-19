@@ -290,10 +290,32 @@
       this.farmSnapshot=next;
       return this.snapshot();
     }
+
+    // Set a real native component's properties; the same command is available
+    // to the 3D inspector and Utilities, with no duplicate configuration store.
+    setFarmEquipmentParameter(id,key,value){
+      must(this.farm && typeof this.farm.setEquipmentParameter==="function",
+        "Original Farm equipment command unavailable");
+      const before=this.farmSnapshot.day;
+      this.farm.setEquipmentParameter(id,key,value);
+      const next=this.farm.snapshot();
+      must(next.day===before && next.daily &&
+        Number.isFinite(next.daily.waterGal) && Number.isFinite(next.daily.kWh),
+        "Native Farm equipment update returned invalid biological state");
+      this.farmSnapshot=next;
+      return this.snapshot();
+    }
     stepHour(){
       const cfg=this.cfg, hour=(this.hours+this.startHour)%24, dayRecord=this.farmSnapshot.daily;
       must(dayRecord && typeof dayRecord==="object", "Native Farm daily demand unavailable");
-      const farmDailyKWh=number("farm kWh",dayRecord.nativeElectricityRequestedKWh??dayRecord.kWh);
+      // Re-query the original native fixture settings every interval.
+      // This immediately reflects a real coop-light, heater or brooder edit,
+      // unlike the previous day's historical consumption/rounded demand.
+      const liveEquipment=this.farm.equipmentSnapshot();
+      must(Array.isArray(liveEquipment),"Native Farm equipment list unavailable");
+      const liveNativeWh=liveEquipment.reduce((sum,item)=>
+        sum+number("Live native equipment Wh",item.nativeDailyDemandWh),0);
+      const farmDailyKWh=number("farm kWh",liveNativeWh/1000);
       const farmDailyWaterL=number("farm gal",dayRecord.waterGal)*GALLON_TO_LITER;
       const weatherDay=Math.floor((this.hours+this.startHour)/24);
       const pv=solarEnvelopeW(hour,cfg,weatherDay);
@@ -307,7 +329,7 @@
       const backgroundServedWh=Math.min(cfg.backgroundLoadW,energy.servedBaseWh);
       const farmServedWh=energy.servedFarmWh;
       const farmUnservedWh=farmDemandWh-farmServedWh;
-      const farmEquipment=dispatchFarmEquipment(this.farm.equipmentSnapshot(),farmDemandWh,farmServedWh);
+      const farmEquipment=dispatchFarmEquipment(liveEquipment,farmDemandWh,farmServedWh);
       const backgroundDeficitWh=cfg.backgroundLoadW-backgroundServedWh;
       const pumpDeficitWh=requestedPumpWh-energy.servedPumpWh;
       must(pumpDeficitWh>=-EPS && backgroundDeficitWh>=-EPS &&
