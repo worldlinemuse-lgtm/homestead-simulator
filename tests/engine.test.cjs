@@ -847,3 +847,22 @@ test("coupled midnight sends metered shortage into native Farm biology",()=>{
  assert.equal(day.operationalSupply.biologicalEffectsApplied,true);
  assert.equal(result.farm.daily.rFeed,0);
 });
+
+test("metered partial rabbit water supply scales native intake and preserves replay",()=>{
+ const f=ctx.HomesteadFarmCore;
+ const run=coverage=>{f.reset(29);return f.advanceDay({waterCoverage:coverage});};
+ const full=run(1),half=run(0.5),repeat=run(0.5),dry=run(0);
+ assert.equal(JSON.stringify(half),JSON.stringify(repeat),"partial-supply replay must be deterministic");
+ assert.ok(Math.abs(half.daily.rFeed-full.daily.rFeed*0.5)<1e-8,
+   "rabbit feed ledger must scale with measured supply");
+ assert.ok(Math.abs(dry.daily.rFeed)<1e-8);
+ const fullR=full.animals.filter(a=>a.sp==="rabbit");
+ const halfR=half.animals.filter(a=>a.sp==="rabbit");
+ const dryR=dry.animals.filter(a=>a.sp==="rabbit");
+ assert.equal(fullR.length,halfR.length);
+ assert.equal(fullR.length,dryR.length);
+ for(let i=0;i<fullR.length;i++){
+   assert.ok(dryR[i].wt<=halfR[i].wt+1e-9);
+   assert.ok(halfR[i].wt<=fullR[i].wt+1e-9);
+ }
+});
