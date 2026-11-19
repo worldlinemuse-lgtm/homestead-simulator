@@ -359,7 +359,8 @@
         // protects physical state on a thrown advancement, but a Farm exception
         // after internal mutation still requires native engine rollback support.
         const previousFarmDay=this.farmSnapshot.day;
-        this.farm.advanceDay();
+        this.farm.advanceDay({waterCoverage:nextOperationalSupply.waterCoverage});
+        nextOperationalSupply.biologicalEffectsApplied=true;
         nextFarmSnapshot=this.farm.snapshot();
         // Reject a silently failed or malformed native advance before committing
         // electricity, water, clock, or the completed delivery record.
