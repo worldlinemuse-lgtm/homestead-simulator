@@ -1886,7 +1886,12 @@ function refreshToday() {
 // Daily step context, part 2. step(): one model day. Weather, breeding, births, hatches, laying, molt,
 // growth, sales, deaths, then the day's line in the ledger. The only place S.day moves; called by the
 // clock, the jump buttons, the range check and tests.
-function step() {
+function step(supply) {
+  // The optional Homestead delivery ratio is measured upstream, not a new
+  // biological coefficient. Native standalone calls remain unchanged.
+  const waterCoverage = supply == null ? 1 : supply.waterCoverage;
+  if (!Number.isFinite(waterCoverage) || waterCoverage < 0 || waterCoverage > 1)
+    throw new RangeError('Farm water coverage must be between 0 and 1');
   // ==== 1. Start of the day: weather, housing and pen climates ====
   // Moves the day on, draws today's weather (weather(true)), re-houses the animals, counts the floor in
   // use per building (loads) and works out each building's microclimate (micro). d is the day's tally.
@@ -2076,15 +2081,15 @@ function step() {
         tF = rabTemp(m).gain, // temperature factor
         aF = rgAccF(a), // hopper and drinker access factor
         gm0 = hF * cF * tF * aF, // all factors but the diet
-        gm = dg === 1 ? gm0 : gm0 * dg; // the share of the potential gain this rabbit makes today
+        gm = (dg === 1 ? gm0 : gm0 * dg) * waterCoverage; // FAO: rabbit feed intake falls proportionally with water supply
       if (S.gw && (a.st === 'kit' || a.st === 'grower')) growTally(a, dg === 1 ? pot : pot * dg, hF, cF, tF, aF);
       a.wt = Math.min(P.rb_adult_wt * 1.1, a.wt + pot * gm);
       {
         const it = intake(a, m); // today's feed, hay, grain, forage and water for this animal (lb, gal)
-        d.rFeed += it.feed;
-        d.hay += it.hay;
-        d.grain += it.grain;
-        d.water += it.water;
+        d.rFeed += it.feed * waterCoverage;
+        d.hay += it.hay * waterCoverage;
+        d.grain += it.grain * waterCoverage;
+        d.water += it.water * waterCoverage;
       }
       // stage changes, in this order: weaning, sale age, early breeding of young does, breeding age,
       // reserve does, heat-sterile bucks, then each adult doe's retirement, pregnancy or mating
@@ -2596,7 +2601,7 @@ function labor() {
 /* Source dependency from farm-sim/source/src/planner/planner.js: called by core/access.js. */
 function coopFix(c,k){return c&&c[k]!=null?+c[k]:TYPES.coop.props[k];}
 function reset(seed=7){P.env_seed=seed>>>0;newState();return snapshot();}
-function advanceDay(){step();return snapshot();}
+function advanceDay(supply){step(supply);return snapshot();}
 function snapshot(){const r=S.hist.length?S.hist[S.hist.length-1]:null;return {day:S.day,date:dateOf(S.day).toISOString().slice(0,10),animals:S.animals.map(a=>({id:a.id,sp:a.sp,st:a.st,age:a.age,sex:a.sex,enc:a.enc,wt:a.wt,health:a.health})),components:S.comps.map(c=>({id:c.id,type:c.type,x:c.x,y:c.y,w:c.w,d:c.d})),daily:r?{...r}:null,counts:counts()};}
 function setParameter(key,value){if(!Object.prototype.hasOwnProperty.call(P,key))throw new Error('Unknown farm parameter '+key);if(!Number.isFinite(value))throw new Error('Parameter must be finite');P[key]=value;refreshToday();}
 
