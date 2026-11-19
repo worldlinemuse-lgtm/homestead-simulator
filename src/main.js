@@ -21,6 +21,7 @@ const timeline=new ScenarioTimeline(5);
 let previousFrame=null,lastClockPaint=0;
 let selectedAsset=null;
 let selectedWaterRole=null;
+let selectedFarmDeviceId=null,selectedFarmDeviceKey=null;
 function fail(e){playing=false;scene?.setPlayback(false);$("playBtn").textContent="▶ Play";$("errors").textContent="Simulation stopped: "+(e?.message||e);$("errors").style.display="block";console.error(e);}
 const descriptions={
  overview:["Whole homestead","Energy production, water treatment and animal demand connected through one chronological ledger."],
@@ -195,7 +196,59 @@ function renderAsset(s){
    const row=document.createElement("div");row.className="assetRow";
    const label=document.createElement("span");label.textContent=k;
    const val=document.createElement("strong");val.textContent=String(v);
-   row.append(label,val);target.append(row);
+ 
+  row.append(label,val);target.append(row);
+ }
+ // Select a native component of the clicked 3D Farm area and edit its ORIGINAL
+ // equipment fields, using the same coordinator as the top-level Utilities.
+ if(entries && ["Henhouse","Rabbit hutches","Pasture, hutches and livestock"].includes(selectedAsset)){
+   const available=(s.farmEquipment||[]).filter(d=>
+     selectedAsset==="Rabbit hutches" ? (d.type==="hutch"||d.type==="heater") :
+     selectedAsset==="Henhouse" ? d.type!=="hutch" : true);
+   const fields={
+     hutch:["lights","lightHours","lightWatts"],
+     coop:["lights","lightHours","lightWatts"],
+     fan:["watts","trigger"],heater:["watts","setpoint"],
+     brooder:["lampWatts"],incubator:["on","watts","setpoint"]
+   };
+   if(available.length){
+     let device=available.find(d=>String(d.id)===String(selectedFarmDeviceId))||available[0];
+     selectedFarmDeviceId=String(device.id);
+     const settings=fields[device.type]||[];
+     if(!settings.includes(selectedFarmDeviceKey))selectedFarmDeviceKey=settings[0];
+     const panel=document.createElement("div");panel.className="farmNativeSettings";
+     panel.style.cssText="padding:10px;margin:10px 0;border:1px solid #82969a55;border-radius:9px;display:grid;gap:7px";
+     const heading=document.createElement("strong");heading.textContent="Edit original Farm equipment";panel.append(heading);
+     const makeLabel=(label,control)=>{const wrap=document.createElement("label");
+       wrap.style.cssText="display:grid;gap:3px;font-size:12px";wrap.textContent=label;wrap.append(control);panel.append(wrap);};
+     const selector=document.createElement("select");selector.setAttribute("aria-label","Original Farm equipment");
+     for(const d of available){const option=document.createElement("option");
+       option.value=String(d.id);option.textContent=d.type+" #"+d.id;selector.append(option);}
+     selector.value=selectedFarmDeviceId;
+     selector.addEventListener("change",()=>{selectedFarmDeviceId=selector.value;
+       selectedFarmDeviceKey=null;renderAsset(coordinator.snapshot());});
+     makeLabel("Native equipment ID",selector);
+     const field=document.createElement("select");field.setAttribute("aria-label","Original Farm equipment property");
+     for(const key of settings){const option=document.createElement("option");
+       option.value=key;option.textContent=key;field.append(option);}
+     field.value=selectedFarmDeviceKey;
+     field.addEventListener("change",()=>{selectedFarmDeviceKey=field.value;renderAsset(coordinator.snapshot());});
+     makeLabel("Native setting",field);
+     const input=document.createElement("input");input.type="number";input.step="any";
+     input.value=String(Number(device[selectedFarmDeviceKey])||0);
+     input.setAttribute("aria-label","Native Farm setting value");
+     makeLabel("Value (native units)",input);
+     const apply=document.createElement("button");apply.type="button";apply.textContent="Apply to connected Homestead";
+     apply.addEventListener("click",()=>{
+       try{
+         const value=Number(input.value);
+         if(!input.value.trim() || !Number.isFinite(value))throw new Error("Enter a finite numeric value");
+         const result=coordinator.setFarmEquipmentParameter(Number(selector.value),field.value,value);
+         redraw(result);
+       }catch(err){editMessage(err.message,true);}
+     });
+     panel.append(apply);target.append(panel);
+   }
  }
 }
 
