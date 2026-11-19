@@ -44,13 +44,13 @@
 <section id="assetReadout" class="assetReadout" tabindex="-1" aria-live="polite"><p>Select a building or equipment in the 3D scene to inspect its model-driven state.</p></section>
 <section id="objectEditor" class="objectEditor" tabindex="-1" aria-label="Visual landscape object editor">
 <h3>Arrange the landscape</h3>
-<p class="editorNote">Move, turn, add or swap visual props. Garden placement is editable; biological pens and equipment are protected. These changes do not alter resource formulas.</p>
-<label class="editorCheck"><input id="editMode" type="checkbox"> Drag editable objects to move them</label>
+<p class="editorNote">Click or touch an object in the 3D scene, then drag it to a new location. Choose a part and place it on the terrain, or select an existing item to inspect it. This moves the visual layout only; original Solar, Water and Farm calculations and connected model identities remain unchanged.</p>
+<label class="editorCheck"><input id="editMode" type="checkbox" checked> Enable direct object dragging</label>
 <label for="objectList">Selected object</label><select id="objectList" aria-label="Select editable visual object"></select>
 <label for="objectType">Object type</label><select id="objectType"><option value="planter">Raised planter</option><option value="compost">Compost bin</option><option value="fruit-tree">Fruit tree</option><option value="barrel">Water barrel (decorative)</option></select>
-<div class="editorButtons"><button id="objectAdd">+ Add</button><button id="objectSwap">Swap</button><button id="objectRemove">Remove</button><button id="objectUndo">Undo</button></div>
-<div class="editorButtons"><button id="objectLeft" aria-label="Move left">←</button><button id="objectUp" aria-label="Move toward north">↑</button><button id="objectDown" aria-label="Move toward south">↓</button><button id="objectRight" aria-label="Move right">→</button><button id="objectRotate">↻ Turn 90°</button></div>
-<output id="editStatus" aria-live="polite">Choose a prop or select the garden.</output>
+<div class="editorButtons"><button id="objectAdd">+ Place on terrain</button><button id="objectSwap">Swap selected part</button><button id="objectRemove">Remove selected part</button><button id="objectUndo">Undo</button></div>
+<details><summary>Fine positioning and rotation</summary><div class="editorButtons"><button id="objectLeft" aria-label="Move left">←</button><button id="objectUp" aria-label="Move toward north">↑</button><button id="objectDown" aria-label="Move toward south">↓</button><button id="objectRight" aria-label="Move right">→</button><button id="objectRotate">↻ Turn 90°</button></div></details>
+<output id="editStatus" aria-live="polite">Select directly from the 3D scene and drag. Use Place to add an item.</output>
 </section>
 <section id="scenarioControls" class="utilitySection" tabindex="-1" aria-labelledby="scenarioControlsHeading"><h3 id="scenarioControlsHeading">Live Homestead assumptions</h3><p class="utilityHelp">These sliders change the connected experimental energy and water scenario. They are not original manufacturer-calibrated engineering controls.</p>
 <div class="setting"><div class="value"><label for="cloud">Illustrative cloud transmittance</label><output id="cloudOut">82%</output></div><input type="range" id="cloud" min="0" max="100" step="1" value="82"></div>

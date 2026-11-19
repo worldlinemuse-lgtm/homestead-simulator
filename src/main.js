@@ -35,11 +35,11 @@ function refreshObjectEditor(){
  const sel=$("objectList"),old=sel.value;
  sel.replaceChildren();
  for(const item of list){const opt=document.createElement("option");
-  opt.value=item.id;opt.textContent=item.label+(item.locked?" (garden)":" · "+item.type);
+  opt.value=item.id;opt.textContent=item.label+(item.site?" · layout position":item.locked?" · native garden":" · "+item.type);
   sel.append(opt)}
  sel.value=current.id;
- $("objectRemove").disabled=current.id==="garden";
- $("objectSwap").disabled=current.id==="garden";
+ $("objectRemove").disabled=current.locked;
+ $("objectSwap").disabled=current.locked;
 }
 function editMessage(message,error=false){
  $("editStatus").textContent=message;$("editStatus").style.color=error?"#ffb8a5":"#bfe8ce";
@@ -342,12 +342,19 @@ if(window.matchMedia("(max-width: 650px)").matches){
  $("hudToggle").setAttribute("aria-label","Expand resource summary");
 }
 $("closeInspector").addEventListener("click",()=>setInspectorOpen(false));
+$("editMode").checked=true;
 $("editMode").addEventListener("change",()=>{
  scene?.editor?.setEditMode($("editMode").checked);
- editMessage($("editMode").checked?"Drag a selected visual object on the terrain":"Drag mode off");
+ editMessage($("editMode").checked?"Click or touch an object, then drag it to move":"Layout dragging is disabled");
 });
 $("objectList").addEventListener("change",()=>runEdit(()=>scene.editor.select($("objectList").value)));
-$("objectAdd").addEventListener("click",()=>runEdit(()=>scene.editor.add($("objectType").value)));
+$("objectAdd").addEventListener("click",()=>{
+ try{
+  const part=scene.editor.beginPlace($("objectType").value);
+  editMessage("Tap or click the ground to place "+part+"; Escape cancels");
+  setInspectorOpen(false);
+ }catch(e){editMessage(e.message,true)}
+});
 $("objectSwap").addEventListener("click",()=>runEdit(()=>scene.editor.swap($("objectType").value)));
 $("objectRemove").addEventListener("click",()=>runEdit(()=>scene.editor.remove()));
 $("objectUndo").addEventListener("click",()=>runEdit(()=>scene.editor.undo()));
@@ -857,6 +864,8 @@ window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),
  editList:()=>scene?.editor?.list(),
  editAdd:type=>scene.editor.add(type),
  editMove:(dx,dz)=>scene.editor.move(dx,dz),
+  editProject:id=>scene.editor.project(id),
+  editGroundScreen:(x,z)=>scene.editor.projectGround(x,z),
  editSwap:type=>scene.editor.swap(type),
  editUndo:()=>scene.editor.undo(),
  reset:()=>{stop();return resetScenario()},
