@@ -121,16 +121,16 @@ function renderAsset(s){
   ],
   "Henhouse":[
     ["Chickens, all ages",s.farm.animals.filter(a=>a.sp==="chicken").length],
-    ["Farm electricity/day",fmt(d?.kWh||0,2)+" kWh"],
+    ["Native Farm electricity requested/day",fmt(d?.nativeElectricityRequestedKWh??d?.kWh??0,2)+" kWh"],
     ["Farm electricity served",l?fmt(l.farm.electricityServedWh,1)+" Wh this hour":"—"],
     ["Farm electricity unmet",l?fmt(l.farm.electricityDeficitWh,1)+" Wh this hour":"—"],
     ["Eggs in last simulated day",d?.eggs??0],
-    ["Shortage effects","Not modeled biologically yet"]
+    ["Shortage effects","Native delivered water and fixture electricity affect Farm daily biology; intermittent incubation is not calibrated"]
   ],
   "Rabbit hutches":[
     ["Rabbits, all ages",s.farm.animals.filter(a=>a.sp==="rabbit").length],
     ["Farm demand/day",fmt(d?.waterGal||0,2)+" gal total"],
-    ["Shortage effects","Not modeled biologically yet"]
+    ["Shortage effects","Native delivered water and fixture electricity affect Farm daily biology; intermittent incubation is not calibrated"]
   ],
   "Pasture, hutches and livestock":[
     ["Animals",s.farm.counts.n],
@@ -160,6 +160,34 @@ function renderAsset(s){
      ["Native visual action",farmVisual.world().agents.get(id)?.act??"Idle"],
      ["Authority","Original Farm biology and native visual controller; movement/actions are illustrative"]
    ];
+ }
+
+ // Source-native fixture IDs and metered deliveries, shared by 3D and Utilities.
+ if(entries && ["Henhouse","Rabbit hutches","Pasture, hutches and livestock"].includes(selectedAsset)){
+   const devices=s.farmEquipment||[];
+   const metered=s.last?.electricalLoads?.equipment||[];
+   const byId=new Map(metered.map(device=>[String(device.id),device]));
+   const relevant=devices.filter(device=>{
+     if(selectedAsset==="Rabbit hutches")return device.type==="hutch"||device.type==="heater";
+     if(selectedAsset==="Henhouse")return device.type!=="hutch";
+     return true;
+   });
+   entries.push(["Native Farm fixtures",relevant.length+" equipment components"]);
+   const totals=relevant.reduce((v,d)=>{
+     const usage=byId.get(String(d.id));
+     v.demand+=usage?.requestedWh||0;
+     v.served+=usage?.servedWh||0;
+     return v;
+   },{demand:0,served:0});
+   entries.push(["Metered equipment delivery",s.last?
+     fmt(totals.served,2)+" / "+fmt(totals.demand,2)+" Wh this hour":"Awaiting next simulated hour"]);
+   for(const device of relevant.slice(0,16)){
+     const usage=byId.get(String(device.id));
+     entries.push([device.type+" #"+device.id,
+       fmt(device.nativeDailyDemandWh||0,1)+" Wh native daily demand · "+
+       (usage?(fmt(usage.servedWh,1)+"/"+fmt(usage.requestedWh,1)+" Wh delivered"):"not yet dispatched")]);
+   }
+   if(relevant.length>16)entries.push(["Other native fixtures",String(relevant.length-16)+" additional"]);
  }
  target.replaceChildren();
  if(!entries){const p=document.createElement("p");p.textContent="Select a building, PV array, water component, or animal area to see its model-driven connections.";target.append(p);return}
