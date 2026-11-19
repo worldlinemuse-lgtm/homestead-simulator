@@ -18,7 +18,6 @@ export function installFarmNativeStudy({$,coordinator,isPlaying,jumpToUtility,fo
  $("farmStudyRun").insertAdjacentElement("afterend",liveButton);
  liveButton.addEventListener("click",()=>{
   const host=$("farmStudyReport");
-  try{
   const changes=inputFields.map(([element,key])=>{
    const raw=$(element).value.trim(),value=raw===""?NaN:Number(raw);
    if(!Number.isFinite(value)||!Number.isSafeInteger(value)||value<0)
