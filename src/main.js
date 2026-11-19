@@ -332,7 +332,7 @@ function resetScenario(){
   return next;
 }
 $("resetBtn").addEventListener("click",()=>{stop();try{resetScenario();$("errors").style.display="none"}catch(e){fail(e)}});
-document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=b.dataset.view==="farm"?"Henhouse":null;selectArea(b.dataset.view);if(selected==="farm")jumpToUtility("assetReadout");$("sceneHint").textContent=selected==="farm"
+document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=b.dataset.view==="farm"?"Henhouse":null;selectArea(b.dataset.view);$("sceneHint").textContent=selected==="farm"
   ?"Tap an animal to follow · Drag to orbit · Pinch to zoom"
   :"Drag to orbit · Pinch to zoom · Select equipment";renderAsset(coordinator.snapshot())}));
 // Navigation is generated from the executable capability registry. A source
