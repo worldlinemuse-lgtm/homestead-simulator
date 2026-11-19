@@ -7,6 +7,17 @@
   "use strict";
   const GALLON_TO_LITER=3.78541, EPS=1e-8;
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+  // Public snapshots must not expose mutable nested engine/ledger objects.
+  // Copy only plain data; preserve numeric values without JSON coercion.
+  function copyData(value){
+    if(Array.isArray(value))return value.map(copyData);
+    if(value && typeof value==="object"){
+      const result={};
+      for(const [key,item] of Object.entries(value))result[key]=copyData(item);
+      return result;
+    }
+    return value;
+  }
   const must=(ok,message)=>{if(!ok)throw new Error(message)};
   function number(name,x,lower=0){must(Number.isFinite(x)&&x>=lower,name+" must be finite and >= "+lower);return x}
   const configDefaults=Object.freeze({
@@ -394,9 +405,9 @@
     }
     snapshot(){
       return {schema:1,model:"experimental-coupled-scenario",clock:{hours:this.hours,hourOfDay:(this.hours+this.startHour)%24,startHour:this.startHour,date:this.farmSnapshot.date},
-        batteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,waterStoredL:this.waterStoredL,config:{...this.cfg,solarHourlyWeather:this.cfg.solarHourlyWeather?.map(r=>({...r}))??null},farm:this.farmSnapshot,
+        batteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,waterStoredL:this.waterStoredL,config:copyData(this.cfg),farm:copyData(this.farmSnapshot),
         cumulative:{...this.cumulative},dailyResourceDelivery:{...this.dailyResourceDelivery},
-        completedResourceDays:this.completedResourceDays.map(d=>({...d})),last:this.last};
+        completedResourceDays:copyData(this.completedResourceDays),last:copyData(this.last)};
     }
   }
   root.HomesteadCoordinator=Object.freeze({Coordinator,solarEnvelopeW,allocateEnergy,configuration});
