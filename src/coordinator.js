@@ -213,6 +213,7 @@
       this.waterStoredL=this.cfg.waterStartL;
       this.cumulative={pvWh:0,baseWh:0,pumpWh:0,treatedL:0,waterConsumedL:0,overflowL:0,waterDeficitL:0,energyDeficitWh:0,farmElectricityServedWh:0,farmElectricityDeficitWh:0,farmWaterDeliveredL:0,farmWaterDeficitL:0,pumpElectricityRequestedWh:0,pumpElectricityDeficitWh:0,backgroundElectricityServedWh:0,backgroundElectricityDeficitWh:0};
       this.dailyResourceDelivery={hours:0,waterRequestedL:0,waterDeliveredL:0,electricityRequestedWh:0,electricityDeliveredWh:0};
+      this.dailyFarmDeliveryTrace=[];
       this.completedResourceDays=[];
       this.last=null;
       return this.snapshot();
@@ -335,6 +336,20 @@
         electricityRequestedWh:this.dailyResourceDelivery.electricityRequestedWh+farmDemandWh,
         electricityDeliveredWh:this.dailyResourceDelivery.electricityDeliveredWh+farmServedWh
       };
+      // Retain chronological metered deliveries so equipment-level dispatch can
+      // distinguish a daytime outage from an equivalent nighttime shortfall.
+      // This is accounting telemetry, not a claim of equipment-level effects.
+      const nextFarmDeliveryTrace=[...this.dailyFarmDeliveryTrace,{
+        hourIndex:this.hours,localHour:hour,
+        waterRequestedL:wantL,waterDeliveredL:consumedL,
+        electricityRequestedWh:farmDemandWh,electricityDeliveredWh:farmServedWh
+      }];
+      must(nextFarmDeliveryTrace.length===nextDailyDelivery.hours,
+        "Farm hourly delivery chronology mismatch");
+      const sum=(key)=>nextFarmDeliveryTrace.reduce((total,item)=>total+item[key],0);
+      for(const key of ["waterRequestedL","waterDeliveredL","electricityRequestedWh","electricityDeliveredWh"])
+        must(Math.abs(sum(key)-nextDailyDelivery[key])<1e-6,
+          "Farm hourly delivery reconciliation failed: "+key);
       // Operational supply is an observed physical delivery, not a fabricated
       // biological multiplier. Expose it at the Farm boundary for UI and future
       // native commands; shortages must never be reported as full operation.
@@ -354,7 +369,8 @@
         completedDelivery={...nextDailyDelivery,endingHour:nextHours,
           waterDeficitL:nextDailyDelivery.waterRequestedL-nextDailyDelivery.waterDeliveredL,
           electricityDeficitWh:nextDailyDelivery.electricityRequestedWh-nextDailyDelivery.electricityDeliveredWh,
-          operationalSupply:{...nextOperationalSupply}};
+          operationalSupply:{...nextOperationalSupply},
+          hourlyDeliveries:copyData(nextFarmDeliveryTrace)};
         // Native Farm is a singleton without a clone/rollback API. This ordering
         // protects physical state on a thrown advancement, but a Farm exception
         // after internal mutation still requires native engine rollback support.
@@ -401,8 +417,10 @@
       if(midnight){
         this.completedResourceDays.push(completedDelivery);
         this.dailyResourceDelivery={hours:0,waterRequestedL:0,waterDeliveredL:0,electricityRequestedWh:0,electricityDeliveredWh:0};
+        this.dailyFarmDeliveryTrace=[];
       }else{
         this.dailyResourceDelivery=nextDailyDelivery;
+        this.dailyFarmDeliveryTrace=nextFarmDeliveryTrace;
       }
       this.last={hour,day:this.farmSnapshot.date,
         pv,energy,water:{treatedL,waterStoredL:this.waterStoredL,consumedL,shortfallL,overflowL,waterResidual},
@@ -419,7 +437,7 @@
           ...(energy.unservedBaseWh>EPS?["Essential energy demand was not met. Farm biological effects NOT modeled."]:[]),
           ...(pumpDeficitWh>EPS?["Water pump electricity demand was not met; hydraulic production may be unavailable."]:[]),
           ...(farmUnservedWh>EPS?["Farm electrical demand was not met. Full-day blackout effects are modeled at midnight; partial electrical shortages are not equipment-resolved."]:[]),
-          ...(shortfallL>EPS?["Farm water demand was not met. Farm biological effects NOT modeled."]:[]),
+          ...(shortfallL>EPS?["Farm water demand was not met. Native water-shortage effects are applied at the next biological day boundary."]:[]),
           ...(pv.status!=="estimated"&&pv.status!=="no_sun"?["Solar PV reference unavailable: "+pv.status]:[])
         ]};
       return this.snapshot();
@@ -427,7 +445,7 @@
     snapshot(){
       return {schema:1,model:"experimental-coupled-scenario",clock:{hours:this.hours,hourOfDay:(this.hours+this.startHour)%24,startHour:this.startHour,date:this.farmSnapshot.date},
         batteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,waterStoredL:this.waterStoredL,config:copyData(this.cfg),farm:copyData(this.farmSnapshot),
-        cumulative:{...this.cumulative},dailyResourceDelivery:{...this.dailyResourceDelivery},
+        cumulative:{...this.cumulative},dailyResourceDelivery:{...this.dailyResourceDelivery},dailyFarmDeliveryTrace:copyData(this.dailyFarmDeliveryTrace),
         completedResourceDays:copyData(this.completedResourceDays),last:copyData(this.last)};
     }
   }
