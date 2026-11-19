@@ -359,8 +359,11 @@
         // protects physical state on a thrown advancement, but a Farm exception
         // after internal mutation still requires native engine rollback support.
         const previousFarmDay=this.farmSnapshot.day;
-        this.farm.advanceDay({waterCoverage:nextOperationalSupply.waterCoverage});
+        this.farm.advanceDay({waterCoverage:nextOperationalSupply.waterCoverage,
+          electricityCoverage:nextOperationalSupply.electricityCoverage});
         nextOperationalSupply.biologicalEffectsApplied=true;
+        nextOperationalSupply.electricityBlackoutEffectsApplied=nextOperationalSupply.electricityCoverage===0;
+        nextOperationalSupply.partialElectricityEffectsModeled=false;
         nextFarmSnapshot=this.farm.snapshot();
         // Reject a silently failed or malformed native advance before committing
         // electricity, water, clock, or the completed delivery record.
@@ -415,7 +418,7 @@
         warnings:[
           ...(energy.unservedBaseWh>EPS?["Essential energy demand was not met. Farm biological effects NOT modeled."]:[]),
           ...(pumpDeficitWh>EPS?["Water pump electricity demand was not met; hydraulic production may be unavailable."]:[]),
-          ...(farmUnservedWh>EPS?["Farm electrical demand was not met. Farm biological effects NOT modeled."]:[]),
+          ...(farmUnservedWh>EPS?["Farm electrical demand was not met. Full-day blackout effects are modeled at midnight; partial electrical shortages are not equipment-resolved."]:[]),
           ...(shortfallL>EPS?["Farm water demand was not met. Farm biological effects NOT modeled."]:[]),
           ...(pv.status!=="estimated"&&pv.status!=="no_sun"?["Solar PV reference unavailable: "+pv.status]:[])
         ]};
