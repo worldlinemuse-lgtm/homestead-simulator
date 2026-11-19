@@ -381,7 +381,8 @@
       const nextFarmDeliveryTrace=[...this.dailyFarmDeliveryTrace,{
         hourIndex:this.hours,localHour:hour,
         waterRequestedL:wantL,waterDeliveredL:consumedL,
-        electricityRequestedWh:farmDemandWh,electricityDeliveredWh:farmServedWh
+        electricityRequestedWh:farmDemandWh,electricityDeliveredWh:farmServedWh,
+        equipment:copyData(farmEquipment)
       }];
       must(nextFarmDeliveryTrace.length===nextDailyDelivery.hours,
         "Farm hourly delivery chronology mismatch");
@@ -401,6 +402,30 @@
         source:"metered_solar_water_farm_delivery",
         biologicalEffectsApplied:false
       };
+
+      // Device operating history is computed from actual hour-by-hour transfers.
+      // An identical daily aggregate can mask a different outage chronology.
+      const deviceTotals=new Map();
+      for(const interval of nextFarmDeliveryTrace){
+        for(const item of interval.equipment){
+          const total=deviceTotals.get(item.id)||{id:item.id,type:item.type,requestedWh:0,servedWh:0};
+          total.requestedWh+=item.requestedWh;
+          total.servedWh+=item.servedWh;
+          deviceTotals.set(item.id,total);
+        }
+      }
+      const completedEquipment=[...deviceTotals.values()].map(d=>({
+        ...d,deficitWh:Math.max(0,d.requestedWh-d.servedWh),
+        coverage:d.requestedWh>0?clamp(d.servedWh/d.requestedWh,0,1):
+          (nextOperationalSupply.electricityCoverage>0?1:0)
+      }));
+      must(Math.abs(completedEquipment.reduce((sum,d)=>sum+d.requestedWh,0)-
+        nextDailyDelivery.electricityRequestedWh)<1e-6 &&
+        Math.abs(completedEquipment.reduce((sum,d)=>sum+d.servedWh,0)-
+        nextDailyDelivery.electricityDeliveredWh)<1e-6,
+        "Device day ledger does not reconcile with metered energy");
+      const equipmentCoverageById=Object.fromEntries(completedEquipment
+        .filter(d=>d.type!=="unattributed").map(d=>[d.id,d.coverage]));
       const nextHours=this.hours+1;
       const midnight=(nextHours+this.startHour)%24===0;
       let nextFarmSnapshot=this.farmSnapshot, completedDelivery=null;
@@ -409,16 +434,20 @@
           waterDeficitL:nextDailyDelivery.waterRequestedL-nextDailyDelivery.waterDeliveredL,
           electricityDeficitWh:nextDailyDelivery.electricityRequestedWh-nextDailyDelivery.electricityDeliveredWh,
           operationalSupply:{...nextOperationalSupply},
-          hourlyDeliveries:copyData(nextFarmDeliveryTrace)};
+          hourlyDeliveries:copyData(nextFarmDeliveryTrace),
+          equipment:copyData(completedEquipment)};
         // Native Farm is a singleton without a clone/rollback API. This ordering
         // protects physical state on a thrown advancement, but a Farm exception
         // after internal mutation still requires native engine rollback support.
         const previousFarmDay=this.farmSnapshot.day;
         this.farm.advanceDay({waterCoverage:nextOperationalSupply.waterCoverage,
-          electricityCoverage:nextOperationalSupply.electricityCoverage});
+          electricityCoverage:nextOperationalSupply.electricityCoverage,
+          equipmentCoverageById});
         nextOperationalSupply.biologicalEffectsApplied=true;
         nextOperationalSupply.electricityBlackoutEffectsApplied=nextOperationalSupply.electricityCoverage===0;
-        nextOperationalSupply.partialElectricityEffectsModeled=false;
+        nextOperationalSupply.partialElectricityEffectsModeled=true;
+        nextOperationalSupply.equipmentOperatingCoverage=copyData(equipmentCoverageById);
+        completedDelivery.operationalSupply=copyData(nextOperationalSupply);
         nextFarmSnapshot=this.farm.snapshot();
         // Reject a silently failed or malformed native advance before committing
         // electricity, water, clock, or the completed delivery record.
@@ -466,16 +495,18 @@
         resourceAudit,
         electricalLoads:{backgroundRequestedWh:cfg.backgroundLoadW,backgroundServedWh,backgroundDeficitWh,
           pumpRequestedWh:requestedPumpWh,pumpServedWh:energy.servedPumpWh,pumpDeficitWh,
-          farmRequestedWh:farmDemandWh,farmServedWh,farmDeficitWh:farmUnservedWh},
+          farmRequestedWh:farmDemandWh,farmServedWh,farmDeficitWh:farmUnservedWh,
+          equipment:copyData(farmEquipment)},
         farm:{dailyDemandWaterL:farmDailyWaterL,dailyDemandKWh:farmDailyKWh,
           hourlyElectricityDemandWh:farmDemandWh,electricityServedWh:farmServedWh,
           electricityDeficitWh:farmUnservedWh,
           hourlyWaterDemandL:wantL,waterDeliveredL:consumedL,waterDeficitL:shortfallL,
-          counts:this.farmSnapshot.counts,operationalSupply:{...nextOperationalSupply}},
+          counts:this.farmSnapshot.counts,operationalSupply:{...nextOperationalSupply},
+          equipment:copyData(farmEquipment)},
         warnings:[
           ...(energy.unservedBaseWh>EPS?["Essential energy demand was not met. Farm biological effects NOT modeled."]:[]),
           ...(pumpDeficitWh>EPS?["Water pump electricity demand was not met; hydraulic production may be unavailable."]:[]),
-          ...(farmUnservedWh>EPS?["Farm electrical demand was not met. Full-day blackout effects are modeled at midnight; partial electrical shortages are not equipment-resolved."]:[]),
+          ...(farmUnservedWh>EPS?["Farm electricity shortage: source-native device operating coverage is applied at midnight; partial thermal and incubation effects remain approximate."]:[]),
           ...(shortfallL>EPS?["Farm water demand was not met. Native water-shortage effects are applied at the next biological day boundary."]:[]),
           ...(pv.status!=="estimated"&&pv.status!=="no_sun"?["Solar PV reference unavailable: "+pv.status]:[])
         ]};
@@ -484,6 +515,7 @@
     snapshot(){
       return {schema:1,model:"experimental-coupled-scenario",clock:{hours:this.hours,hourOfDay:(this.hours+this.startHour)%24,startHour:this.startHour,date:this.farmSnapshot.date},
         batteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,waterStoredL:this.waterStoredL,config:copyData(this.cfg),farm:copyData(this.farmSnapshot),
+        farmEquipment:copyData(this.farm.equipmentSnapshot()),
         cumulative:{...this.cumulative},dailyResourceDelivery:{...this.dailyResourceDelivery},dailyFarmDeliveryTrace:copyData(this.dailyFarmDeliveryTrace),
         farmEquipment:this.farm.equipmentSnapshot(),
         completedResourceDays:copyData(this.completedResourceDays),last:copyData(this.last)};
