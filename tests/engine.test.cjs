@@ -794,3 +794,22 @@ test("nested public snapshots cannot mutate authoritative Farm or resource histo
  assert.notEqual(b.last.energy.nativeBattery.chargePhase,"corrupted");
  assert.equal(c.stepHour().clock.hours,16);
 });
+
+test("native Farm setting commands update the coordinator demand source",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator();
+ const day=c.snapshot().farm.day;
+ assert.equal(typeof c.setFarmParameter,"function");
+ assert.throws(()=>c.setFarmParameter("not_a_farm_setting",1),/Unknown farm parameter/);
+ assert.throws(()=>c.setFarmParameter("ck_rank_loss",NaN),/finite/);
+ const updated=c.setFarmParameter("ck_rank_loss",20);
+ assert.equal(updated.farm.day,day);
+ assert.equal(JSON.stringify(updated.farm),JSON.stringify(c.farm.snapshot()),
+   "coordinator must expose the refreshed original Farm state");
+ assert.ok(Number.isFinite(updated.farm.daily.waterGal));
+ assert.ok(Number.isFinite(updated.farm.daily.kWh));
+ const next=c.stepHour();
+ assert.equal(next.clock.hours,1);
+ assert.equal(next.last.farm.dailyDemandWaterL,
+   updated.farm.daily.waterGal*3.78541);
+ assert.equal(next.last.farm.dailyDemandKWh,updated.farm.daily.kWh);
+});
