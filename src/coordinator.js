@@ -161,6 +161,44 @@
         absorptionMinutesBefore:absorptionMinutes,absorptionMinutesAfter:nextAbsorptionMinutes,
         effectiveDischargeEfficiency:nativeDischargeEfficiency}};
   }
+
+  // Dispatch source-native electrical demand across identifiable fixtures.
+  // Partial supply is shared proportionally; no hidden equipment priority.
+  function dispatchFarmEquipment(devices,requestWh,servedWh){
+    number("Farm equipment requested Wh",requestWh);
+    number("Farm equipment served Wh",servedWh);
+    must(servedWh<=requestWh+EPS,"Farm equipment cannot consume more than demanded");
+    must(Array.isArray(devices),"Native Farm equipment snapshot required");
+    const used=new Set();
+    const items=devices.map(d=>{
+      must(d && (typeof d.id==="number" || typeof d.id==="string"),"Farm device ID required");
+      const id=String(d.id);
+      must(!used.has(id),"Duplicate native Farm device ID "+id);
+      used.add(id);
+      return {id,type:d.type,nativeDailyDemandWh:number("Native equipment daily Wh",d.nativeDailyDemandWh)};
+    });
+    const nativeTotal=items.reduce((sum,d)=>sum+d.nativeDailyDemandWh,0);
+    must(Number.isFinite(nativeTotal),"Native Farm demand overflow");
+    if(nativeTotal===0 && requestWh>0)items.push({id:"unattributed_native_farm_load",type:"unattributed",nativeDailyDemandWh:requestWh});
+    const total=items.reduce((sum,d)=>sum+d.nativeDailyDemandWh,0);
+    let leftRequest=requestWh,leftServed=servedWh;
+    let last=-1;
+    items.forEach((d,i)=>{if(d.nativeDailyDemandWh>0)last=i});
+    const allocation=items.map((d,i)=>{
+      const requestedWh=total>0?(i===last?leftRequest:requestWh*d.nativeDailyDemandWh/total):0;
+      const deliveredWh=total>0?(i===last?leftServed:servedWh*d.nativeDailyDemandWh/total):0;
+      leftRequest-=requestedWh;leftServed-=deliveredWh;
+      must(requestedWh>=-EPS && deliveredWh>=-EPS && deliveredWh<=requestedWh+EPS,"Farm equipment dispatch failed "+d.id);
+      return {...d,requestedWh:Math.max(0,requestedWh),servedWh:Math.max(0,deliveredWh),
+        deficitWh:Math.max(0,requestedWh-deliveredWh),
+        coverage:requestedWh>0?clamp(deliveredWh/requestedWh,0,1):1};
+    });
+    const totalOf=key=>allocation.reduce((sum,d)=>sum+d[key],0);
+    must(Math.abs(totalOf("requestedWh")-requestWh)<1e-6 &&
+      Math.abs(totalOf("servedWh")-servedWh)<1e-6,
+      "Native equipment deliveries do not reconcile with the energy ledger");
+    return allocation;
+  }
   function configuration(overrides={}){
     const c={...configDefaults,...overrides};
     if(c.solarHourlyWeather!==null){
@@ -255,7 +293,7 @@
     stepHour(){
       const cfg=this.cfg, hour=(this.hours+this.startHour)%24, dayRecord=this.farmSnapshot.daily;
       must(dayRecord && typeof dayRecord==="object", "Native Farm daily demand unavailable");
-      const farmDailyKWh=number("farm kWh",dayRecord.kWh);
+      const farmDailyKWh=number("farm kWh",dayRecord.nativeElectricityRequestedKWh??dayRecord.kWh);
       const farmDailyWaterL=number("farm gal",dayRecord.waterGal)*GALLON_TO_LITER;
       const weatherDay=Math.floor((this.hours+this.startHour)/24);
       const pv=solarEnvelopeW(hour,cfg,weatherDay);
@@ -269,6 +307,7 @@
       const backgroundServedWh=Math.min(cfg.backgroundLoadW,energy.servedBaseWh);
       const farmServedWh=energy.servedFarmWh;
       const farmUnservedWh=farmDemandWh-farmServedWh;
+      const farmEquipment=dispatchFarmEquipment(this.farm.equipmentSnapshot(),farmDemandWh,farmServedWh);
       const backgroundDeficitWh=cfg.backgroundLoadW-backgroundServedWh;
       const pumpDeficitWh=requestedPumpWh-energy.servedPumpWh;
       must(pumpDeficitWh>=-EPS && backgroundDeficitWh>=-EPS &&
@@ -450,5 +489,5 @@
         completedResourceDays:copyData(this.completedResourceDays),last:copyData(this.last)};
     }
   }
-  root.HomesteadCoordinator=Object.freeze({Coordinator,solarEnvelopeW,allocateEnergy,configuration});
+  root.HomesteadCoordinator=Object.freeze({Coordinator,solarEnvelopeW,allocateEnergy,dispatchFarmEquipment,configuration});
 })(globalThis);
