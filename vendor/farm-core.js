@@ -2332,7 +2332,12 @@ function step(supply) {
           }
         }
         const lf = layFactors(a, m, L, nestF, run); // today's chance of an egg (lf.p) and the factors behind it
-        if (rngNext() < lf.p) {
+        // Original Farm research (Penn State): hens deprived of water for over
+        // 12 hours stop laying. A metered zero-delivery day is 24 hours dry.
+        // Do not invent a proportional laying penalty for partial-day delivery:
+        // daily totals alone cannot establish deprivation duration.
+        // Always draw the original RNG sample to preserve seeded chronology.
+        if (rngNext() < lf.p && waterCoverage > 0) {
           a.eggs++;
           d.eggs++;
           S.tot.eggsLaid++;
