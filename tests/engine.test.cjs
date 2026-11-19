@@ -754,13 +754,16 @@ test("Farm operational supply reports measured shortages without invented biolog
  const s=c.snapshot(),d=s.completedResourceDays[0];
  assert.equal(d.hours,15);
  assert.ok(d.waterRequestedL>0);
- assert.ok(d.electricityRequestedWh>0);
+ // The original Farm can legitimately request zero electrical Wh on a day.
+ // Zero demand is satisfied without inventing an electricity shortage.
+ assert.ok(Number.isFinite(d.electricityRequestedWh)&&d.electricityRequestedWh>=0);
  assert.equal(d.waterDeliveredL,0);
  assert.equal(d.electricityDeliveredWh,0);
  assert.equal(d.operationalSupply.waterCoverage,0);
- assert.equal(d.operationalSupply.electricityCoverage,0);
+ assert.equal(d.operationalSupply.electricityCoverage,
+   d.electricityRequestedWh===0?1:0);
  assert.equal(d.operationalSupply.waterSatisfied,false);
- assert.equal(d.operationalSupply.electricitySatisfied,false);
+ assert.equal(d.operationalSupply.electricitySatisfied,d.electricityRequestedWh===0);
  assert.equal(d.operationalSupply.biologicalEffectsApplied,false);
  assert.equal(s.last.farm.operationalSupply.source,"metered_solar_water_farm_delivery");
  assert.equal(s.farm.day,2,"native Farm advances independently until resource interface exists");

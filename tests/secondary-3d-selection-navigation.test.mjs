@@ -12,7 +12,7 @@ function between(start,end){
  assert.ok(j>i,"Missing end of source handler: "+end);
  return source.slice(i+start.length,j);
 }
-const picker=between('try{scene=makeScene($("world"),(kind,label)=>{',
+const picker=between('try{scene=makeScene($("world"),(kind,label,options={})=>{',
  '},farmVisual);selectArea("overview");redraw(coordinator.snapshot());');
 const jump=between('function jumpToUtility(sectionId){',
  'function renderUtilityDirectory(search=""){');
@@ -49,16 +49,17 @@ function harness(){
   "const $=id=>elements[id];",
   "function selectArea(kind){selected=kind;}",
   "function setInspectorOpen(open){}",
+  "function editMessage(message){}",
   "function renderAsset(){}",
   "function refreshObjectEditor(){}",
   "function jumpToUtility(sectionId){"+jump,
-  "const onPick=(kind,label)=>{"+picker+"};",
+  "const onPick=(kind,label,options={})=>{"+picker+"};",
   "const state=()=>({selectedAsset,selectedWaterRole,selected,title:$(\"inspectTitle\").textContent,batteryReturnVisible:!$(\"solarBatteryReturn\").hidden,farmReturnVisible:!$(\"farmStudyReturn\").hidden,waterReturnVisible:!$(\"waterAssetReturn\").hidden});"
  ].join("\n");
  vm.runInContext(program,ctx,{timeout:1500});
  const exec=js=>vm.runInContext(js,ctx,{timeout:1500});
  return {
-  pick:(kind,label)=>exec("onPick("+JSON.stringify(kind)+","+JSON.stringify(label)+")"),
+  pick:(kind,label,options={})=>exec("onPick("+JSON.stringify(kind)+","+JSON.stringify(label)+","+JSON.stringify(options)+")"),
   ret:()=>exec('jumpToUtility("assetReadout")'),
   state:()=>structuredClone(exec("state()")),
   focus:()=>focused,
@@ -99,4 +100,14 @@ test("3D Farm rabbit selection restores its identity after native Farm study",()
  ui.ret();
  assert.equal(ui.state().title,"Rabbit #12");
  assert.equal(ui.focus(),"assetReadout");
+});
+
+// Dragging does not force navigation into a utility panel or advance the model.
+test("source-style direct dragging preserves viewport and leaves the native study unopened",()=>{
+ const ui=harness();
+ ui.pick("water","Water pressure pump",{silentInspector:true});
+ assert.equal(ui.state().selectedAsset,"Water pressure pump");
+ assert.equal(ui.route(),null,"drag must not open a calculator or move the viewport");
+ assert.equal(ui.focus(),null,"drag must not steal keyboard focus from the 3D canvas");
+ assert.equal(ui.reads(),1,"drag should only refresh the current native snapshot");
 });
