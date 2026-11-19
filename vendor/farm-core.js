@@ -6576,5 +6576,38 @@ function equipmentSnapshot(){
   });
 }
 
-return Object.freeze({reset,advanceDay,snapshot,setParameter,nativeVisual,equipmentSnapshot});
+
+ // Homestead exposes the ORIGINAL individual building fields, not new global
+ // proxy settings. Changes take effect on the current singleton farm state.
+ function setEquipmentParameter(id,key,value){
+   if(!Number.isSafeInteger(Number(id)))throw new RangeError('Native Farm equipment ID must be an integer');
+   const c=S.comps.find(part=>part.id===Number(id));
+   if(!c)throw new RangeError('Unknown native Farm equipment ID '+id);
+   const allowed={
+     hutch:['lights','lightHours','lightWatts'],
+     coop:['lights','lightHours','lightWatts'],
+     fan:['watts','trigger'],
+     heater:['watts','setpoint'],
+     brooder:['lampWatts'],
+     incubator:['on','watts','setpoint']
+   };
+   if(!allowed[c.type] || !allowed[c.type].includes(key) ||
+      !Object.prototype.hasOwnProperty.call(TYPES[c.type].props,key))
+     throw new RangeError('Unsupported original Farm equipment property '+key);
+   if(!Number.isFinite(value))throw new RangeError('Farm equipment value must be finite');
+   if(key==='lights'||key==='on'){
+     if(value!==0 && value!==1)throw new RangeError('Native Farm equipment toggle must be 0 or 1');
+   }else if(key==='lightHours'){
+     if(value<0||value>24)throw new RangeError('Native Farm light hours must be 0..24');
+   }else if(key==='trigger'||key==='setpoint'){
+     if(value < -20 || value > 140)throw new RangeError('Native Farm temperature setting outside -20..140 F');
+   }else if(value<0 || value>10000){
+     throw new RangeError('Native Farm equipment watts outside 0..10000 W');
+   }
+   c[key]=value;
+   refreshToday();
+   return equipmentSnapshot().find(part=>part.id===c.id);
+ }
+
+return Object.freeze({reset,advanceDay,snapshot,setParameter,setEquipmentParameter,nativeVisual,equipmentSnapshot});
 })();
