@@ -884,3 +884,27 @@ test("native chicken laying stops under a full day of zero delivered water",()=>
  assert.equal(dry.reduce((sum,day)=>sum+day.daily.eggs,0),0,
    "24-hour deprivation must stop native chicken egg production");
 });
+
+test("native Farm electrical blackout disables powered equipment without inventing partial outage behavior",()=>{
+ const f=ctx.HomesteadFarmCore;
+ f.reset(29);
+ const baseline=f.advanceDay();
+ f.reset(29);
+ const full=f.advanceDay({waterCoverage:1,electricityCoverage:1});
+ assert.equal(JSON.stringify(full),JSON.stringify(baseline),"full power must retain native source parity");
+ f.reset(29);
+ const partial=f.advanceDay({waterCoverage:1,electricityCoverage:0.5});
+ assert.equal(JSON.stringify(partial),JSON.stringify(baseline),
+   "daily aggregate partial power cannot determine equipment outages");
+ f.reset(29);
+ const dark=f.advanceDay({waterCoverage:1,electricityCoverage:0});
+ assert.equal(dark.daily.kWh,0,"full blackout must not consume powered fixture energy");
+ f.reset(29);
+ assert.equal(JSON.stringify(f.advanceDay({waterCoverage:1,electricityCoverage:0})),JSON.stringify(dark),
+   "native blackout must replay deterministically");
+ for(const invalid of [-0.01,1.01,NaN,Infinity]){
+   f.reset(29);
+   assert.throws(()=>f.advanceDay({waterCoverage:1,electricityCoverage:invalid}),/electricity coverage/);
+   assert.equal(f.snapshot().day,0,"invalid electricity coverage must not advance biological clock");
+ }
+});
