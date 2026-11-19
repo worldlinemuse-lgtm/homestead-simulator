@@ -388,7 +388,8 @@ $("solarWeatherClear").addEventListener("click",()=>{
 });
 syncLiveSolarWeather();
 
-const farmStudyUI=installFarmNativeStudy({$,coordinator,isPlaying:()=>playing,jumpToUtility,fmt,\n onLiveUpdate:state=>redraw(state),
+const farmStudyUI=installFarmNativeStudy({$,coordinator,isPlaying:()=>playing,jumpToUtility,fmt,
+ onLiveUpdate:state=>redraw(state),
  focusFarm:()=>{
   if(!scene)throw new Error("Original Farm 3D scene unavailable");
   scene.go("farmStudy");setInspectorOpen(false);
