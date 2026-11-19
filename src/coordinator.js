@@ -551,7 +551,6 @@
         farmEquipment:copyData(typeof this.farm.equipmentSnapshot==="function"?
           this.farm.equipmentSnapshot():[]),
         cumulative:{...this.cumulative},dailyResourceDelivery:{...this.dailyResourceDelivery},dailyFarmDeliveryTrace:copyData(this.dailyFarmDeliveryTrace),
-        farmEquipment:this.farm.equipmentSnapshot(),
         completedResourceDays:copyData(this.completedResourceDays),last:copyData(this.last)};
     }
   }
