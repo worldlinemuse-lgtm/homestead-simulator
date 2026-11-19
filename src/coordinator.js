@@ -446,6 +446,7 @@
       return {schema:1,model:"experimental-coupled-scenario",clock:{hours:this.hours,hourOfDay:(this.hours+this.startHour)%24,startHour:this.startHour,date:this.farmSnapshot.date},
         batteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,waterStoredL:this.waterStoredL,config:copyData(this.cfg),farm:copyData(this.farmSnapshot),
         cumulative:{...this.cumulative},dailyResourceDelivery:{...this.dailyResourceDelivery},dailyFarmDeliveryTrace:copyData(this.dailyFarmDeliveryTrace),
+        farmEquipment:this.farm.equipmentSnapshot(),
         completedResourceDays:copyData(this.completedResourceDays),last:copyData(this.last)};
     }
   }
