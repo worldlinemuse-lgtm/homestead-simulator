@@ -764,7 +764,7 @@ test("Farm operational supply reports measured shortages without invented biolog
    d.electricityRequestedWh===0?1:0);
  assert.equal(d.operationalSupply.waterSatisfied,false);
  assert.equal(d.operationalSupply.electricitySatisfied,d.electricityRequestedWh===0);
- assert.equal(d.operationalSupply.biologicalEffectsApplied,false);
+ assert.equal(d.operationalSupply.biologicalEffectsApplied,true);
  assert.equal(s.last.farm.operationalSupply.source,"metered_solar_water_farm_delivery");
  assert.equal(s.farm.day,2,"native Farm advances independently until resource interface exists");
 });
@@ -812,4 +812,38 @@ test("native Farm setting commands update the coordinator demand source",()=>{
  assert.equal(next.last.farm.dailyDemandWaterL,
    updated.farm.daily.waterGal*3.78541);
  assert.equal(next.last.farm.dailyDemandKWh,updated.farm.daily.kWh);
+});
+
+test("native rabbit biology uses measured water coverage and preserves full-supply parity",()=>{
+ const f=ctx.HomesteadFarmCore;
+ f.reset(29);
+ const baseline=f.advanceDay();
+ f.reset(29);
+ const fullySupplied=f.advanceDay({waterCoverage:1});
+ assert.equal(JSON.stringify(fullySupplied),JSON.stringify(baseline),
+   "fully supplied integrated Farm must match native standalone behavior");
+ f.reset(29);
+ const dry=f.advanceDay({waterCoverage:0});
+ assert.equal(dry.daily.rFeed,0);
+ assert.equal(dry.daily.waterGal>=0,true);
+ const rabbits0=baseline.animals.filter(a=>a.sp==="rabbit");
+ const rabbitsDry=dry.animals.filter(a=>a.sp==="rabbit");
+ assert.equal(rabbits0.length,rabbitsDry.length);
+ assert.ok(rabbitsDry.every((a,i)=>a.wt<=rabbits0[i].wt+1e-9),
+   "water-limited rabbit growth must not exceed full supply");
+ f.reset(29);
+ assert.throws(()=>f.advanceDay({waterCoverage:-0.01}),/water coverage/);
+ assert.equal(f.snapshot().day,0,"invalid delivery must not advance Farm day");
+ f.reset(29);
+ assert.throws(()=>f.advanceDay({waterCoverage:NaN}),/water coverage/);
+});
+test("coupled midnight sends metered shortage into native Farm biology",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({waterStorageCapacityL:0,waterStartL:0});
+ let result;
+ for(let i=0;i<24;i++)result=c.stepHour();
+ const day=result.completedResourceDays[0];
+ assert.equal(day.waterDeliveredL,0);
+ assert.equal(day.operationalSupply.waterCoverage,0);
+ assert.equal(day.operationalSupply.biologicalEffectsApplied,true);
+ assert.equal(result.farm.daily.rFeed,0);
 });
