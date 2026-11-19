@@ -6528,5 +6528,19 @@ const nativeVisual=(function(){
   return Object.freeze({init,sync,frame,world:()=>WV,stats});
 })();
 
-return Object.freeze({reset,advanceDay,snapshot,setParameter,nativeVisual});
+// Native equipment identities and source settings, read-only to the Homestead coordinator.
+// The original Farm model remains authoritative for equipment demand and biology.
+function equipmentSnapshot(){
+  const powered=new Set(['hutch','coop','fan','heater','brooder','incubator']);
+  return S.comps.filter(c=>powered.has(c.type)).map(c=>{
+    const animals=S.animals.filter(a=>a.enc===c.id && !a.sold && !a.retired);
+    return {id:c.id,type:c.type,x:c.x,y:c.y,w:c.w,d:c.d,
+      animalCount:animals.length,incubatingEggCount:S.eggsInc.filter(e=>e.inc===c.id).length,
+      lights:Boolean(+c.lights),lightWatts:c.lightWatts??0,lightHours:c.lightHours??0,
+      watts:c.watts??0,trigger:c.trigger??null,setpoint:c.setpoint??null,
+      lampWatts:c.lampWatts??0,on:Boolean(+c.on)};
+  });
+}
+
+return Object.freeze({reset,advanceDay,snapshot,setParameter,nativeVisual,equipmentSnapshot});
 })();
