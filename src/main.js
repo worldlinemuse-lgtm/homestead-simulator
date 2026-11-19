@@ -21,6 +21,7 @@ const timeline=new ScenarioTimeline(5);
 let previousFrame=null,lastClockPaint=0;
 let selectedAsset=null;
 let selectedWaterRole=null;
+let selectedFarmDeviceId=null,selectedFarmDeviceKey=null;
 function fail(e){playing=false;scene?.setPlayback(false);$("playBtn").textContent="▶ Play";$("errors").textContent="Simulation stopped: "+(e?.message||e);$("errors").style.display="block";console.error(e);}
 const descriptions={
  overview:["Whole homestead","Energy production, water treatment and animal demand connected through one chronological ledger."],
@@ -28,18 +29,18 @@ const descriptions={
  water:["Water treatment","The original Water simulator's pump and reverse-osmosis hydraulic network advances treatment and storage. Electrical input is assumed."],
  farm:["Rabbit & chicken area","Rabbits, chickens and daily resource demands come from the original seeded Farm biological engine. Visual movement does not affect biology."]
 };
-function selectArea(kind){selected=kind in descriptions?kind:"overview";document.querySelectorAll("nav [data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===selected));$("inspectTitle").textContent=descriptions[selected][0];$("inspectDescription").textContent=descriptions[selected][1];scene?.go(selected);}
+function selectArea(kind,moveCamera=true){selected=kind in descriptions?kind:"overview";document.querySelectorAll("nav [data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===selected));$("inspectTitle").textContent=descriptions[selected][0];$("inspectDescription").textContent=descriptions[selected][1];if(moveCamera)scene?.go(selected);}
 function refreshObjectEditor(){
  if(!scene?.editor)return;
  const list=scene.editor.list(),current=scene.editor.selected();
  const sel=$("objectList"),old=sel.value;
  sel.replaceChildren();
  for(const item of list){const opt=document.createElement("option");
-  opt.value=item.id;opt.textContent=item.label+(item.locked?" (garden)":" · "+item.type);
+  opt.value=item.id;opt.textContent=item.label+(item.site?" · layout position":item.locked?" · native garden":" · "+item.type);
   sel.append(opt)}
  sel.value=current.id;
- $("objectRemove").disabled=current.id==="garden";
- $("objectSwap").disabled=current.id==="garden";
+ $("objectRemove").disabled=current.locked;
+ $("objectSwap").disabled=current.locked;
 }
 function editMessage(message,error=false){
  $("editStatus").textContent=message;$("editStatus").style.color=error?"#ffb8a5":"#bfe8ce";
@@ -63,19 +64,29 @@ function renderAsset(s){
   ],
   "Battery storage module":[
     ["Battery energy",fmt(s.batteryWh/1000,2)+" kWh (experimental live model)"],
-    ["Live dispatch","Experimental; not original Solar battery characterization"],
-    ["Engineering controls","Select source AGM/LFP charging and discharge study below"]
+    ["Native Solar chemistry",l?(e.nativeBattery.chemistry.toUpperCase()+" · "+fmt(e.nativeBattery.temperatureC,0)+" °C"):"Awaiting first hour"],
+    ["Native discharge factor",l?fmt(e.nativeBattery.dischargeMultiplier,3)+" × at "+fmt(e.nativeBattery.dischargeCurrentA,2)+" A":"—"],
+    ["Native charging phase",l?(e.nativeBattery.chargePhase+" · "+fmt(e.nativeBattery.chargeCurrentMultiplier,3)+" × taper"):"—"],
+    ["Charging limit",l?fmt(e.nativeBattery.chargeLimitWh,1)+" Wh this hour":"—"],
+    ["Native source","Original Solar battery chemistry/rate/temperature and absorption; scenario electrical assumptions remain"]
   ],
   "Solar inverter and battery":[
     ["Battery energy",fmt(s.batteryWh/1000,2)+" kWh"],
     ["Battery maximum",fmt(s.config.batteryCapacityWh/1000,1)+" kWh assumed"],
     ["Supply to site",l?fmt(e.servedBaseWh,1)+" Wh this hour":"—"],
-    ["Authority","Experimental dispatch; not the original live Solar dispatcher"]
+    ["Battery discharge to loads",l?fmt(e.batteryBaseWh+e.batteryPumpWh,1)+" Wh":"—"],
+    ["Battery charging",l?fmt(e.chargeStoredWh,1)+" Wh stored":"—"],
+    ["Battery losses",l?fmt(e.dischargeLossWh+e.chargeLossWh,1)+" Wh":"—"],
+    ["Authority","Original Solar battery rate and absorption functions; full inverter/MPPT dispatch not yet native"]
   ],
   "Home and utility loads":[
     ["Site background demand",fmt(s.config.backgroundLoadW,0)+" W assumed"],
     ["Demand served",l?fmt(e.servedBaseWh,1)+" Wh total":"—"],
-    ["Unserved demand",l?fmt(e.unservedBaseWh,1)+" Wh":"—"]
+    ["Unserved demand",l?fmt(e.unservedBaseWh,1)+" Wh":"—"],
+    ["Background electricity",l?fmt(l.electricalLoads.backgroundServedWh,1)+"/"+fmt(l.electricalLoads.backgroundRequestedWh,1)+" Wh":"—"],
+    ["Farm electricity",l?fmt(l.electricalLoads.farmServedWh,1)+"/"+fmt(l.electricalLoads.farmRequestedWh,1)+" Wh":"—"],
+    ["Pump electricity",l?fmt(l.electricalLoads.pumpServedWh,1)+"/"+fmt(l.electricalLoads.pumpRequestedWh,1)+" Wh":"—"],
+    ["Total electrical deficit",l?fmt(l.electricalLoads.backgroundDeficitWh+l.electricalLoads.farmDeficitWh+l.electricalLoads.pumpDeficitWh,1)+" Wh":"—"]
   ],
   "Water treatment and storage":[
     ["Pump energized",l?(e.pumpEnabled?"Yes":"No"):"Not run"],
@@ -104,18 +115,23 @@ function renderAsset(s){
   "Livestock waterer":[
     ["Farm delivery",l?fmt(w.consumedL,2)+" L":"—"],
     ["Unmet demand",l?fmt(w.shortfallL,2)+" L":"—"],
+    ["Hourly modeled demand",l?fmt(l.farm.hourlyWaterDemandL,2)+" L":"—"],
+    ["Cumulative farm water delivered",fmt(s.cumulative.farmWaterDeliveredL||0,2)+" L"],
+    ["Cumulative farm water deficit",fmt(s.cumulative.farmWaterDeficitL||0,2)+" L"],
     ["Daily modeled demand",fmt(d?.waterGal||0,2)+" US gal"]
   ],
   "Henhouse":[
     ["Chickens, all ages",s.farm.animals.filter(a=>a.sp==="chicken").length],
-    ["Farm electricity/day",fmt(d?.kWh||0,2)+" kWh"],
+    ["Native Farm electricity requested/day",fmt(d?.nativeElectricityRequestedKWh??d?.kWh??0,2)+" kWh"],
+    ["Farm electricity served",l?fmt(l.farm.electricityServedWh,1)+" Wh this hour":"—"],
+    ["Farm electricity unmet",l?fmt(l.farm.electricityDeficitWh,1)+" Wh this hour":"—"],
     ["Eggs in last simulated day",d?.eggs??0],
-    ["Shortage effects","Not modeled biologically yet"]
+    ["Shortage effects","Native delivered water and fixture electricity affect Farm daily biology; intermittent incubation is not calibrated"]
   ],
   "Rabbit hutches":[
     ["Rabbits, all ages",s.farm.animals.filter(a=>a.sp==="rabbit").length],
     ["Farm demand/day",fmt(d?.waterGal||0,2)+" gal total"],
-    ["Shortage effects","Not modeled biologically yet"]
+    ["Shortage effects","Native delivered water and fixture electricity affect Farm daily biology; intermittent incubation is not calibrated"]
   ],
   "Pasture, hutches and livestock":[
     ["Animals",s.farm.counts.n],
@@ -146,13 +162,93 @@ function renderAsset(s){
      ["Authority","Original Farm biology and native visual controller; movement/actions are illustrative"]
    ];
  }
+
+ // Source-native fixture IDs and metered deliveries, shared by 3D and Utilities.
+ if(entries && ["Henhouse","Rabbit hutches","Pasture, hutches and livestock"].includes(selectedAsset)){
+   const devices=s.farmEquipment||[];
+   const metered=s.last?.electricalLoads?.equipment||[];
+   const byId=new Map(metered.map(device=>[String(device.id),device]));
+   const relevant=devices.filter(device=>{
+     if(selectedAsset==="Rabbit hutches")return device.type==="hutch"||device.type==="heater";
+     if(selectedAsset==="Henhouse")return device.type!=="hutch";
+     return true;
+   });
+   entries.push(["Native Farm fixtures",relevant.length+" equipment components"]);
+   const totals=relevant.reduce((v,d)=>{
+     const usage=byId.get(String(d.id));
+     v.demand+=usage?.requestedWh||0;
+     v.served+=usage?.servedWh||0;
+     return v;
+   },{demand:0,served:0});
+   entries.push(["Metered equipment delivery",s.last?
+     fmt(totals.served,2)+" / "+fmt(totals.demand,2)+" Wh this hour":"Awaiting next simulated hour"]);
+   for(const device of relevant.slice(0,16)){
+     const usage=byId.get(String(device.id));
+     entries.push([device.type+" #"+device.id,
+       fmt(device.nativeDailyDemandWh||0,1)+" Wh native daily demand · "+
+       (usage?(fmt(usage.servedWh,1)+"/"+fmt(usage.requestedWh,1)+" Wh delivered"):"not yet dispatched")]);
+   }
+   if(relevant.length>16)entries.push(["Other native fixtures",String(relevant.length-16)+" additional"]);
+ }
  target.replaceChildren();
  if(!entries){const p=document.createElement("p");p.textContent="Select a building, PV array, water component, or animal area to see its model-driven connections.";target.append(p);return}
  for(const [k,v] of entries){
    const row=document.createElement("div");row.className="assetRow";
    const label=document.createElement("span");label.textContent=k;
    const val=document.createElement("strong");val.textContent=String(v);
-   row.append(label,val);target.append(row);
+ 
+  row.append(label,val);target.append(row);
+ }
+ // Select a native component of the clicked 3D Farm area and edit its ORIGINAL
+ // equipment fields, using the same coordinator as the top-level Utilities.
+ if(entries && ["Henhouse","Rabbit hutches","Pasture, hutches and livestock"].includes(selectedAsset)){
+   const available=(s.farmEquipment||[]).filter(d=>
+     selectedAsset==="Rabbit hutches" ? (d.type==="hutch"||d.type==="heater") :
+     selectedAsset==="Henhouse" ? d.type!=="hutch" : true);
+   const fields={
+     hutch:["lights","lightHours","lightWatts"],
+     coop:["lights","lightHours","lightWatts"],
+     fan:["watts","trigger"],heater:["watts","setpoint"],
+     brooder:["lampWatts"],incubator:["on","watts","setpoint"]
+   };
+   if(available.length){
+     let device=available.find(d=>String(d.id)===String(selectedFarmDeviceId))||available[0];
+     selectedFarmDeviceId=String(device.id);
+     const settings=fields[device.type]||[];
+     if(!settings.includes(selectedFarmDeviceKey))selectedFarmDeviceKey=settings[0];
+     const panel=document.createElement("div");panel.className="farmNativeSettings";
+     panel.style.cssText="padding:10px;margin:10px 0;border:1px solid #82969a55;border-radius:9px;display:grid;gap:7px";
+     const heading=document.createElement("strong");heading.textContent="Edit original Farm equipment";panel.append(heading);
+     const makeLabel=(label,control)=>{const wrap=document.createElement("label");
+       wrap.style.cssText="display:grid;gap:3px;font-size:12px";wrap.textContent=label;wrap.append(control);panel.append(wrap);};
+     const selector=document.createElement("select");selector.setAttribute("aria-label","Original Farm equipment");
+     for(const d of available){const option=document.createElement("option");
+       option.value=String(d.id);option.textContent=d.type+" #"+d.id;selector.append(option);}
+     selector.value=selectedFarmDeviceId;
+     selector.addEventListener("change",()=>{selectedFarmDeviceId=selector.value;
+       selectedFarmDeviceKey=null;renderAsset(coordinator.snapshot());});
+     makeLabel("Native equipment ID",selector);
+     const field=document.createElement("select");field.setAttribute("aria-label","Original Farm equipment property");
+     for(const key of settings){const option=document.createElement("option");
+       option.value=key;option.textContent=key;field.append(option);}
+     field.value=selectedFarmDeviceKey;
+     field.addEventListener("change",()=>{selectedFarmDeviceKey=field.value;renderAsset(coordinator.snapshot());});
+     makeLabel("Native setting",field);
+     const input=document.createElement("input");input.type="number";input.step="any";
+     input.value=String(Number(device[selectedFarmDeviceKey])||0);
+     input.setAttribute("aria-label","Native Farm setting value");
+     makeLabel("Value (native units)",input);
+     const apply=document.createElement("button");apply.type="button";apply.textContent="Apply to connected Homestead";
+     apply.addEventListener("click",()=>{
+       try{
+         const value=Number(input.value);
+         if(!input.value.trim() || !Number.isFinite(value))throw new Error("Enter a finite numeric value");
+         const result=coordinator.setFarmEquipmentParameter(selector.value,field.value,value);
+         redraw(result);
+       }catch(err){editMessage(err.message,true);}
+     });
+     panel.append(apply);target.append(panel);
+   }
  }
 }
 
@@ -161,11 +257,11 @@ function redraw(s){
  scene?.update({...s,farmWorld:farmVisual.world(),farmWorldOriginM});renderAsset(s);
  const e=s.last?.energy,w=s.last?.water,f=s.farm;
  $("energyValue").textContent=fmt(s.batteryWh/1000,2)+" kWh";
- $("energyDetail").textContent=e?"PV "+fmt(e.pvWh/1000,2)+" kWh/h · "+(e.pumpEnabled?"pump on":"pump off")+" · residual "+fmt(e.residualWh,4)+" Wh":"Battery remaining · awaiting interval";
+ $("energyDetail").textContent=e?"PV "+fmt(e.pvWh/1000,2)+" kWh/h · loads "+fmt(s.last.electricalLoads.backgroundServedWh+s.last.electricalLoads.farmServedWh+s.last.electricalLoads.pumpServedWh,0)+" Wh delivered · "+fmt(s.last.electricalLoads.backgroundDeficitWh+s.last.electricalLoads.farmDeficitWh+s.last.electricalLoads.pumpDeficitWh,0)+" Wh unmet · "+(e.pumpEnabled?"pump on":"pump off"):"Battery remaining · awaiting interval";
  $("waterValue").textContent=fmt(s.waterStoredL,0)+" L";
  $("waterDetail").textContent=w?"Modeled treated "+fmt(w.treatedL,1)+" L/h · farm use "+fmt(w.consumedL,1)+" L":"Treated storage, not certified drinking water";
  $("farmValue").textContent=f.counts.n+" animals";
- $("farmDetail").textContent="Daily "+fmt(f.daily?.waterGal||0,1)+" gal water · "+fmt(f.daily?.kWh||0,2)+" kWh · "+(f.daily?.eggs||0)+" eggs";
+ $("farmDetail").textContent=s.last?"This hour: "+fmt(s.last.farm.waterDeliveredL,1)+"/"+fmt(s.last.farm.hourlyWaterDemandL,1)+" L water · "+fmt(s.last.farm.electricityServedWh,1)+"/"+fmt(s.last.farm.hourlyElectricityDemandWh,1)+" Wh electricity":"Daily "+fmt(f.daily?.waterGal||0,1)+" gal water · "+fmt(f.daily?.kWh||0,2)+" kWh · "+(f.daily?.eggs||0)+" eggs";
  updateVisibleClock(s);
  $("alerts").textContent=s.last?.warnings.length?s.last.warnings.join(" "):"See Details for the model assumptions and limitations.";
 }
@@ -236,7 +332,7 @@ function resetScenario(){
   return next;
 }
 $("resetBtn").addEventListener("click",()=>{stop();try{resetScenario();$("errors").style.display="none"}catch(e){fail(e)}});
-document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=null;selectArea(b.dataset.view);$("sceneHint").textContent=selected==="farm"
+document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=b.dataset.view==="farm"?"Henhouse":null;selectArea(b.dataset.view);$("sceneHint").textContent=selected==="farm"
   ?"Tap an animal to follow · Drag to orbit · Pinch to zoom"
   :"Drag to orbit · Pinch to zoom · Select equipment";renderAsset(coordinator.snapshot())}));
 // Navigation is generated from the executable capability registry. A source
@@ -327,12 +423,19 @@ if(window.matchMedia("(max-width: 650px)").matches){
  $("hudToggle").setAttribute("aria-label","Expand resource summary");
 }
 $("closeInspector").addEventListener("click",()=>setInspectorOpen(false));
+$("editMode").checked=true;
 $("editMode").addEventListener("change",()=>{
  scene?.editor?.setEditMode($("editMode").checked);
- editMessage($("editMode").checked?"Drag a selected visual object on the terrain":"Drag mode off");
+ editMessage($("editMode").checked?"Click or touch an object, then drag it to move":"Layout dragging is disabled");
 });
 $("objectList").addEventListener("change",()=>runEdit(()=>scene.editor.select($("objectList").value)));
-$("objectAdd").addEventListener("click",()=>runEdit(()=>scene.editor.add($("objectType").value)));
+$("objectAdd").addEventListener("click",()=>{
+ try{
+  const part=scene.editor.beginPlace($("objectType").value);
+  editMessage("Tap or click the ground to place "+part+"; Escape cancels");
+  setInspectorOpen(false);
+ }catch(e){editMessage(e.message,true)}
+});
 $("objectSwap").addEventListener("click",()=>runEdit(()=>scene.editor.swap($("objectType").value)));
 $("objectRemove").addEventListener("click",()=>runEdit(()=>scene.editor.remove()));
 $("objectUndo").addEventListener("click",()=>runEdit(()=>scene.editor.undo()));
@@ -345,7 +448,29 @@ for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*
  $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
 }
 
+// Live weather is validated atomically by the shared coordinator; failed input leaves state unchanged.
+function syncLiveSolarWeather(){
+ const series=coordinator.snapshot().config.solarHourlyWeather;
+ $("solarWeatherJson").value=series?JSON.stringify(series,null,2):"";
+ $("solarWeatherStatus").textContent=series?
+   series.length+" hourly records ("+(series.length/24)+" days) active in the coupled world.":
+   "Illustrative sky active; no supplied weather series.";
+}
+$("solarWeatherApply").addEventListener("click",()=>{
+ try{
+  const records=JSON.parse($("solarWeatherJson").value);
+  const next=coordinator.configure({solarHourlyWeather:records});
+  redraw(next);syncLiveSolarWeather();
+ }catch(error){$("solarWeatherStatus").textContent="Weather not applied: "+error.message;}
+});
+$("solarWeatherClear").addEventListener("click",()=>{
+ try{redraw(coordinator.configure({solarHourlyWeather:null}));syncLiveSolarWeather();}
+ catch(error){$("solarWeatherStatus").textContent="Weather not cleared: "+error.message;}
+});
+syncLiveSolarWeather();
+
 const farmStudyUI=installFarmNativeStudy({$,coordinator,isPlaying:()=>playing,jumpToUtility,fmt,
+ onLiveUpdate:state=>redraw(state),
  focusFarm:()=>{
   if(!scene)throw new Error("Original Farm 3D scene unavailable");
   scene.go("farmStudy");setInspectorOpen(false);
@@ -771,11 +896,16 @@ $("exportBtn").addEventListener("click",()=>{
  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");
  a.href=url;a.download="homestead-scenario-"+payload.clock.date+".json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
-try{scene=makeScene($("world"),(kind,label)=>{
-  selectArea(kind);selectedAsset=label||null;
+try{scene=makeScene($("world"),(kind,label,options={})=>{
+  // Source Water editor: picking a part opens its settings without moving camera.
+  selectArea(kind,false);selectedAsset=label||null;
   $("inspectTitle").textContent=selectedAsset||descriptions[kind][0];
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
   renderAsset(coordinator.snapshot());refreshObjectEditor();
+  if(options.silentInspector){
+   editMessage("Moved "+(label||"selected object")+" · visual layout only; native models unchanged");
+   return;
+  }
   const selectedWater=kind==="water"&&Boolean(label);
   selectedWaterRole=selectedWater?(
    label==="Treated-water storage tank"?"storage":
@@ -799,8 +929,12 @@ try{scene=makeScene($("world"),(kind,label)=>{
    $("solarBatteryCurrentA").focus({preventScroll:true});
   }
   else if(selectedFarm){
-   jumpToUtility("farmStudyUtility");
-   $(selectedAsset?.startsWith("Rabbit")?"farmStudyDoes":"farmStudyHens").focus({preventScroll:true});
+   if(["Henhouse","Rabbit hutches","Pasture, hutches and livestock"].includes(selectedAsset))
+     jumpToUtility("assetReadout");
+   else{
+     jumpToUtility("farmStudyUtility");
+     $(selectedAsset?.startsWith("Rabbit")?"farmStudyDoes":"farmStudyHens").focus({preventScroll:true});
+   }
   }
   else setInspectorOpen(true);
 },farmVisual);selectArea("overview");redraw(coordinator.snapshot());
@@ -821,6 +955,8 @@ window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),
  editList:()=>scene?.editor?.list(),
  editAdd:type=>scene.editor.add(type),
  editMove:(dx,dz)=>scene.editor.move(dx,dz),
+  editProject:id=>scene.editor.project(id),
+  editGroundScreen:(x,z)=>scene.editor.projectGround(x,z),
  editSwap:type=>scene.editor.swap(type),
  editUndo:()=>scene.editor.undo(),
  reset:()=>{stop();return resetScenario()},

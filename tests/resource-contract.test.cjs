@@ -32,6 +32,7 @@ test("zero transfers preserve schema, units and nonnegative bounds",()=>{
 const exampleEnergy={
  pvWh:200,servedBaseWh:80,servedPumpWh:20,
  directBaseWh:60,batteryBaseWh:20,directPumpWh:20,batteryPumpWh:0,
+ servedFarmWh:0,directFarmWh:0,batteryFarmWh:0,
  chargeStoredWh:95,chargeLossWh:5,dischargeLossWh:2,
  curtailedWh:20,batteryWh:1073
 };
@@ -47,7 +48,7 @@ test("one-hour independent source/sink balances match actual inventories",()=>{
  assert.equal(a.water.balances["tank.inventory"],3);
  assert.equal(a.electricity.balances["water.pump"],20);
  assert.equal(a.water.balances["farm.livestock"],7);
- assert.equal(a.transfers.electricity.length,9);
+ assert.equal(a.transfers.electricity.length,11);
  assert.equal(a.transfers.water.length,3);
  assert.equal(a.transfers.water[0].evidence,"published_model");
 });

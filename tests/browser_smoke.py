@@ -46,6 +46,35 @@ try:
                 # only an opaque forty-second readiness timeout.
                 raise AssertionError(f"Homestead startup failed (mobile={mobile}); page errors={errors!r}; url={page.url}") from exc
             assert page.locator("#world").is_visible()
+            # LIVE FARM EQUIPMENT: navigating the unified 3D Farm exposes
+            # the ORIGINAL native component settings, not a disconnected calculator.
+            checkpoint("native-farm:live-fixture-editor")
+            page.locator('[data-view="farm"]').click()
+            page.locator("#inspectBtn").click()
+            panel=page.locator(".farmNativeSettings")
+            assert panel.is_visible(), ("Native Farm controls missing from 3D area inspector",mobile)
+            native_before=page.evaluate("""() => window.HomesteadApp.snapshot().farmEquipment.find(d=>d.type==="coop")""")
+            assert native_before and native_before["id"].startswith("c"),native_before
+            assert native_before["lights"] is False
+            panel.locator('select[aria-label="Original Farm equipment property"]').select_option("lights")
+            panel.locator('input[aria-label="Native Farm setting value"]').fill("1")
+            panel.get_by_role("button",name="Apply to connected Homestead").click()
+            native_after=page.evaluate("""() => window.HomesteadApp.snapshot().farmEquipment.find(d=>d.type==="coop")""")
+            assert native_after["id"]==native_before["id"]
+            assert native_after["lights"] is True
+            assert native_after["nativeDailyDemandWh"]>0, native_after
+            page.evaluate("window.HomesteadApp.step()")
+            live=page.evaluate("window.HomesteadApp.snapshot()")
+            assert live["last"]["electricalLoads"]["farmRequestedWh"]>0
+            assert any(x["id"]==native_after["id"] and x["requestedWh"]>0
+                       for x in live["last"]["electricalLoads"]["equipment"])
+            (ROOT/"tests"/"artifacts").mkdir(parents=True,exist_ok=True)
+            page.screenshot(path=str(ROOT/"tests"/"artifacts"/
+                ("mobile-native-farm-equipment.png" if mobile else "desktop-native-farm-equipment.png")))
+            page.evaluate("window.HomesteadApp.reset()")
+            page.locator("#inspectBtn").click()
+            page.locator('[data-view="overview"]').click()
+            assert not errors,errors
             # UTILITY NAVIGATION REGRESSION: the source-native tools must be
             # discoverable without first traversing the long Details inspector.
             assert page.locator("#utilitiesBtn").is_visible()
@@ -836,21 +865,38 @@ try:
             assert page.evaluate("window.HomesteadApp.time().preview") is True
             page.locator("#timeResume").click()
             assert page.evaluate("window.HomesteadApp.time().preview") is False
-            # Editable visual props can be added, moved, swapped and undone.
+            # Source Water-style 3D picking: place on terrain, then drag the
+            # selected visible mesh by pointer (not by the arrow controls).
             page.locator("#inspectBtn").click()
+            assert page.locator("#editMode").is_checked()
+            assert page.evaluate("window.HomesteadApp.editList().some(x => x.id === 'site-water-treatment')")
             page.locator("#objectType").select_option("compost")
             page.locator("#objectAdd").click()
+            ground=page.evaluate("window.HomesteadApp.editGroundScreen(13,26)")
+            assert ground["visible"],ground
+            page.mouse.click(ground["x"],ground["y"])
             editor=page.evaluate("window.HomesteadApp.world().visualEditor")
             assert editor["props"]==1, editor
-            before=page.evaluate("window.HomesteadApp.editList()")
-            page.locator("#objectRight").click()
-            moved=page.evaluate("window.HomesteadApp.editList()")
-            assert moved[-1]["x"]==before[-1]["x"]+1,(before,moved)
+            placed=page.evaluate("window.HomesteadApp.editList().filter(x => x.id.startsWith('prop-')).at(-1)")
+            start=page.evaluate("(id) => window.HomesteadApp.editProject(id)",placed["id"])
+            end=page.evaluate("(p) => window.HomesteadApp.editGroundScreen(p.x+1,p.z)",placed)
+            assert start["visible"] and end["visible"],(start,end)
+            page.mouse.move(start["x"],start["y"])
+            page.mouse.down()
+            page.mouse.move(end["x"],end["y"],steps=12)
+            page.mouse.up()
+            after=page.evaluate("(id) => window.HomesteadApp.editList().find(x => x.id===id)",placed["id"])
+            assert abs(after["x"]-placed["x"])>.25 or abs(after["z"]-placed["z"])>.25,(placed,after)
+            assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==initial_model
+            page.locator("#inspectBtn").click()
             page.locator("#objectType").select_option("barrel")
             page.locator("#objectSwap").click()
-            assert page.evaluate("window.HomesteadApp.editList().at(-1).type")=="barrel"
+            assert page.evaluate("window.HomesteadApp.editList().filter(x => x.id.startsWith('prop-')).at(-1).type")=="barrel"
             page.locator("#objectUndo").click()
-            assert page.evaluate("window.HomesteadApp.editList().at(-1).type")=="compost"
+            assert page.evaluate("window.HomesteadApp.editList().filter(x => x.id.startsWith('prop-')).at(-1).type")=="compost"
+            page.locator("#objectUndo").click()
+            restored=page.evaluate("(id) => window.HomesteadApp.editList().find(x => x.id===id)",placed["id"])
+            assert abs(restored["x"]-placed["x"])<1e-8 and abs(restored["z"]-placed["z"])<1e-8,(placed,restored)
             assert page.evaluate("window.HomesteadApp.snapshot().clock.hours")==initial_model
             proof=page.evaluate("window.HomesteadApp.world().solarMount")
             assert proof["supportCount"]==16 and .05<=proof["minTopClearanceM"]<.06,proof

@@ -1,12 +1,44 @@
 import {runNativeFarmDailyStudy,FARM_STUDY_SOURCE} from "./farm-native-study.mjs";
 // Real UI over the original seeded Farm daily engine, isolated from Homestead.
-export function installFarmNativeStudy({$,coordinator,isPlaying,jumpToUtility,focusFarm,fmt}){
+export function installFarmNativeStudy({$,coordinator,isPlaying,jumpToUtility,focusFarm,fmt,onLiveUpdate}){
  let result=null,generation=0;
  const inputFields=[
   ["farmStudyDoes","mg_does"],["farmStudyHens","mg_hens"],
   ["farmStudyRoosters","mg_roosters"],["farmStudySet","mg_set"]
  ];
  const ids=["farmStudyDays","farmStudySeed",...inputFields.map(([id])=>id)];
+ // The same source Farm parameters can drive the connected world. Keep this
+ // action explicit: running an isolated study must never mutate live biology.
+ const liveButton=document.createElement("button");
+ liveButton.type="button";
+ liveButton.id="farmApplyLive";
+ liveButton.textContent="Apply animal settings to live Homestead";
+ liveButton.className="utilityAction";
+ liveButton.title="Update original Farm parameters used by the connected Solar–Water–Farm resource ledger";
+ $("farmStudyRun").insertAdjacentElement("afterend",liveButton);
+ liveButton.addEventListener("click",()=>{
+  const host=$("farmStudyReport");
+  try{
+  const changes=inputFields.map(([element,key])=>{
+   const raw=$(element).value.trim(),value=raw===""?NaN:Number(raw);
+   if(!Number.isFinite(value)||!Number.isSafeInteger(value)||value<0)
+    throw new Error(key+" must be a nonnegative whole number");
+   return [key,value];
+  });
+   // Validate every input before issuing any native command.
+   const before=coordinator.snapshot().farm;
+   for(const [key,value] of changes)coordinator.setFarmParameter(key,value);
+   const after=coordinator.snapshot();
+   if(after.farm.day!==before.day)throw new Error("Farm day changed during settings update");
+   onLiveUpdate?.(after);
+   host.dataset.resultState="complete";
+   host.textContent="Applied original Farm animal settings to the connected world. Next hour uses refreshed native water and electricity demand; current biological day was not advanced.";
+  }catch(error){
+   host.dataset.resultState="error";
+   host.textContent="Live Farm settings not applied: "+String(error?.message||error);
+  }
+ });
+
  function invalidate(){
   generation++;result=null;
   $("farmStudyRun").disabled=false;$("farmStudyCsv").disabled=true;

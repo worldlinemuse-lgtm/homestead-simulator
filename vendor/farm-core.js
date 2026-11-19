@@ -2595,8 +2595,687 @@ function labor() {
 
 /* Source dependency from farm-sim/source/src/planner/planner.js: called by core/access.js. */
 function coopFix(c,k){return c&&c[k]!=null?+c[k]:TYPES.coop.props[k];}
+/* HOMESTEAD COUPLING OVERLAY
+ * Original source modules above remain byte-identical to pinned Git blobs.
+ * These source-derived functions are isolated adapters, not upstream edits.
+ * Natural weather, original equations and native model RNG stay authoritative.
+ * The full-supply path retains original behavior; metered shortage paths are
+ * explicitly experimental and never presented as calibrated field predictions.
+ */
+function microCoupled(pen, env, plan, equipmentDuty) {
+  let shade = 0,
+    cool = 0,
+    heatTo = -999,
+    fans = [],
+    heaters = [];
+  const p = ctr(pen);
+  for (const c of S.comps) {
+    if (!TYPES[c.type].round) continue;
+    const r = dist(p, ctr(c));
+    if (r > c.radius) continue;
+    const f = 1 - r / c.radius;
+    const operating = equipmentDuty ? equipmentDuty(c) : 1;
+    if (c.type === 'tree' && env.tmax > 70) shade += c.shade * f;
+    if (c.type === 'fan' && env.tmax > c.trigger) {
+      cool += c.cooling * f * operating;
+      if (operating > 0) fans.push(c);
+    }
+    if (c.type === 'heater') {
+      if (operating > 0) {
+        // Time-averaged duty interpolation uses the source climate setpoint.
+        // It is an integration approximation, not a calibrated thermal transient.
+        heatTo = Math.max(heatTo, env.tmin + (c.setpoint - env.tmin) * operating);
+        heaters.push(c);
+      }
+    }
+  }
+  let lift = 0,
+    coopQ = null;
+  if (pen.type === 'coop') {
+    coopQ = coopHeat(pen, plan);
+    lift = coopQ.lift;
+  }
+  const tmax = env.tmax - shade - cool;
+  let tmin = env.tmin + lift,
+    heated = false;
+  if (heatTo > tmin) {
+    tmin = Math.min(heatTo, Math.max(tmax, heatTo));
+    heated = true;
+  }
+  const nativeLight = pen.lights && +pen.lights ? Math.max(env.day, pen.lightHours) : env.day;
+  const light = env.day + (nativeLight - env.day) * (equipmentDuty ? equipmentDuty(pen) : 1);
+  return { tmax, tmin, shade, cool, heated, light, lift, coopQ };
+}
+
+function stepCoupled(supply) {
+  // The optional Homestead delivery ratio is measured upstream, not a new
+  // biological coefficient. Native standalone calls remain unchanged.
+  const waterCoverage = supply == null ? 1 : supply.waterCoverage;
+  const electricityCoverage = supply == null || supply.electricityCoverage == null ? 1 : supply.electricityCoverage;
+  if (!Number.isFinite(electricityCoverage) || electricityCoverage < 0 || electricityCoverage > 1)
+    throw new RangeError('Farm electricity coverage must be between 0 and 1');
+  // Daily totals do not identify which equipment lost power. Only a verified
+  // full-day blackout can disable every powered fixture without guessing priority.
+  const powered = electricityCoverage > 0;
+  const equipmentCoverage = supply && supply.equipmentCoverageById != null ? supply.equipmentCoverageById : null;
+  if (equipmentCoverage !== null) {
+    if (typeof equipmentCoverage !== 'object' || Array.isArray(equipmentCoverage))
+      throw new RangeError('Farm equipment coverage must be an ID-keyed object');
+    for (const value of Object.values(equipmentCoverage)) {
+      if (!Number.isFinite(value) || value < 0 || value > 1)
+        throw new RangeError('Farm equipment delivery coverage must be between 0 and 1');
+      if (!powered && value > 0)
+        throw new RangeError('Farm equipment cannot operate without electricity');
+    }
+  }
+  const equipmentDuty = c => equipmentCoverage === null ? (powered ? 1 : 0) :
+    (Object.prototype.hasOwnProperty.call(equipmentCoverage, String(c.id)) ? equipmentCoverage[c.id] : 0);
+  if (!Number.isFinite(waterCoverage) || waterCoverage < 0 || waterCoverage > 1)
+    throw new RangeError('Farm water coverage must be between 0 and 1');
+  // ==== 1. Start of the day: weather, housing and pen climates ====
+  // Moves the day on, draws today's weather (weather(true)), re-houses the animals, counts the floor in
+  // use per building (loads) and works out each building's microclimate (micro). d is the day's tally.
+  S.day++;
+  const env = weather(true); // today's weather: highs and lows (°F), day length (h), day of year ...
+  if (S.day % 7 === 0) S.setWeek = 0;
+  rehouse();
+  let L = loads(); // floor in use (sq ft) in each building, by building id
+  const M = {}; // each building's microclimate today, by building id (micro)
+  S.comps.forEach(c => (M[c.id] = microCoupled(c, env, undefined, equipmentDuty)));
+  const ambient = { tmax: env.tmax, tmin: env.tmin, light: env.day, shade: 0, cool: 0, heated: false };
+  const mOf = a => (a.enc && M[a.enc] ? M[a.enc] : ambient); // the microclimate an animal lives in: its building's, else the open air
+  const run = runInfo(); // run space for the flock: area, birds, need and need / area
+  const d = { // today's tally: feed, eggs, sales, deaths, kWh ...; summed into today's row in S.hist
+    fryerLb: 0,
+    eggs: 0,
+    eggsSold: 0,
+    eggsSet: 0,
+    rFeed: 0,
+    cFeed: 0,
+    sFeed: 0,
+    hay: 0,
+    grain: 0,
+    forage: 0,
+    water: 0,
+    kwh: 0,
+    rev: 0,
+    births: 0,
+    hatch: 0,
+    deaths: 0,
+    fryers: 0,
+    birdsSold: 0
+  };
+  // ==== 2. Flock-wide numbers every animal below uses ====
+  // Who dies and who is born today, roosters and hens, hens per nest box, fertile bucks, working and
+  // reserve does, spare hutch floor for a reserve doe, egg fertility and the incubators that are on.
+  const dead = new Set(),
+    born = [];
+  const byId = new Map(S.animals.map(x => [x.id, x]));
+  const roosters = S.animals.filter(a => a.sp === 'chicken' && a.st === 'rooster').length;
+  const hens = S.animals.filter(a => a.sp === 'chicken' && a.st === 'hen');
+  const nests = Math.max(
+    1,
+    pens('coop').reduce((s, c) => s + nestsFor(c), 0)
+  );
+  const nestF = hens.length / nests > P.ck_hpn ? 0.95 : 1;
+  const fertileBucks = S.animals.filter(
+    a => a.sp === 'rabbit' && a.sex === 'M' && a.st === 'adult' && a.sterileUntil < S.day
+  );
+  let bucksUsed = 0;
+  // reserve does (FAO): kept adult does that wait, unmated, until a working doe is lost
+  const rsvN = Math.max(0, Math.round(P.mg_rsv_does));
+  let workingDoes = S.animals.filter(a => a.sp === 'rabbit' && a.sex === 'F' && a.st === 'adult' && !a.rsv).length;
+  // a keeper only holds back a reserve doe when the hutch banks have floor to spare
+  const hutchRoom =
+    rsvN > 0 &&
+    (() => {
+      let need = 0,
+        area = 0;
+      for (const c of pens('hutch')) {
+        need += L[c.id] || 0;
+        area += c.w * c.d;
+      }
+      // look ahead: nursing kits and the expected weaned kits of pregnant does will each need grower floor
+      if (+P.mg_rsv_look) {
+        let coming = 0;
+        for (const x of S.animals) {
+          if (x.sp !== 'rabbit') continue;
+          if (x.st === 'kit') coming++;
+          else if (x.sex === 'F' && x.preg != null) coming += P.rb_litter * (1 - clamp(P.rb_loss, 0, 100) / 100);
+        }
+        need += coming * P.rb_grower;
+      }
+      return area > 0 && need + P.rb_cage <= area;
+    })();
+  const fertP = (P.ck_fert / 100) * Math.min(1, (roosters * P.ck_hpr) / Math.max(1, hens.length));
+  const incs = pens('incubator').filter(c => +c.on && equipmentDuty(c) > 0);
+
+  // ==== 3. Each animal, one day older ====
+  // Health, then the chance it dies, then rabbit or chicken growth, feed, stage changes, sales,
+  // breeding and laying. A sale or retirement adds it to dead and skips the rest (continue).
+  for (const a of S.animals) {
+    a.age++;
+    const m = mOf(a); // this animal's microclimate today
+    const dens = a.enc ? density(a.enc, L) : 3;
+    // ---- 3a. Health: losses from crowding, heat, cold, having no pen and grower fights, else recovery ----
+    let loss = 0;
+    const parts = { crowding: 0, heat: 0, cold: 0, 'no pen': 0 };
+    const inNest = a.sp === 'rabbit' && a.st === 'kit' && a.age < P.rb_solid_start && !+P.rb_nest_crowd;
+    if (dens > 1 && !inNest) {
+      parts.crowding = (P.hl_crowd * (dens - 1)) / 0.5;
+      loss += parts.crowding;
+    }
+    const heatLim = a.sp === 'rabbit' ? P.rb_heat_hl : P.ck_heat_hl;
+    if (m.tmax > heatLim) {
+      parts.heat = P.hl_heat * (m.tmax - heatLim);
+      if (a.sp === 'rabbit' && m.tmax > P.rb_heat_sev) parts.heat += 2 * P.hl_heat * (m.tmax - P.rb_heat_sev);
+      loss += parts.heat;
+    }
+    let coldLim = P.hl_cold_lim;
+    if (a.sp === 'chicken' && a.st === 'chick') {
+      const need = Math.max(70, P.ck_brood_t - P.ck_brood_drop * Math.floor(a.age / 7));
+      const pen = a.enc && compById(a.enc);
+      let t = m.tmin;
+      if (pen && pen.type === 'brooder') t = brooderTemp({...pen, lampWatts: pen.lampWatts * equipmentDuty(pen)}, m, need);
+      if (t < need - 3) {
+        parts.cold += P.hl_cold * 2 * (need - t);
+        loss += P.hl_cold * 2 * (need - t);
+      }
+    } else if (a.sp === 'rabbit' && a.st === 'kit') {
+      // kits still in the nest box (younger than rb_solid_start) skip cold when rb_nest_cold is off: FAO's
+      // pre-weaning loss (rb_loss) already includes nest chilling, and a bedded nest holds 30-35°C (notes 2p)
+      coldLim = !+P.rb_nest_cold && a.age < P.rb_solid_start ? -1e9 : P.rb_kit_cold;
+    }
+    if (m.tmin < coldLim) {
+      parts.cold += P.hl_cold * (coldLim - m.tmin);
+      loss += P.hl_cold * (coldLim - m.tmin);
+    }
+    if (!a.enc) {
+      parts['no pen'] = P.hl_expo;
+      loss += P.hl_expo;
+    }
+    if (a.sp === 'rabbit' && a.st === 'grower' && P.hl_fight > 0) {
+      const r = rgOf(a);
+      if (r && r.fight) {
+        parts.fighting = P.hl_fight * r.fight;
+        loss += parts.fighting;
+      }
+    }
+    if (loss > 0.05) {
+      let best = 'crowding';
+      for (const k in parts) if (parts[k] > parts[best]) best = k;
+      a.stress = best;
+    } else if (a.health >= 60) a.stress = '';
+    const h0 = a.health; // health before today, for the health tally
+    a.health = clamp(loss > 0.05 ? a.health - loss : a.health + P.hl_rec, 0, 100);
+    if (S.gap) healthTally(a, parts, loss, h0, a.health);
+    // ---- 3b. Death risk ----
+    // competing risks: each source of death risk is kept separately, and the cause of a death is drawn in proportion to them
+    const rp = {}; // today's death risk by cause (cause name -> probability)
+    const add = (k, v) => {
+      if (v > 0) rp[k] = (rp[k] || 0) + v;
+    };
+    add(
+      'background risk',
+      (a.sp === 'chicken' ? (a.st === 'hen' || a.st === 'rooster' ? P.ck_mort : P.ck_mort_r) : P.hl_mort) /
+        100
+    );
+    if (a.health < 40)
+      add(a.stress ? a.stress + ' stress' : 'poor health', ((P.hl_mort_low / 100) * (40 - a.health)) / 40);
+    if (a.sp === 'rabbit' && a.st === 'kit') {
+      add('kit loss (litter size)', 1 - Math.pow(kitSurv(a.litN), 1 / Math.max(1, P.rb_wean)));
+      const mom = byId.get(a.mother);
+      if ((!mom || dead.has(mom.id)) && a.age < 21) add('orphaned kit', 1);
+    }
+    if (a.sp === 'rabbit' && a.st === 'grower' && !a.keep)
+      add(
+        'diarrhoea (enteritis)',
+        1 - Math.pow(1 - clamp(P.rb_gdis, 0, 99) / 100, 1 / Math.max(1, P.rb_sale_age - P.rb_wean))
+      );
+    let risk = 0;
+    for (const k in rp) risk += rp[k];
+    if (rngNext() < Math.min(1, risk)) {
+      let u = rngNext() * risk, // u: a point along the summed risks; the cause it falls in is the cause of death
+        c = 'background risk';
+      if (rp['orphaned kit']) c = 'orphaned kit';
+      else
+        for (const k in rp) {
+          c = k;
+          u -= rp[k];
+          if (u <= 0) break;
+        }
+      a.deathCause = c;
+      dead.add(a.id);
+      continue;
+    }
+
+    // ---- 3c. Rabbits ----
+    if (a.sp === 'rabbit') {
+      // growth and feed: the day's gain on the growth curve (rabCurve), scaled by health (growHealth),
+      // crowding (crowdGrowth), pen temperature (rabTemp), hopper access (rgAccF) and the diet (rabDiet);
+      // then feed, hay, grain and water from intake()
+      const pot = rabCurve(a.age) - rabCurve(a.age - 1); // potential gain today (lb) from the breed's growth curve
+      const dg = rabDiet(a).gain, // diet factor on gain (1 on pellets)
+        hF = growHealth(a), // health factor
+        cF = crowdGrowth(a, dens), // crowding factor
+        tF = rabTemp(m).gain, // temperature factor
+        aF = rgAccF(a), // hopper and drinker access factor
+        gm0 = hF * cF * tF * aF, // all factors but the diet
+        gm = (dg === 1 ? gm0 : gm0 * dg) * waterCoverage; // FAO: rabbit feed intake falls proportionally with water supply
+      if (S.gw && (a.st === 'kit' || a.st === 'grower')) growTally(a, (dg === 1 ? pot : pot * dg) * waterCoverage, hF, cF, tF, aF);
+      a.wt = Math.min(P.rb_adult_wt * 1.1, a.wt + pot * gm);
+      {
+        const it = intake(a, m); // today's feed, hay, grain, forage and water for this animal (lb, gal)
+        d.rFeed += it.feed * waterCoverage;
+        d.hay += it.hay * waterCoverage;
+        d.grain += it.grain * waterCoverage;
+        d.water += it.water * waterCoverage;
+      }
+      // stage changes, in this order: weaning, sale age, early breeding of young does, breeding age,
+      // reserve does, heat-sterile bucks, then each adult doe's retirement, pregnancy or mating
+      // weaning: the kit becomes a grower and moves to the hutch with the least floor in use (bestPen)
+      if (a.st === 'kit' && a.age >= P.rb_wean) {
+        a.st = 'grower';
+        a.mother = null;
+        const p = bestPen('hutch', L);
+        a.enc = p ? p.id : null;
+        if (p) L[p.id] += P.rb_grower;
+      }
+      // sale age: kept as a future breeding doe, reserve doe or buck when the herd needs one, else sold as a
+      // fryer at its weight times the fryer price (when selling fryers is on)
+      if (a.st === 'grower' && a.age === Math.round(P.rb_sale_age)) {
+        const does = S.animals.filter(
+          x => x.sp === 'rabbit' && x.sex === 'F' && (x.st === 'adult' || x.keep) && !dead.has(x.id)
+        ).length;
+        const bucks = S.animals.filter(
+          x => x.sp === 'rabbit' && x.sex === 'M' && (x.st === 'adult' || x.keep) && !dead.has(x.id)
+        ).length;
+        const needB =
+          Math.ceil(Math.max(does, P.mg_does) / Math.max(1, P.rb_dpb)) +
+          Math.max(0, Math.round(P.mg_spare_buck));
+        if (a.sex === 'F' && (does < P.mg_does || (does < P.mg_does + rsvN && hutchRoom))) {
+          a.keep = 1;
+          logE('Kept doeling #' + a.id + (does < P.mg_does ? ' as a future breeder.' : ' as a future reserve doe.'));
+        } else if (a.sex === 'M' && bucks < needB) {
+          a.keep = 1;
+          logE('Kept buckling #' + a.id + ' as a future buck.');
+        } else if (+P.mg_sell_fryers) {
+          if (S.gap && a.gw) saleTally(a);
+          d.rev += a.wt * P.pr_fryer;
+          d.fryers++;
+          d.fryerLb += a.wt;
+          S.tot.fryers++;
+          dead.add(a.id);
+          a.sold = 1;
+          continue;
+        }
+      }
+      // a young doe goes on with a pregnancy, or, when the split-growers setting (rb_split) is off, can be bred early by a
+      // fertile young buck in her group once she reaches puberty weight (rb_early is the chance per week)
+      if (a.st === 'grower' && a.sex === 'F') {
+        if (a.preg != null) pregDay(a, born, d);
+        else if (
+          !+P.rb_split &&
+          P.rb_early > 0 &&
+          a.kindle == null &&
+          a.wt >= (P.rb_pub_wt / 100) * P.rb_adult_wt
+        ) {
+          const h = rgCalc().hutch[a.enc]; // this hutch bank's grower groups; fertM = fertile young bucks still in them
+          if (h && h.fertM > 0 && rngNext() < 1 - Math.pow(1 - clamp(P.rb_early, 0, 100) / 100, 1 / 7)) {
+            a.preg = 0;
+            a.early = 1;
+            a.gestLen = Math.round(P.rb_gest);
+            d.early = (d.early || 0) + 1;
+            S.tot.early = (S.tot.early || 0) + 1;
+            logE(
+              'Young doe #' +
+                a.id +
+                ' was bred early by a young buck in her group at ' +
+                a.age +
+                ' days (' +
+                a.wt.toFixed(1) +
+                ' lb).'
+            );
+          }
+        }
+      }
+      // breeding age: the grower becomes an adult; a new doe joins the reserve when the working does are full
+      if (a.st === 'grower' && a.age >= (a.sex === 'F' ? P.rb_doe_age : P.rb_buck_age)) {
+        a.st = 'adult';
+        a.keep = 0;
+        if (a.sex === 'F' && rsvN > 0) {
+          if (workingDoes >= P.mg_does) {
+            a.rsv = 1;
+            logE('Doe #' + a.id + ' reached breeding age and joins the reserve.');
+          } else workingDoes++;
+        }
+      }
+      // a reserve doe moves into a breeding cage when a working doe is missing or reserves are set to 0
+      if (a.rsv && a.st === 'adult' && (workingDoes < P.mg_does || rsvN === 0)) {
+        a.rsv = 0;
+        workingDoes++;
+        logE('Reserve doe #' + a.id + ' moved into a breeding cage.');
+      }
+      // bucks: rb_heat_days days in a row with the pen high over rb_heat F make him sterile for rb_sterile days
+      if (a.st === 'adult' && a.sex === 'M') {
+        if (m.tmax > P.rb_heat) a.hot++;
+        else a.hot = 0;
+        if (a.hot >= P.rb_heat_days && a.sterileUntil < S.day) {
+          a.sterileUntil = S.day + P.rb_sterile;
+          logE(
+            'Buck #' +
+              a.id +
+              ' heat-sterile (pen high ' +
+              m.tmax.toFixed(0) +
+              '°F, ' +
+              a.hot +
+              ' hot days) until day ' +
+              a.sterileUntil +
+              '.'
+          );
+        }
+      }
+      // does: retire at rb_retire days (not while pregnant or nursing); else a pregnancy day (pregDay), waiting
+      // as a reserve, or, when due, mating with the free fertile buck used least this week (conceptionFactors)
+      if (a.st === 'adult' && a.sex === 'F') {
+        if (a.age >= P.rb_retire && a.preg == null && !(a.kindle != null && S.day - a.kindle < P.rb_wean)) {
+          dead.add(a.id);
+          a.retired = 1;
+          logE('Doe #' + a.id + ' retired at ' + a.age + ' days.');
+          continue;
+        }
+        if (a.preg != null) {
+          pregDay(a, born, d);
+        } else if (a.rsv) {
+          a.why = 'reserve doe: waits until a breeding doe is lost';
+        } else if (
+          a.age >= P.rb_doe_age &&
+          (a.kindle == null || S.day - a.kindle >= P.rb_rebreed) &&
+          S.day >= a.nextMate &&
+          S.day >= (a.pseudo || 0)
+        ) {
+          a.nextMate = S.day + P.rb_mate_every;
+          const fb = fertileBucks.length; // fertile bucks on the farm today
+          const free = fertileBucks.filter(
+            b => !dead.has(b.id) && (b.mates || []).filter(t => S.day - t < 7).length < P.rb_buck_week
+          );
+          if (fb === 0) {
+            a.why = 'no fertile buck';
+          } else if (!free.length) {
+            a.why = 'every buck already used ' + P.rb_buck_week + ' times this week';
+            a.nextMate = S.day + 1;
+          } else {
+            free.sort(
+              (x, y) =>
+                (x.mates || []).filter(t => S.day - t < 7).length -
+                (y.mates || []).filter(t => S.day - t < 7).length
+            );
+            const b = free[0];
+            b.mates = (b.mates || []).filter(t => S.day - t < 7);
+            b.mates.push(S.day);
+            bucksUsed++;
+            const cf = conceptionFactors(a, m, L); // chance of conception and the factors behind it
+            if (S.gap) {
+              S.gap.matN = (S.gap.matN || 0) + 1;
+              S.gap.hSum = (S.gap.hSum || 0) + cf.hRaw;
+              S.gap.cSum = (S.gap.cSum || 0) + cf.cRaw;
+              S.gap.hcSum = (S.gap.hcSum || 0) + cf.hRaw * cf.cRaw;
+            }
+            if (rngNext() < cf.p) {
+              a.preg = 0;
+              a.gestLen = Math.round(P.rb_gest + (rngNext() * 2 - 1) * P.rb_gest_var);
+              a.why = '';
+            } else if (rngNext() < P.rb_pseudo / 100) {
+              a.pseudo = S.day + Math.round(P.rb_pseudo_days);
+              a.why = 'false pregnancy until day ' + a.pseudo;
+            } else a.why = 'mated, did not conceive';
+          }
+        }
+      }
+    } else {
+      // ---- 3d. Chickens ----
+      // feed (layer feed for hens and roosters, starter for the young), forage, water and weight from intake();
+      // then brooder to coop, sale age, laying age, and for hens retirement, molt and the day's egg
+      {
+        const it = intake(a, m);
+        if (a.st === 'hen' || a.st === 'rooster') d.cFeed += it.feed;
+        else d.sFeed += it.feed;
+        d.forage += it.forage;
+        d.water += it.water;
+        a.wt = it.bw / 453.6;
+        a.feedLb = it.feed;
+      }
+      // out of the brooder: the chick becomes a pullet or cockerel and moves to the coop with the least floor in use
+      if (a.st === 'chick' && a.age >= P.ck_brood_days) {
+        a.st = a.sex === 'F' ? 'pullet' : 'cockerel';
+        const p = bestPen('coop', L);
+        a.enc = p ? p.id : null;
+      }
+      // sale age: kept when the flock is short of hens or roosters, else sold (when selling birds is on)
+      if ((a.st === 'pullet' || a.st === 'cockerel') && a.age === Math.round(P.ck_sale_age)) {
+        const hensKept = S.animals.filter(
+          x => x.sp === 'chicken' && x.sex === 'F' && (x.st === 'hen' || x.keep) && !dead.has(x.id)
+        ).length;
+        const roosK = S.animals.filter(
+          x => x.sp === 'chicken' && x.sex === 'M' && (x.st === 'rooster' || x.keep) && !dead.has(x.id)
+        ).length;
+        if (a.sex === 'F' && hensKept < P.mg_hens) a.keep = 1;
+        else if (a.sex === 'M' && roosK < P.mg_roosters) a.keep = 1;
+        else if (+P.mg_sell_birds) {
+          d.rev += P.pr_bird;
+          d.birdsSold++;
+          dead.add(a.id);
+          a.sold = 1;
+          continue;
+        }
+      }
+      // laying age: pullets become hens, cockerels roosters
+      if ((a.st === 'pullet' || a.st === 'cockerel') && a.age >= P.ck_lay_age) {
+        a.st = a.sex === 'F' ? 'hen' : 'rooster';
+        a.keep = 0;
+      }
+      // hens: retire at ck_retire days; molt after ck_molt_max weeks of lay, or after ck_molt_after weeks when
+      // days are shortening without extra light; else maybe an egg (layFactors), set in an incubator while
+      // there is room and this week's setting quota (mg_set) is not used up, otherwise sold
+      if (a.st === 'hen') {
+        if (a.age >= P.ck_retire) {
+          dead.add(a.id);
+          a.retired = 1;
+          logE('Hen #' + a.id + ' retired at ' + a.age + ' days.');
+          continue;
+        }
+        if (a.cycle == null) {
+          a.cycle = 1;
+          a.cycStart = Math.min(a.age, Math.round(P.ck_lay_age));
+        }
+        if (a.molt > 0) {
+          a.molt--;
+          if (a.molt === 0) {
+            a.cycle++;
+            a.cycStart = a.age;
+            logE('Hen #' + a.id + ' finished molting and started laying cycle ' + a.cycle + '.');
+          }
+        } else {
+          const wk = (a.age - a.cycStart) / 7, // weeks into this laying cycle
+            short = dayLength(env.doy) < dayLength(env.doy - 1); // true while the days are getting shorter
+          if (wk >= P.ck_molt_max || (wk >= P.ck_molt_after && short && m.light < P.ck_light)) {
+            a.molt = Math.round(P.ck_molt_days);
+            logE(
+              'Hen #' +
+                a.id +
+                ' began a molt after ' +
+                Math.round(wk) +
+                ' weeks of lay' +
+                (wk >= P.ck_molt_max ? '' : ' (days shortening, no extra light)') +
+                '.'
+            );
+          }
+        }
+        const lf = layFactors(a, m, L, nestF, run); // today's chance of an egg (lf.p) and the factors behind it
+        // Original Farm research (Penn State): hens deprived of water for over
+        // 12 hours stop laying. A metered zero-delivery day is 24 hours dry.
+        // Do not invent a proportional laying penalty for partial-day delivery:
+        // daily totals alone cannot establish deprivation duration.
+        // Always draw the original RNG sample to preserve seeded chronology.
+        if (rngNext() < lf.p && waterCoverage > 0) {
+          a.eggs++;
+          d.eggs++;
+          S.tot.eggsLaid++;
+          const inc = incs.find(c => S.eggsInc.filter(e => e.inc === c.id).length < c.capacity); // the first incubator with room for one more egg
+          if (inc && S.setWeek < P.mg_set) {
+            S.setWeek++;
+            d.eggsSet++;
+            S.eggsInc.push({
+              inc: inc.id,
+              set: S.day,
+              fertile: rngNext() < fertP,
+              hatchDay: S.day + P.ck_incub - ((inc.setpoint - P.ck_opt) * P.ck_shift) / 24
+            });
+          } else d.eggsSold++;
+        }
+      }
+    }
+  }
+  // ==== 4. Incubator: eggs due today hatch (fertile ones, by hatch rate and incubator conditions) or are lost ====
+  const keep = [];
+  for (const e of S.eggsInc) {
+    const inc = compById(e.inc);
+    if (!inc) {
+      continue;
+    }
+    if (S.day >= e.hatchDay) {
+      // Full equipment outage prevents incubation; intermittent outage
+      // temperature transients remain unresolved rather than inventing hatch coefficients.
+      let tm = equipmentDuty(inc) > 0 ? incTempF(inc) : 0;
+      tm *= hatchStoreF() * hatchRhF(inc);
+      if (e.fertile && rngNext() < (P.ck_hatch / 100) * tm) {
+        born.push(animal('chicken', rngNext() < 0.5 ? 'F' : 'M', 0, { health: 90 }));
+        d.hatch++;
+        S.tot.hatched++;
+      }
+    } else keep.push(e);
+  }
+  const lost = S.eggsInc.length - keep.length;
+  if (lost > 0 && d.hatch >= 0) {
+    const h = d.hatch;
+    if (lost) logE('Incubator: ' + lost + ' egg(s) due, ' + h + ' hatched.');
+  }
+  S.eggsInc = keep;
+  // ==== 5. Deaths: count and log the causes, then drop the dead, sold and retired, add the newborn, restock ====
+  // (restock when the setting is on) and re-house
+  const why = {}; // today's deaths by cause, for the log
+  for (const a of S.animals)
+    if (dead.has(a.id) && !a.sold && !a.retired) {
+      d.deaths++;
+      S.tot.deaths++;
+      const k = a.deathCause || (a.stress ? a.stress + ' stress' : 'background risk');
+      why[k] = (why[k] || 0) + 1;
+      S.tot.causes[k] = (S.tot.causes[k] || 0) + 1;
+      // optional tally by species and life stage, only kept while the planner's range check runs
+      if (S.gap) {
+        const g = a.sp + '|' + a.st + '|' + k; // tally key: species | life stage | cause
+        S.gap.deaths[g] = (S.gap.deaths[g] || 0) + 1;
+      }
+    }
+  if (d.deaths)
+    logE(
+      d.deaths +
+        ' died: ' +
+        Object.keys(why)
+          .map(k => why[k] + ' ' + k)
+          .join(', ') +
+        '.'
+    );
+  S.animals = S.animals.filter(a => !dead.has(a.id)).concat(born);
+  if (+P.mg_restock) restock(d);
+  rehouse();
+  // ==== 6. Power and money ====
+  // kWh for hutch and coop lights, fans, heaters, brooder lamps and incubators; then feed, hay, grain and
+  // power costs, egg sales and the running totals in S.tot
+  // Keep native requested load distinct from energy actually consumed.
+  // The next Homestead day must not inherit a zero load merely because the
+  // previous day suffered an electrical outage.
+  let nativeElectricityRequestedKWh = 0;
+  for (const c of S.comps) {
+    const nativeWh = nativeEquipmentDemandWh(c, env);
+    nativeElectricityRequestedKWh += nativeWh / 1000;
+    d.kwh += nativeWh * equipmentDuty(c) / 1000;
+  }
+  let feedCost = (d.rFeed * P.pr_rfeed) / 50 + (d.cFeed * P.pr_cfeed) / 50 + (d.sFeed * P.pr_sfeed) / 50;
+  const powerCost = d.kwh * P.pr_kwh,
+    useOpts = +P.fd_rab > 0 || +P.fd_range > 0 || d.hay > 0 || d.grain > 0 || d.forage > 0;
+  if (d.hay > 0 || d.grain > 0) {
+    const fc = d.hay * P.pr_hay + (d.grain * P.pr_grain) / 50; // hay is priced per lb, corn per 50 lb bag
+    feedCost += fc;
+    S.tot.hayLb = (S.tot.hayLb || 0) + d.hay;
+    S.tot.grainLb = (S.tot.grainLb || 0) + d.grain;
+    S.tot.forageFeedCost = (S.tot.forageFeedCost || 0) + fc;
+  }
+  if (d.forage > 0) S.tot.rangeLb = (S.tot.rangeLb || 0) + d.forage;
+  d.rev += (d.eggsSold / 12) * P.pr_egg;
+  d.feedCost = feedCost;
+  d.powerCost = powerCost;
+  S.tot.rev += d.rev;
+  S.tot.feedCost += feedCost;
+  S.tot.powerCost += powerCost;
+  S.tot.eggsSold += d.eggsSold;
+  // ==== 7. Today's summary (S.today) and the day's ledger row (S.hist, last 3,650 days kept) ====
+  S.today = computeDay();
+  S.today.d = d;
+  S.today.env = env;
+  const c = counts();
+  const row = {
+    day: S.day,
+    date: dateOf(S.day).toISOString().slice(0, 10),
+    tmax: +env.tmax.toFixed(1),
+    tmin: +env.tmin.toFixed(1),
+    daylen: +env.day.toFixed(2),
+    does: c.does,
+    bucks: c.bucks,
+    kits: c.kits,
+    growers: c.growers,
+    hens: c.hens,
+    pullets: c.pullets,
+    chicks: c.chicks,
+    roosters: c.roosters,
+    eggs: d.eggs,
+    eggsSold: d.eggsSold,
+    eggsSet: d.eggsSet,
+    inIncubator: S.eggsInc.length,
+    births: d.births,
+    hatched: d.hatch,
+    deaths: d.deaths,
+    fryersSold: d.fryers,
+    fryerLb: +d.fryerLb.toFixed(2),
+    rabbitFeedLb: +d.rFeed.toFixed(2),
+    chickenFeedLb: +d.cFeed.toFixed(2),
+    chickStarterLb: +d.sFeed.toFixed(2),
+    waterGal: +d.water.toFixed(2),
+    kWh: +d.kwh.toFixed(2),
+    nativeElectricityRequestedKWh: +nativeElectricityRequestedKWh.toFixed(2),
+    feedCost: +feedCost.toFixed(2),
+    powerCost: +powerCost.toFixed(2),
+    revenue: +d.rev.toFixed(2),
+    cash: +cash().toFixed(2),
+    avgHealth: +c.health.toFixed(1)
+  };
+  // feeding-option columns only appear once a feeding option is in use (old runs stay byte-identical)
+  if (useOpts || S.histFeed) {
+    S.histFeed = 1;
+    row.hayLb = +d.hay.toFixed(2);
+    row.cornLb = +d.grain.toFixed(2);
+    row.pastureLb = +d.forage.toFixed(2);
+  }
+  // restocking column only appears once breeders have been bought (old runs stay byte-identical)
+  if (d.restock || S.histRestock) {
+    S.histRestock = 1;
+    row.breedersBought = d.restock || 0;
+  }
+  S.hist.push(row);
+  if (S.hist.length > 3650) S.hist.shift();
+}
 function reset(seed=7){P.env_seed=seed>>>0;newState();return snapshot();}
-function advanceDay(){step();return snapshot();}
+function advanceDay(supply){stepCoupled(supply);return snapshot();}
 function snapshot(){const r=S.hist.length?S.hist[S.hist.length-1]:null;return {day:S.day,date:dateOf(S.day).toISOString().slice(0,10),animals:S.animals.map(a=>({id:a.id,sp:a.sp,st:a.st,age:a.age,sex:a.sex,enc:a.enc,wt:a.wt,health:a.health})),components:S.comps.map(c=>({id:c.id,type:c.type,x:c.x,y:c.y,w:c.w,d:c.d})),daily:r?{...r}:null,counts:counts()};}
 function setParameter(key,value){if(!Object.prototype.hasOwnProperty.call(P,key))throw new Error('Unknown farm parameter '+key);if(!Number.isFinite(value))throw new Error('Parameter must be finite');P[key]=value;refreshToday();}
 
@@ -6509,5 +7188,72 @@ const nativeVisual=(function(){
   return Object.freeze({init,sync,frame,world:()=>WV,stats});
 })();
 
-return Object.freeze({reset,advanceDay,snapshot,setParameter,nativeVisual});
+// One canonical native equipment-demand function, using the original Farm
+// step.js formulas and the existing day.js temperature/duty functions.
+// No additional electrical coefficients are introduced by the Homestead.
+function nativeEquipmentDemandWh(c,env){
+  if(!env)return 0;
+  if ((c.type === 'hutch' || c.type === 'coop') && +c.lights)
+    return c.lightWatts * Math.max(0, c.lightHours - env.day);
+  if (c.type === 'fan') return c.watts * hoursAbove(env.tmin, env.tmax, env.day, c.trigger);
+  if (c.type === 'heater') return c.watts * 24 * heaterDuty(env.tmin, env.tmax, env.day, c.setpoint);
+  if (c.type === 'brooder') {
+    const ch = S.animals.filter(a => a.enc === c.id);
+    return ch.length ? c.lampWatts * 24 * lampDuty(c, env.tmin, ch) : 0;
+  }
+  if (c.type === 'incubator' && +c.on && S.eggsInc.some(e => e.inc === c.id))
+    return c.watts * 24 * 0.5; // the original source's explicit half-duty assumption
+  return 0;
+}
+// Native equipment identities and source settings, read-only to the Homestead coordinator.
+// The original Farm model remains authoritative for equipment demand and biology.
+function equipmentSnapshot(){
+  const powered=new Set(['hutch','coop','fan','heater','brooder','incubator']);
+  const env=S.today && S.today.env;
+  return S.comps.filter(c=>powered.has(c.type)).map(c=>{
+    const animals=S.animals.filter(a=>a.enc===c.id && !a.sold && !a.retired);
+    return {id:c.id,type:c.type,x:c.x,y:c.y,w:c.w,d:c.d,
+      animalCount:animals.length,incubatingEggCount:S.eggsInc.filter(e=>e.inc===c.id).length,
+      nativeDailyDemandWh:nativeEquipmentDemandWh(c,env),
+      lights:Boolean(+c.lights),lightWatts:c.lightWatts??0,lightHours:c.lightHours??0,
+      watts:c.watts??0,trigger:c.trigger??null,setpoint:c.setpoint??null,
+      lampWatts:c.lampWatts??0,on:Boolean(+c.on)};
+  });
+}
+
+
+ // Homestead exposes the ORIGINAL individual building fields, not new global
+ // proxy settings. Changes take effect on the current singleton farm state.
+ function setEquipmentParameter(id,key,value){
+   if((typeof id!=='string'&&typeof id!=='number') || !String(id).trim())
+     throw new RangeError('Native Farm equipment ID required');
+   const c=S.comps.find(part=>String(part.id)===String(id));
+   if(!c)throw new RangeError('Unknown native Farm equipment ID '+id);
+   const allowed={
+     hutch:['lights','lightHours','lightWatts'],
+     coop:['lights','lightHours','lightWatts'],
+     fan:['watts','trigger'],
+     heater:['watts','setpoint'],
+     brooder:['lampWatts'],
+     incubator:['on','watts','setpoint']
+   };
+   if(!allowed[c.type] || !allowed[c.type].includes(key) ||
+      !Object.prototype.hasOwnProperty.call(TYPES[c.type].props,key))
+     throw new RangeError('Unsupported original Farm equipment property '+key);
+   if(!Number.isFinite(value))throw new RangeError('Farm equipment value must be finite');
+   if(key==='lights'||key==='on'){
+     if(value!==0 && value!==1)throw new RangeError('Native Farm equipment toggle must be 0 or 1');
+   }else if(key==='lightHours'){
+     if(value<0||value>24)throw new RangeError('Native Farm light hours must be 0..24');
+   }else if(key==='trigger'||key==='setpoint'){
+     if(value < -20 || value > 140)throw new RangeError('Native Farm temperature setting outside -20..140 F');
+   }else if(value<0 || value>10000){
+     throw new RangeError('Native Farm equipment watts outside 0..10000 W');
+   }
+   c[key]=value;
+   refreshToday();
+   return equipmentSnapshot().find(part=>part.id===c.id);
+ }
+
+return Object.freeze({reset,advanceDay,snapshot,setParameter,setEquipmentParameter,nativeVisual,equipmentSnapshot});
 })();

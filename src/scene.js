@@ -1460,9 +1460,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   const ray=new THREE.Raycaster(),pointerMap=new Map();
   let gestureMoved=false,pinchDistance=null;
   canvas.addEventListener("pointerdown",e=>{
-    pointerMap.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    pointerMap.set(e.pointerId,{x:e.clientX,y:e.clientY,x0:e.clientX,y0:e.clientY});
     gestureMoved=false;canvas.setPointerCapture(e.pointerId);
-    if(editorEnabled&&pointerMap.size===1){
+    if(editorEnabled&&!pendingPlaceType&&pointerMap.size===1){
       const rect=canvas.getBoundingClientRect();
       ray.setFromCamera(new THREE.Vector2(
         (e.clientX-rect.left)/rect.width*2-1,
@@ -1478,13 +1478,13 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
           start:visualLayout(),moved:false};
       }
     }
-    if(pointerMap.size===2){dragging=null;const p=[...pointerMap.values()];
+    if(pointerMap.size===2){if(dragging?.moved)applyVisualLayout(dragging.start);dragging=null;const p=[...pointerMap.values()];
       pinchDistance=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y)}
   });
   canvas.addEventListener("pointermove",e=>{
     const p=pointerMap.get(e.pointerId);if(!p)return;
     const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
-    if(Math.abs(dx)+Math.abs(dy)>1){
+    if(Math.hypot(p.x-p.x0,p.y-p.y0)>6){
       gestureMoved=true;trackedAnimalId=null;
     }
     if(dragging && pointerMap.size===1 && dragging.pointerId===e.pointerId){
@@ -1494,8 +1494,14 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
         -(e.clientY-rect.top)/rect.height*2+1),camera);
       const hit=ray.intersectObject(terrainMesh,true)[0];
       if(hit){
-        const targetX=hit.point.x+dragging.offsetX,targetZ=hit.point.z+dragging.offsetZ;
-        if(moveVisualObject(dragging.id,targetX,targetZ,false))dragging.moved=true;
+        // As in the original Water editor, the placement grid is 0.25 m.
+        // Preserve the pointer grab offset, so the object does not jump.
+        if(Math.hypot(p.x-p.x0,p.y-p.y0)>6){
+          const snap=v=>Math.round(v*4)/4;
+          const targetX=snap(hit.point.x+dragging.offsetX),
+                targetZ=snap(hit.point.z+dragging.offsetZ);
+          if(moveVisualObject(dragging.id,targetX,targetZ,false))dragging.moved=true;
+        }
       }
       return;
     }
@@ -1522,15 +1528,36 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     if(pointerMap.size<2)pinchDistance=null;
     if(dragging&&dragging.pointerId===e.pointerId){
       const changed=dragging.moved;
-      if(changed)undoHistory.push(dragging.start);
+      if(changed)registerUndo(dragging.start);
+      const movedObject=editableObjects.get(dragging.id);
       dragging=null;
-      if(changed){onSelect("farm",editableObjects.get(selectedEditId)?.root.userData.label);return}
+      if(changed){
+        onSelect(movedObject?.root.userData.kind||"farm",movedObject?.root.userData.label,{silentInspector:true});
+        return;
+      }
     }
     if(gestureMoved)return;
     const r=canvas.getBoundingClientRect(),coords=new THREE.Vector2(
       (e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1
     );
     ray.setFromCamera(coords,camera);
+    if(editorEnabled&&pendingPlaceType){
+      const ground=ray.intersectObject(terrainMesh,true)[0];
+      if(ground){
+        try{
+          const type=pendingPlaceType;
+          const snap=v=>Math.round(v*4)/4;
+          const placed=placeVisualObjectAt(type,snap(ground.point.x),snap(ground.point.z));
+          pendingPlaceType=null;onSelect("farm",placed.label,{silentInspector:true});
+          const status=document.getElementById("editStatus");
+          if(status)status.textContent="Placed "+placed.label+". Drag to reposition; use Undo to restore.";
+        }catch(err){
+          const status=document.getElementById("editStatus");
+          if(status)status.textContent=err.message;
+        }
+      }
+      return;
+    }
     const hits=ray.intersectObjects([...selectable,agents],true);
     if(hits.length){
       let g=hits[0].object;
@@ -1547,7 +1574,9 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     }
   });
   canvas.addEventListener("pointercancel",e=>{
-    pointerMap.delete(e.pointerId);pinchDistance=null;dragging=null;
+    pointerMap.delete(e.pointerId);pinchDistance=null;
+    if(dragging?.moved)applyVisualLayout(dragging.start);
+    dragging=null;
   });
   canvas.addEventListener("wheel",e=>{
     e.preventDefault();trackedAnimalId=null;
@@ -1560,9 +1589,25 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   [homestead,power,panels,water,tank,barn,animalArea,trough,garden].forEach(select);
   // Placement editor: users may move the VISUAL garden and add/change props.
   // Authoritative equipment, native pens and animal biology are deliberately locked.
-  const editableObjects=new Map([["garden",{root:garden,type:"garden",locked:true}]]);
+  // Spatial picking and placement follow original Water source/ui.js: stable part
+  // IDs, raycast selection, ground snapping and edit/undo, not arrow-only routing.
+  // These are layout transforms; original Solar/Water/Farm engines stay authoritative.
+  const editableObjects=new Map([["garden",{root:garden,type:"garden",locked:true,site:false}]]);
   garden.userData.editorId="garden";
-  let editorEnabled=false,selectedEditId="garden",serial=0,dragging=null;
+  const siteRoots=new Map([
+    ["site-house",homestead],["site-solar-array",panels],
+    ["site-solar-battery",power],["site-water-treatment",water],
+    ["site-water-storage",tank],["site-farm-barn",barn],
+    ["site-livestock-waterer",trough]
+  ]);
+  const initialSites=new Map();
+  for(const [id,root] of siteRoots){
+    root.userData.editorId=id;
+    editableObjects.set(id,{root,type:"native-site",locked:true,site:true});
+    initialSites.set(id,{x:root.position.x,z:root.position.z,angle:root.rotation.y});
+  }
+  let editorEnabled=true,selectedEditId="garden",serial=0,dragging=null,
+      pendingPlaceType=null;
   const undoHistory=[];
   const PROP_TYPES=Object.freeze(["planter","compost","fruit-tree","barrel"]);
   function removeSelectable(group){
@@ -1572,11 +1617,17 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   }
   function visualLayout(){
     return {garden:{x:garden.position.x,z:garden.position.z,angle:garden.rotation.y},
-      props:[...editableObjects].filter(([id])=>id!=="garden").map(([id,entry])=>({
-        id,type:entry.type,x:entry.root.position.x,z:entry.root.position.z,
-        angle:entry.root.rotation.y}))};
+      sites:Object.fromEntries([...siteRoots.keys()].map(id=>{
+        const root=editableObjects.get(id).root;
+        return [id,{x:root.position.x,z:root.position.z,angle:root.rotation.y}];
+      })),
+      props:[...editableObjects].filter(([id,entry])=>id!=="garden"&&!entry.site)
+        .map(([id,entry])=>({id,type:entry.type,x:entry.root.position.x,
+          z:entry.root.position.z,angle:entry.root.rotation.y}))};
   }
-  function registerUndo(){undoHistory.push(visualLayout());if(undoHistory.length>35)undoHistory.shift()}
+  function registerUndo(layout=visualLayout()){
+    undoHistory.push(layout);if(undoHistory.length>35)undoHistory.shift()
+  }
   function buildVisualProp(group,type){
     if(!PROP_TYPES.includes(type))throw new RangeError("Unknown visual prop");
     removeSelectable(group);
@@ -1618,8 +1669,12 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   function applyVisualLayout(layout){
     garden.position.copy(at(layout.garden.x,layout.garden.z));
     garden.rotation.y=layout.garden.angle;
+    for(const [id,root] of siteRoots){
+      const point=layout.sites?.[id]||initialSites.get(id);
+      root.position.copy(at(point.x,point.z));root.rotation.y=point.angle;
+    }
     for(const [id,entry] of [...editableObjects]){
-      if(id==="garden")continue;
+      if(id==="garden"||entry.site)continue;
       removeSelectable(entry.root);scene.remove(entry.root);
       entry.root.traverse(o=>{if(o.geometry)o.geometry.dispose()});
       editableObjects.delete(id);
@@ -1641,9 +1696,6 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
          aabbOverlap(b,nativeCoopProof.portal.run)))return false;
     }else if(root.position.x< -58||root.position.x>58||
              root.position.z< -37||root.position.z>36)return false;
-    for(const other of [homestead,power,panels,water,tank,barn,trough]){
-      if(new THREE.Box3().setFromObject(other).intersectsBox(bounds3))return false;
-    }
     for(const [otherId,other] of editableObjects){
       if(otherId!==id&&new THREE.Box3().setFromObject(other.root).intersectsBox(bounds3))
         return false;
@@ -1654,22 +1706,47 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     const obj=editableObjects.get(id);
     if(!obj||!Number.isFinite(x)||!Number.isFinite(z))
       throw new RangeError("Select an editable object and finite coordinates");
-    const old=obj.root.position.clone();
+    const old=obj.root.position.clone(),before=record?visualLayout():null;
     obj.root.position.copy(at(x,z));
     if(!insidePlacement(obj.root,id)){
       obj.root.position.copy(old);
       obj.root.updateMatrixWorld(true);
       return false;
     }
-    if(record)undoHistory.push({action:"layout",snapshot:visualLayout(),before:{id,x:old.x,z:old.z}});
+    if(record)registerUndo(before);
     return true;
   }
   function selectVisualObject(id){
     if(!editableObjects.has(id))throw new RangeError("Unknown editable object");
     selectedEditId=id;const obj=editableObjects.get(id);
     return {id,type:obj.type,label:obj.root.userData.label,
+      locked:obj.locked,site:Boolean(obj.site),
       x:obj.root.position.x,z:obj.root.position.z,angle:obj.root.rotation.y};
   }
+  function placeVisualObjectAt(type,x,z){
+    if(!PROP_TYPES.includes(type)||!Number.isFinite(x)||!Number.isFinite(z))
+      throw new RangeError("Choose a real visual part and finite terrain position");
+    const before=visualLayout(),id="prop-"+(++serial);
+    const root=freshVisualProp(type,id,x,z);
+    if(!insidePlacement(root,id)){
+      removeSelectable(root);scene.remove(root);editableObjects.delete(id);
+      throw new RangeError("Placement overlaps equipment, fence or another part");
+    }
+    registerUndo(before);
+    return selectVisualObject(id);
+  }
+  function beginPlaceVisualObject(type){
+    if(!PROP_TYPES.includes(type))throw new RangeError("Unknown part type");
+    pendingPlaceType=type;return type;
+  }
+  // The original Water editor exits placement mode on Escape.
+  document.addEventListener("keydown",e=>{
+    if(e.key==="Escape"&&pendingPlaceType){
+      pendingPlaceType=null;
+      const status=document.getElementById("editStatus");
+      if(status)status.textContent="Placement cancelled";
+    }
+  });
   function addVisualObject(type){
     if(!PROP_TYPES.includes(type))throw new RangeError("Invalid object replacement type");
     registerUndo();
@@ -1685,7 +1762,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   function swapVisualObject(type){
     if(!PROP_TYPES.includes(type))throw new RangeError("Invalid replacement");
     const obj=editableObjects.get(selectedEditId);
-    if(!obj||obj.locked)throw new RangeError("The native garden cannot be replaced");
+    if(!obj||obj.locked)throw new RangeError("Native equipment cannot be replaced by a decorative prop");
     const before=visualLayout();
     const prev=obj.type;
     buildVisualProp(obj.root,type);obj.type=type;
@@ -1719,7 +1796,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   }
   function removeVisualObject(){
     const obj=editableObjects.get(selectedEditId);
-    if(!obj||obj.locked)throw new RangeError("Cannot remove a fixed garden");
+    if(!obj||obj.locked)throw new RangeError("Cannot remove original engine equipment");
     registerUndo();removeSelectable(obj.root);scene.remove(obj.root);
     editableObjects.delete(selectedEditId);
     selectedEditId="garden";
@@ -1731,7 +1808,8 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
   }
   function resetVisualLayout(){
     undoHistory.length=0;
-    applyVisualLayout({garden:{x:GARDEN_PLAN.x,z:GARDEN_PLAN.z,angle:0},props:[]});
+    applyVisualLayout({garden:{x:GARDEN_PLAN.x,z:GARDEN_PLAN.z,angle:0},
+      sites:Object.fromEntries(initialSites),props:[]});
     serial=0;selectedEditId="garden";
   }
   function editableRoot(o){
@@ -1739,16 +1817,38 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     return item?.userData.editorId?item:null;
   }
   // Inventory/API expose visual scope honestly; physical equipment remains locked.
+  function screenPoint(world){
+    const rect=canvas.getBoundingClientRect(),v=world.clone().project(camera);
+    return {x:rect.left+(v.x+1)*rect.width/2,
+      y:rect.top+(1-v.y)*rect.height/2,
+      visible:Math.abs(v.x)<=1&&Math.abs(v.y)<=1&&v.z>=-1&&v.z<=1};
+  }
   const visualEditor=Object.freeze({
-    setEditMode(on){editorEnabled=Boolean(on);return editorEnabled},
+    setEditMode(on){
+      editorEnabled=Boolean(on);
+      if(!editorEnabled)pendingPlaceType=null;
+      return editorEnabled;
+    },
     list:()=>[...editableObjects].map(([id,e])=>({id,label:e.root.userData.label,
-      type:e.type,locked:e.locked,x:e.root.position.x,z:e.root.position.z,angle:e.root.rotation.y})),
+      type:e.type,locked:e.locked,site:Boolean(e.site),
+      x:e.root.position.x,z:e.root.position.z,angle:e.root.rotation.y})),
     selected:()=>selectVisualObject(selectedEditId),
-    select:selectVisualObject,add:addVisualObject,swap:swapVisualObject,
-    move:shiftVisualObject,rotate:rotateVisualObject,remove:removeVisualObject,
-    undo:undoVisualEdit,reset:resetVisualLayout,layout:visualLayout,
+    select:selectVisualObject,add:addVisualObject,beginPlace:beginPlaceVisualObject,
+    swap:swapVisualObject,move:shiftVisualObject,rotate:rotateVisualObject,
+    remove:removeVisualObject,undo:undoVisualEdit,reset:resetVisualLayout,
+    layout:visualLayout,
+    project:id=>{
+      const entry=editableObjects.get(id);
+      if(!entry)throw new RangeError("Unknown site object");
+      return screenPoint(new THREE.Box3().setFromObject(entry.root).getCenter(new THREE.Vector3()));
+    },
+    projectGround:(x,z)=>{
+      if(!Number.isFinite(x)||!Number.isFinite(z))throw new RangeError("Invalid ground coordinates");
+      return screenPoint(at(x,z));
+    },
     status:()=>({enabled:editorEnabled,selectedId:selectedEditId,
-      undoCount:undoHistory.length,props:editableObjects.size-1})
+      pendingPlaceType,undoCount:undoHistory.length,
+      props:[...editableObjects.values()].filter(e=>!e.site&&e.type!=="garden").length})
   });
   const observer=new ResizeObserver(()=>{
     const rect=canvas.getBoundingClientRect();

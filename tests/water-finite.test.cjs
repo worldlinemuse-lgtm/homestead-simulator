@@ -5,6 +5,7 @@ const vm=require('node:vm');
 const fs=require('node:fs');
 const path=require('node:path');
 const contractSource=fs.readFileSync(path.join(__dirname,'../src/resource-contract.js'),'utf8');
+const batterySource=fs.readFileSync(path.join(__dirname,'../vendor/solar-battery-native.js'),'utf8');
 const source=fs.readFileSync(path.join(__dirname,'../src/coordinator.js'),'utf8');
 
 function setup(mode){
@@ -37,6 +38,7 @@ function setup(mode){
     }
   };
   context.globalThis=context;
+  vm.runInNewContext(batterySource,context,{filename:'solar-battery-native.js'});
   vm.runInNewContext(contractSource,context,{filename:'resource-contract.js'});
   vm.runInNewContext(source,context,{filename:'coordinator.js'});
   return new context.HomesteadCoordinator.Coordinator({pumpElectricalW:0});
