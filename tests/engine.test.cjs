@@ -777,3 +777,20 @@ test("Farm operational coverage is bounded and cannot overstate supply",()=>{
  assert.equal(d.operationalSupply.waterSatisfied,d.waterDeficitL<=1e-8);
  assert.equal(d.operationalSupply.electricitySatisfied,d.electricityDeficitWh<=1e-8);
 });
+
+test("nested public snapshots cannot mutate authoritative Farm or resource histories",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator();
+ for(let i=0;i<15;i++)c.stepHour();
+ const original=JSON.stringify(c.snapshot());
+ const a=c.snapshot();
+ a.farm.daily.waterGal=-1000;
+ a.completedResourceDays[0].operationalSupply.waterCoverage=-4;
+ a.last.energy.nativeBattery.chargePhase="corrupted";
+ a.last.resourceAudit && (a.last.resourceAudit.corrupted=true);
+ assert.equal(JSON.stringify(c.snapshot()),original);
+ const b=c.snapshot();
+ assert.ok(b.farm.daily.waterGal>=0);
+ assert.ok(b.completedResourceDays[0].operationalSupply.waterCoverage>=0);
+ assert.notEqual(b.last.energy.nativeBattery.chargePhase,"corrupted");
+ assert.equal(c.stepHour().clock.hours,16);
+});
