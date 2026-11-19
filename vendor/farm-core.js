@@ -6580,8 +6580,9 @@ function equipmentSnapshot(){
  // Homestead exposes the ORIGINAL individual building fields, not new global
  // proxy settings. Changes take effect on the current singleton farm state.
  function setEquipmentParameter(id,key,value){
-   if(!Number.isSafeInteger(Number(id)))throw new RangeError('Native Farm equipment ID must be an integer');
-   const c=S.comps.find(part=>part.id===Number(id));
+   if((typeof id!=='string'&&typeof id!=='number') || !String(id).trim())
+     throw new RangeError('Native Farm equipment ID required');
+   const c=S.comps.find(part=>String(part.id)===String(id));
    if(!c)throw new RangeError('Unknown native Farm equipment ID '+id);
    const allowed={
      hutch:['lights','lightHours','lightWatts'],
