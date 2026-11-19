@@ -308,6 +308,11 @@
     stepHour(){
       const cfg=this.cfg, hour=(this.hours+this.startHour)%24, dayRecord=this.farmSnapshot.daily;
       must(dayRecord && typeof dayRecord==="object", "Native Farm daily demand unavailable");
+      // Keep strict validation of the original daily Farm contract even when
+      // fresh source-native equipment demand drives the next hourly allocation.
+      number("farm kWh",dayRecord.kWh);
+      if(dayRecord.nativeElectricityRequestedKWh!==undefined)
+        number("native farm kWh",dayRecord.nativeElectricityRequestedKWh);
       // Re-query the original native fixture settings every interval.
       // This immediately reflects a real coop-light, heater or brooder edit,
       // unlike the previous day's historical consumption/rounded demand.
