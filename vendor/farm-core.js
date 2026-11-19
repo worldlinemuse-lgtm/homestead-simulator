@@ -953,7 +953,7 @@ function touches(a, b) {
 }
 // plan (optional, planner only): { n, lb } = birds in this coop and feed per bird, used in place of the
 // birds now housed there for the coop's body-heat lift. Without it nothing changes.
-function micro(pen, env, plan) {
+function micro(pen, env, plan, equipmentDuty) {
   let shade = 0,
     cool = 0,
     heatTo = -999,
@@ -965,14 +965,19 @@ function micro(pen, env, plan) {
     const r = dist(p, ctr(c));
     if (r > c.radius) continue;
     const f = 1 - r / c.radius;
+    const operating = equipmentDuty ? equipmentDuty(c) : 1;
     if (c.type === 'tree' && env.tmax > 70) shade += c.shade * f;
     if (c.type === 'fan' && env.tmax > c.trigger) {
-      cool += c.cooling * f;
-      fans.push(c);
+      cool += c.cooling * f * operating;
+      if (operating > 0) fans.push(c);
     }
     if (c.type === 'heater') {
-      heatTo = Math.max(heatTo, c.setpoint);
-      heaters.push(c);
+      if (operating > 0) {
+        // Time-averaged duty interpolation uses the source climate setpoint.
+        // It is an integration approximation, not a calibrated thermal transient.
+        heatTo = Math.max(heatTo, env.tmin + (c.setpoint - env.tmin) * operating);
+        heaters.push(c);
+      }
     }
   }
   let lift = 0,
@@ -988,7 +993,8 @@ function micro(pen, env, plan) {
     tmin = Math.min(heatTo, Math.max(tmax, heatTo));
     heated = true;
   }
-  const light = pen.lights && +pen.lights ? Math.max(env.day, pen.lightHours) : env.day;
+  const nativeLight = pen.lights && +pen.lights ? Math.max(env.day, pen.lightHours) : env.day;
+  const light = env.day + (nativeLight - env.day) * (equipmentDuty ? equipmentDuty(pen) : 1);
   return { tmax, tmin, shade, cool, heated, light, lift, coopQ };
 }
 // Night heat balance of a closed coop: lift (°F) = birds' sensible heat / (conduction UA + ventilation).
@@ -1896,6 +1902,19 @@ function step(supply) {
   // Daily totals do not identify which equipment lost power. Only a verified
   // full-day blackout can disable every powered fixture without guessing priority.
   const powered = electricityCoverage > 0;
+  const equipmentCoverage = supply && supply.equipmentCoverageById != null ? supply.equipmentCoverageById : null;
+  if (equipmentCoverage !== null) {
+    if (typeof equipmentCoverage !== 'object' || Array.isArray(equipmentCoverage))
+      throw new RangeError('Farm equipment coverage must be an ID-keyed object');
+    for (const value of Object.values(equipmentCoverage)) {
+      if (!Number.isFinite(value) || value < 0 || value > 1)
+        throw new RangeError('Farm equipment delivery coverage must be between 0 and 1');
+      if (!powered && value > 0)
+        throw new RangeError('Farm equipment cannot operate without electricity');
+    }
+  }
+  const equipmentDuty = c => equipmentCoverage === null ? (powered ? 1 : 0) :
+    (Object.prototype.hasOwnProperty.call(equipmentCoverage, String(c.id)) ? equipmentCoverage[c.id] : 0);
   if (!Number.isFinite(waterCoverage) || waterCoverage < 0 || waterCoverage > 1)
     throw new RangeError('Farm water coverage must be between 0 and 1');
   // ==== 1. Start of the day: weather, housing and pen climates ====
@@ -1907,9 +1926,7 @@ function step(supply) {
   rehouse();
   let L = loads(); // floor in use (sq ft) in each building, by building id
   const M = {}; // each building's microclimate today, by building id (micro)
-  S.comps.forEach(c => (M[c.id] = micro(powered ? c : {
-    ...c, lights: 0, lampWatts: 0, watts: 0
-  }, env)));
+  S.comps.forEach(c => (M[c.id] = micro(c, env, undefined, equipmentDuty)));
   const ambient = { tmax: env.tmax, tmin: env.tmin, light: env.day, shade: 0, cool: 0, heated: false };
   const mOf = a => (a.enc && M[a.enc] ? M[a.enc] : ambient); // the microclimate an animal lives in: its building's, else the open air
   const run = runInfo(); // run space for the flock: area, birds, need and need / area
@@ -1976,7 +1993,7 @@ function step(supply) {
       return area > 0 && need + P.rb_cage <= area;
     })();
   const fertP = (P.ck_fert / 100) * Math.min(1, (roosters * P.ck_hpr) / Math.max(1, hens.length));
-  const incs = powered ? pens('incubator').filter(c => +c.on) : [];
+  const incs = pens('incubator').filter(c => +c.on && equipmentDuty(c) > 0);
 
   // ==== 3. Each animal, one day older ====
   // Health, then the chance it dies, then rabbit or chicken growth, feed, stage changes, sales,
@@ -2004,7 +2021,7 @@ function step(supply) {
       const need = Math.max(70, P.ck_brood_t - P.ck_brood_drop * Math.floor(a.age / 7));
       const pen = a.enc && compById(a.enc);
       let t = m.tmin;
-      if (pen && pen.type === 'brooder') t = brooderTemp(powered ? pen : {...pen, lampWatts: 0}, m, need);
+      if (pen && pen.type === 'brooder') t = brooderTemp({...pen, lampWatts: pen.lampWatts * equipmentDuty(pen)}, m, need);
       if (t < need - 3) {
         parts.cold += P.hl_cold * 2 * (need - t);
         loss += P.hl_cold * 2 * (need - t);
@@ -2372,7 +2389,9 @@ function step(supply) {
       continue;
     }
     if (S.day >= e.hatchDay) {
-      let tm = powered ? incTempF(inc) : 0; // unpowered incubator cannot maintain incubation conditions
+      // Full equipment outage prevents incubation; intermittent outage
+      // temperature transients remain unresolved rather than inventing hatch coefficients.
+      let tm = equipmentDuty(inc) > 0 ? incTempF(inc) : 0;
       tm *= hatchStoreF() * hatchRhF(inc);
       if (e.fertile && rngNext() < (P.ck_hatch / 100) * tm) {
         born.push(animal('chicken', rngNext() < 0.5 ? 'F' : 'M', 0, { health: 90 }));
@@ -2418,19 +2437,14 @@ function step(supply) {
   // ==== 6. Power and money ====
   // kWh for hutch and coop lights, fans, heaters, brooder lamps and incubators; then feed, hay, grain and
   // power costs, egg sales and the running totals in S.tot
+  // Keep native requested load distinct from energy actually consumed.
+  // The next Homestead day must not inherit a zero load merely because the
+  // previous day suffered an electrical outage.
+  let nativeElectricityRequestedKWh = 0;
   for (const c of S.comps) {
-    const m = M[c.id];
-    if (!powered) continue; // blackout: no equipment electricity is consumed
-    if ((c.type === 'hutch' || c.type === 'coop') && +c.lights)
-      d.kwh += (c.lightWatts * Math.max(0, c.lightHours - env.day)) / 1000;
-    if (c.type === 'fan') d.kwh += (c.watts * hoursAbove(env.tmin, env.tmax, env.day, c.trigger)) / 1000;
-    if (c.type === 'heater') d.kwh += (c.watts * 24 * heaterDuty(env.tmin, env.tmax, env.day, c.setpoint)) / 1000;
-    if (c.type === 'brooder') {
-      const ch = S.animals.filter(a => a.enc === c.id);
-      if (ch.length) d.kwh += (c.lampWatts * 24 * lampDuty(c, env.tmin, ch)) / 1000;
-    }
-    if (c.type === 'incubator' && +c.on && S.eggsInc.some(e => e.inc === c.id))
-      d.kwh += (c.watts * 24 * 0.5) / 1000; // half its rated watts around the clock while it holds eggs: an assumption, no source recorded
+    const nativeWh = nativeEquipmentDemandWh(c, env);
+    nativeElectricityRequestedKWh += nativeWh / 1000;
+    d.kwh += nativeWh * equipmentDuty(c) / 1000;
   }
   let feedCost = (d.rFeed * P.pr_rfeed) / 50 + (d.cFeed * P.pr_cfeed) / 50 + (d.sFeed * P.pr_sfeed) / 50;
   const powerCost = d.kwh * P.pr_kwh,
@@ -2483,6 +2497,7 @@ function step(supply) {
     chickStarterLb: +d.sFeed.toFixed(2),
     waterGal: +d.water.toFixed(2),
     kWh: +d.kwh.toFixed(2),
+    nativeElectricityRequestedKWh: +nativeElectricityRequestedKWh.toFixed(2),
     feedCost: +feedCost.toFixed(2),
     powerCost: +powerCost.toFixed(2),
     revenue: +d.rev.toFixed(2),
@@ -6528,14 +6543,33 @@ const nativeVisual=(function(){
   return Object.freeze({init,sync,frame,world:()=>WV,stats});
 })();
 
+// One canonical native equipment-demand function, using the original Farm
+// step.js formulas and the existing day.js temperature/duty functions.
+// No additional electrical coefficients are introduced by the Homestead.
+function nativeEquipmentDemandWh(c,env){
+  if(!env)return 0;
+  if ((c.type === 'hutch' || c.type === 'coop') && +c.lights)
+    return c.lightWatts * Math.max(0, c.lightHours - env.day);
+  if (c.type === 'fan') return c.watts * hoursAbove(env.tmin, env.tmax, env.day, c.trigger);
+  if (c.type === 'heater') return c.watts * 24 * heaterDuty(env.tmin, env.tmax, env.day, c.setpoint);
+  if (c.type === 'brooder') {
+    const ch = S.animals.filter(a => a.enc === c.id);
+    return ch.length ? c.lampWatts * 24 * lampDuty(c, env.tmin, ch) : 0;
+  }
+  if (c.type === 'incubator' && +c.on && S.eggsInc.some(e => e.inc === c.id))
+    return c.watts * 24 * 0.5; // the original source's explicit half-duty assumption
+  return 0;
+}
 // Native equipment identities and source settings, read-only to the Homestead coordinator.
 // The original Farm model remains authoritative for equipment demand and biology.
 function equipmentSnapshot(){
   const powered=new Set(['hutch','coop','fan','heater','brooder','incubator']);
+  const env=S.today && S.today.env;
   return S.comps.filter(c=>powered.has(c.type)).map(c=>{
     const animals=S.animals.filter(a=>a.enc===c.id && !a.sold && !a.retired);
     return {id:c.id,type:c.type,x:c.x,y:c.y,w:c.w,d:c.d,
       animalCount:animals.length,incubatingEggCount:S.eggsInc.filter(e=>e.inc===c.id).length,
+      nativeDailyDemandWh:nativeEquipmentDemandWh(c,env),
       lights:Boolean(+c.lights),lightWatts:c.lightWatts??0,lightHours:c.lightHours??0,
       watts:c.watts??0,trigger:c.trigger??null,setpoint:c.setpoint??null,
       lampWatts:c.lampWatts??0,on:Boolean(+c.on)};
