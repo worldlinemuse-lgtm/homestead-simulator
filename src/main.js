@@ -243,7 +243,7 @@ function renderAsset(s){
        try{
          const value=Number(input.value);
          if(!input.value.trim() || !Number.isFinite(value))throw new Error("Enter a finite numeric value");
-         const result=coordinator.setFarmEquipmentParameter(Number(selector.value),field.value,value);
+         const result=coordinator.setFarmEquipmentParameter(selector.value,field.value,value);
          redraw(result);
        }catch(err){editMessage(err.message,true);}
      });
