@@ -959,3 +959,103 @@ test("native Farm equipment inventory retains original identities and is isolate
  assert.deepEqual([...c.snapshot().farmEquipment.map(e=>e.id)], [...ids],
    "hourly physical resource dispatch must not recreate equipment identities");
 });
+
+
+test("native original Farm formulas remain identical under fully powered equipment delivery",()=>{
+ const f=ctx.HomesteadFarmCore;
+ f.reset(29);
+ const baseline=f.advanceDay();
+ f.reset(29);
+ const devices=f.equipmentSnapshot();
+ const perId=Object.fromEntries(devices.map(d=>[String(d.id),1]));
+ const connected=f.advanceDay({waterCoverage:1,electricityCoverage:1,equipmentCoverageById:perId});
+ assert.equal(JSON.stringify(connected),JSON.stringify(baseline),
+   "fully served native fixtures must reproduce the unmodified source result");
+ assert.ok(devices.every(d=>Number.isFinite(d.nativeDailyDemandWh)&&d.nativeDailyDemandWh>=0));
+});
+
+test("native Farm equipment operating coverage is validated before mutating biological state",()=>{
+ const f=ctx.HomesteadFarmCore;
+ for(const invalid of [-0.01,1.01,NaN,Infinity]){
+   f.reset(29);
+   assert.throws(()=>f.advanceDay({waterCoverage:1,electricityCoverage:1,
+     equipmentCoverageById:{"1":invalid}}),/equipment delivery coverage/);
+   assert.equal(f.snapshot().day,0);
+ }
+ f.reset(29);
+ assert.throws(()=>f.advanceDay({waterCoverage:1,electricityCoverage:0,
+   equipmentCoverageById:{"1":1}}),/cannot operate without electricity/);
+ assert.equal(f.snapshot().day,0);
+});
+
+test("Solar-to-Farm per-fixture electrical dispatch conserves requested and delivered Wh",()=>{
+ const dispatch=ctx.HomesteadCoordinator.dispatchFarmEquipment;
+ const fixtures=[
+   {id:31,type:"brooder",nativeDailyDemandWh:600},
+   {id:32,type:"incubator",nativeDailyDemandWh:300},
+   {id:33,type:"coop",nativeDailyDemandWh:100},
+   {id:34,type:"hutch",nativeDailyDemandWh:0}
+ ];
+ for(const energy of [0,10,70,100]){
+   const d=dispatch(fixtures,100,energy);
+   assert.equal(d.length,fixtures.length);
+   assert.ok(Math.abs(d.reduce((v,a)=>v+a.requestedWh,0)-100)<1e-9);
+   assert.ok(Math.abs(d.reduce((v,a)=>v+a.servedWh,0)-energy)<1e-9);
+   assert.ok(d.every(x=>x.servedWh>=0&&x.servedWh<=x.requestedWh));
+   assert.ok(d.every(x=>x.coverage>=0&&x.coverage<=1));
+   assert.equal(d[3].requestedWh,0);
+ }
+ assert.throws(()=>dispatch(fixtures,5,6),/cannot consume more/);
+ assert.throws(()=>dispatch([fixtures[0],fixtures[0]],2,1),/Duplicate native/);
+ assert.throws(()=>dispatch([{id:1,nativeDailyDemandWh:NaN}],1,1),/daily Wh/);
+});
+
+test("hourly native equipment allocations reconcile through biological midnight and stay immutable",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({
+   solarUtilization:0,batteryStartWh:1000,batteryReserveWh:1000,
+   backgroundLoadW:0,pumpElectricalW:0
+ });
+ const originalDemand=c.snapshot().farm.daily.nativeElectricityRequestedKWh;
+ let snap;
+ for(let i=0;i<15;i++){
+   snap=c.stepHour();
+   const allocations=snap.last.electricalLoads.equipment;
+   assert.ok(Math.abs(allocations.reduce((v,e)=>v+e.requestedWh,0)-snap.last.electricalLoads.farmRequestedWh)<1e-6);
+   assert.ok(Math.abs(allocations.reduce((v,e)=>v+e.servedWh,0)-snap.last.electricalLoads.farmServedWh)<1e-6);
+ }
+ assert.equal(snap.completedResourceDays.length,1);
+ const day=snap.completedResourceDays[0];
+ assert.equal(day.hourlyDeliveries.length,15);
+ assert.ok(Array.isArray(day.equipment));
+ assert.ok(Math.abs(day.equipment.reduce((v,e)=>v+e.servedWh,0)-day.electricityDeliveredWh)<1e-6);
+ assert.ok(Math.abs(day.equipment.reduce((v,e)=>v+e.requestedWh,0)-day.electricityRequestedWh)<1e-6);
+ assert.equal(day.electricityDeliveredWh,0);
+ assert.equal(snap.farm.daily.kWh,0,"blackout equipment cannot consume electricity");
+ // Critical: unmet demand persists into future days; physical need is not erased by a blackout.
+ if(originalDemand>0)assert.ok(snap.farm.daily.nativeElectricityRequestedKWh>0);
+ const before=JSON.stringify(c.snapshot());
+ const external=c.snapshot();
+ if(external.completedResourceDays[0].equipment.length)
+   external.completedResourceDays[0].equipment[0].servedWh=9999;
+ if(external.farmEquipment.length)external.farmEquipment[0].nativeDailyDemandWh=-100;
+ assert.equal(JSON.stringify(c.snapshot()),before);
+ snap=c.stepHour();
+ assert.equal(snap.last.electricalLoads.farmServedWh,0);
+ assert.ok(snap.last.electricalLoads.farmRequestedWh>=0);
+});
+
+test("partial native equipment duty is reproducible and never increases metered electrical use",()=>{
+ const f=ctx.HomesteadFarmCore;
+ f.reset(29);
+ const full=f.advanceDay({waterCoverage:1,electricityCoverage:1});
+ const ids=f.equipmentSnapshot().map(d=>String(d.id));
+ const run=()=>{
+   f.reset(29);
+   return f.advanceDay({waterCoverage:1,electricityCoverage:0.5,
+     equipmentCoverageById:Object.fromEntries(ids.map(id=>[id,0.5]))});
+ };
+ const first=run(),second=run();
+ assert.equal(JSON.stringify(first),JSON.stringify(second));
+ assert.ok(first.daily.kWh<=full.daily.kWh+1e-9);
+ assert.ok(first.daily.nativeElectricityRequestedKWh>=first.daily.kWh);
+});
