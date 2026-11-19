@@ -866,3 +866,21 @@ test("metered partial rabbit water supply scales native intake and preserves rep
    assert.ok(halfR[i].wt<=fullR[i].wt+1e-9);
  }
 });
+
+
+test("native chicken laying stops under a full day of zero delivered water",()=>{
+ const f=ctx.HomesteadFarmCore;
+ const simulate=coverage=>{
+  f.reset(29);
+  const days=[];
+  for(let i=0;i<30;i++)days.push(f.advanceDay({waterCoverage:coverage}));
+  return days;
+ };
+ const full=simulate(1),dry=simulate(0),dryReplay=simulate(0);
+ assert.equal(JSON.stringify(dry),JSON.stringify(dryReplay),
+   "zero-water chicken and rabbit biological replay must be deterministic");
+ assert.ok(full.reduce((sum,day)=>sum+day.daily.eggs,0)>0,
+   "seeded source Farm must have laying hens for the control comparison");
+ assert.equal(dry.reduce((sum,day)=>sum+day.daily.eggs,0),0,
+   "24-hour deprivation must stop native chicken egg production");
+});
