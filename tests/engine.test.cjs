@@ -935,3 +935,27 @@ test("hourly Farm delivery chronology reconciles exact native resource transfers
  assert.equal(next.dailyFarmDeliveryTrace.length,1);
  assert.equal(next.dailyFarmDeliveryTrace[0].hourIndex,15);
 });
+
+
+test("native Farm equipment inventory retains original identities and is isolated from UI snapshots",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator();
+ const state=c.snapshot();
+ assert.ok(Array.isArray(state.farmEquipment));
+ assert.ok(state.farmEquipment.length>0,"original Farm has physical equipment");
+ const ids=new Set();
+ for(const equipment of state.farmEquipment){
+   assert.ok(equipment.id!==undefined);
+   assert.ok(!ids.has(equipment.id),"native equipment identity must be unique");
+   ids.add(equipment.id);
+   assert.ok(["hutch","coop","fan","heater","brooder","incubator"].includes(equipment.type));
+   assert.ok(Number.isFinite(equipment.animalCount)&&equipment.animalCount>=0);
+ }
+ const before=JSON.stringify(c.snapshot().farmEquipment);
+ state.farmEquipment[0].animalCount=-100;
+ state.farmEquipment[0].watts=999999;
+ assert.equal(JSON.stringify(c.snapshot().farmEquipment),before,
+   "UI edits cannot mutate native Farm equipment");
+ c.stepHour();
+ assert.deepEqual([...c.snapshot().farmEquipment.map(e=>e.id)], [...ids],
+   "hourly physical resource dispatch must not recreate equipment identities");
+});
