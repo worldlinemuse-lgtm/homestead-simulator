@@ -234,6 +234,23 @@
       this.cfg=updated;
       return this.snapshot();
     }
+    // Route native Farm settings through the shared coordinator, so the next
+    // hourly electrical/water allocation reads the refreshed original demand.
+    // This is the original Farm command, not a parallel approximation.
+    setFarmParameter(key,value){
+      must(typeof key==="string" && key.length>0,"Farm parameter key required");
+      must(Number.isFinite(value),"Farm parameter must be finite");
+      must(this.farm && typeof this.farm.setParameter==="function",
+        "Native Farm parameter command unavailable");
+      this.farm.setParameter(key,value);
+      const next=this.farm.snapshot();
+      must(next && next.day===this.farmSnapshot.day &&
+        next.daily && Number.isFinite(next.daily.waterGal) &&
+        next.daily.waterGal>=0 && Number.isFinite(next.daily.kWh) &&
+        next.daily.kWh>=0,"Native Farm parameter update returned invalid demand");
+      this.farmSnapshot=next;
+      return this.snapshot();
+    }
     stepHour(){
       const cfg=this.cfg, hour=(this.hours+this.startHour)%24, dayRecord=this.farmSnapshot.daily;
       must(dayRecord && typeof dayRecord==="object", "Native Farm daily demand unavailable");
