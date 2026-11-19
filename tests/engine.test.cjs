@@ -908,3 +908,30 @@ test("native Farm electrical blackout disables powered equipment without inventi
    assert.equal(f.snapshot().day,0,"invalid electricity coverage must not advance biological clock");
  }
 });
+
+test("hourly Farm delivery chronology reconciles exact native resource transfers across midnight",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator({
+   batteryStartWh:1000,batteryReserveWh:1000,waterStartL:0,
+   solarHourlyWeather:Array.from({length:48},()=>({irradianceWm2:0,cellTemperatureC:20}))
+ });
+ for(let i=0;i<14;i++){
+   const state=c.stepHour();
+   assert.equal(state.dailyFarmDeliveryTrace.length,i+1);
+   assert.equal(state.dailyFarmDeliveryTrace[i].hourIndex,i);
+   assert.equal(state.dailyFarmDeliveryTrace[i].localHour,(9+i)%24);
+ }
+ const completed=c.stepHour();
+ assert.equal(completed.dailyFarmDeliveryTrace.length,0);
+ const day=completed.completedResourceDays[0];
+ assert.equal(day.hourlyDeliveries.length,15);
+ for(const key of ["waterRequestedL","waterDeliveredL","electricityRequestedWh","electricityDeliveredWh"]){
+   const total=day.hourlyDeliveries.reduce((sum,h)=>sum+h[key],0);
+   assert.ok(Math.abs(total-day[key])<1e-6,key+" hourly conservation");
+ }
+ const copy=c.snapshot();
+ copy.completedResourceDays[0].hourlyDeliveries[0].electricityDeliveredWh=-99;
+ assert.ok(c.snapshot().completedResourceDays[0].hourlyDeliveries[0].electricityDeliveredWh>=0);
+ const next=c.stepHour();
+ assert.equal(next.dailyFarmDeliveryTrace.length,1);
+ assert.equal(next.dailyFarmDeliveryTrace[0].hourIndex,15);
+});
