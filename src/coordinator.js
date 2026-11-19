@@ -325,7 +325,8 @@
       if(midnight){
         completedDelivery={...nextDailyDelivery,endingHour:nextHours,
           waterDeficitL:nextDailyDelivery.waterRequestedL-nextDailyDelivery.waterDeliveredL,
-          electricityDeficitWh:nextDailyDelivery.electricityRequestedWh-nextDailyDelivery.electricityDeliveredWh,\n          operationalSupply:{...nextOperationalSupply}};
+          electricityDeficitWh:nextDailyDelivery.electricityRequestedWh-nextDailyDelivery.electricityDeliveredWh,
+          operationalSupply:{...nextOperationalSupply}};
         // Native Farm is a singleton without a clone/rollback API. This ordering
         // protects physical state on a thrown advancement, but a Farm exception
         // after internal mutation still requires native engine rollback support.

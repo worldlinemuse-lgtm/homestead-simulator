@@ -1531,7 +1531,10 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
       if(changed)registerUndo(dragging.start);
       const movedObject=editableObjects.get(dragging.id);
       dragging=null;
-      if(changed){onSelect(movedObject?.root.userData.kind||"farm",movedObject?.root.userData.label);return}
+      if(changed){
+        onSelect(movedObject?.root.userData.kind||"farm",movedObject?.root.userData.label,{silentInspector:true});
+        return;
+      }
     }
     if(gestureMoved)return;
     const r=canvas.getBoundingClientRect(),coords=new THREE.Vector2(
@@ -1545,7 +1548,7 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
           const type=pendingPlaceType;
           const snap=v=>Math.round(v*4)/4;
           const placed=placeVisualObjectAt(type,snap(ground.point.x),snap(ground.point.z));
-          pendingPlaceType=null;onSelect("farm",placed.label);
+          pendingPlaceType=null;onSelect("farm",placed.label,{silentInspector:true});
           const status=document.getElementById("editStatus");
           if(status)status.textContent="Placed "+placed.label+". Drag to reposition; use Undo to restore.";
         }catch(err){
@@ -1736,6 +1739,14 @@ export function makeScene(canvas,onSelect=()=>{},farmVisual=null){
     if(!PROP_TYPES.includes(type))throw new RangeError("Unknown part type");
     pendingPlaceType=type;return type;
   }
+  // The original Water editor exits placement mode on Escape.
+  document.addEventListener("keydown",e=>{
+    if(e.key==="Escape"&&pendingPlaceType){
+      pendingPlaceType=null;
+      const status=document.getElementById("editStatus");
+      if(status)status.textContent="Placement cancelled";
+    }
+  });
   function addVisualObject(type){
     if(!PROP_TYPES.includes(type))throw new RangeError("Invalid object replacement type");
     registerUndo();

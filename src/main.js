@@ -28,7 +28,7 @@ const descriptions={
  water:["Water treatment","The original Water simulator's pump and reverse-osmosis hydraulic network advances treatment and storage. Electrical input is assumed."],
  farm:["Rabbit & chicken area","Rabbits, chickens and daily resource demands come from the original seeded Farm biological engine. Visual movement does not affect biology."]
 };
-function selectArea(kind){selected=kind in descriptions?kind:"overview";document.querySelectorAll("nav [data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===selected));$("inspectTitle").textContent=descriptions[selected][0];$("inspectDescription").textContent=descriptions[selected][1];scene?.go(selected);}
+function selectArea(kind,moveCamera=true){selected=kind in descriptions?kind:"overview";document.querySelectorAll("nav [data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===selected));$("inspectTitle").textContent=descriptions[selected][0];$("inspectDescription").textContent=descriptions[selected][1];if(moveCamera)scene?.go(selected);}
 function refreshObjectEditor(){
  if(!scene?.editor)return;
  const list=scene.editor.list(),current=scene.editor.selected();
@@ -814,11 +814,16 @@ $("exportBtn").addEventListener("click",()=>{
  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");
  a.href=url;a.download="homestead-scenario-"+payload.clock.date+".json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
-try{scene=makeScene($("world"),(kind,label)=>{
-  selectArea(kind);selectedAsset=label||null;
+try{scene=makeScene($("world"),(kind,label,options={})=>{
+  // Source Water editor: picking a part opens its settings without moving camera.
+  selectArea(kind,false);selectedAsset=label||null;
   $("inspectTitle").textContent=selectedAsset||descriptions[kind][0];
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
   renderAsset(coordinator.snapshot());refreshObjectEditor();
+  if(options.silentInspector){
+   editMessage("Moved "+(label||"selected object")+" · visual layout only; native models unchanged");
+   return;
+  }
   const selectedWater=kind==="water"&&Boolean(label);
   selectedWaterRole=selectedWater?(
    label==="Treated-water storage tank"?"storage":
