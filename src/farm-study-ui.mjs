@@ -18,13 +18,13 @@ export function installFarmNativeStudy({$,coordinator,isPlaying,jumpToUtility,fo
  $("farmStudyRun").insertAdjacentElement("afterend",liveButton);
  liveButton.addEventListener("click",()=>{
   const host=$("farmStudyReport");
+  try{
   const changes=inputFields.map(([element,key])=>{
    const raw=$(element).value.trim(),value=raw===""?NaN:Number(raw);
    if(!Number.isFinite(value)||!Number.isSafeInteger(value)||value<0)
     throw new Error(key+" must be a nonnegative whole number");
    return [key,value];
   });
-  try{
    // Validate every input before issuing any native command.
    const before=coordinator.snapshot().farm;
    for(const [key,value] of changes)coordinator.setFarmParameter(key,value);
