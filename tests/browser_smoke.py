@@ -46,6 +46,35 @@ try:
                 # only an opaque forty-second readiness timeout.
                 raise AssertionError(f"Homestead startup failed (mobile={mobile}); page errors={errors!r}; url={page.url}") from exc
             assert page.locator("#world").is_visible()
+            # LIVE FARM EQUIPMENT: navigating the unified 3D Farm exposes
+            # the ORIGINAL native component settings, not a disconnected calculator.
+            checkpoint("native-farm:live-fixture-editor")
+            page.locator('[data-view="farm"]').click()
+            page.locator("#inspectBtn").click()
+            panel=page.locator(".farmNativeSettings")
+            assert panel.is_visible(), ("Native Farm controls missing from 3D area inspector",mobile)
+            native_before=page.evaluate("""() => window.HomesteadApp.snapshot().farmEquipment.find(d=>d.type==="coop")""")
+            assert native_before and native_before["id"].startswith("c"),native_before
+            assert native_before["lights"] is False
+            panel.locator('select[aria-label="Original Farm equipment property"]').select_option("lights")
+            panel.locator('input[aria-label="Native Farm setting value"]').fill("1")
+            panel.get_by_role("button",name="Apply to connected Homestead").click()
+            native_after=page.evaluate("""() => window.HomesteadApp.snapshot().farmEquipment.find(d=>d.type==="coop")""")
+            assert native_after["id"]==native_before["id"]
+            assert native_after["lights"] is True
+            assert native_after["nativeDailyDemandWh"]>0, native_after
+            page.evaluate("window.HomesteadApp.step()")
+            live=page.evaluate("window.HomesteadApp.snapshot()")
+            assert live["last"]["electricalLoads"]["farmRequestedWh"]>0
+            assert any(x["id"]==native_after["id"] and x["requestedWh"]>0
+                       for x in live["last"]["electricalLoads"]["equipment"])
+            (ROOT/"tests"/"artifacts").mkdir(parents=True,exist_ok=True)
+            page.screenshot(path=str(ROOT/"tests"/"artifacts"/
+                ("mobile-native-farm-equipment.png" if mobile else "desktop-native-farm-equipment.png")))
+            page.evaluate("window.HomesteadApp.reset()")
+            page.locator("#inspectBtn").click()
+            page.locator('[data-view="overview"]').click()
+            assert not errors,errors
             # UTILITY NAVIGATION REGRESSION: the source-native tools must be
             # discoverable without first traversing the long Details inspector.
             assert page.locator("#utilitiesBtn").is_visible()
