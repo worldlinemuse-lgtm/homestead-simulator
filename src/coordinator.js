@@ -316,11 +316,17 @@
       // Re-query the original native fixture settings every interval.
       // This immediately reflects a real coop-light, heater or brooder edit,
       // unlike the previous day's historical consumption/rounded demand.
-      const liveEquipment=this.farm.equipmentSnapshot();
+      // Real Farm exposes equipmentSnapshot(); older hydraulics fault-injection
+      // harnesses intentionally supply only the minimal snapshot protocol.
+      // In that harness (and only then) preserve the source's aggregate demand
+      // explicitly as unattributed, never invent device identities or zero it.
+      const hasNativeEquipment=typeof this.farm.equipmentSnapshot==="function";
+      const liveEquipment=hasNativeEquipment?this.farm.equipmentSnapshot():[];
       must(Array.isArray(liveEquipment),"Native Farm equipment list unavailable");
       const liveNativeWh=liveEquipment.reduce((sum,item)=>
         sum+number("Live native equipment Wh",item.nativeDailyDemandWh),0);
-      const farmDailyKWh=number("farm kWh",liveNativeWh/1000);
+      const farmDailyKWh=number("farm kWh",hasNativeEquipment?
+        liveNativeWh/1000:(dayRecord.nativeElectricityRequestedKWh??dayRecord.kWh));
       const farmDailyWaterL=number("farm gal",dayRecord.waterGal)*GALLON_TO_LITER;
       const weatherDay=Math.floor((this.hours+this.startHour)/24);
       const pv=solarEnvelopeW(hour,cfg,weatherDay);
@@ -542,7 +548,8 @@
     snapshot(){
       return {schema:1,model:"experimental-coupled-scenario",clock:{hours:this.hours,hourOfDay:(this.hours+this.startHour)%24,startHour:this.startHour,date:this.farmSnapshot.date},
         batteryWh:this.batteryWh,absorptionMinutes:this.absorptionMinutes,waterStoredL:this.waterStoredL,config:copyData(this.cfg),farm:copyData(this.farmSnapshot),
-        farmEquipment:copyData(this.farm.equipmentSnapshot()),
+        farmEquipment:copyData(typeof this.farm.equipmentSnapshot==="function"?
+          this.farm.equipmentSnapshot():[]),
         cumulative:{...this.cumulative},dailyResourceDelivery:{...this.dailyResourceDelivery},dailyFarmDeliveryTrace:copyData(this.dailyFarmDeliveryTrace),
         farmEquipment:this.farm.equipmentSnapshot(),
         completedResourceDays:copyData(this.completedResourceDays),last:copyData(this.last)};
