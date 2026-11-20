@@ -28,4 +28,19 @@ for(const bad of [{solarSeries:0},{solarSeries:1.5},
   {solarStringsByController:[]},{solarStringsByController:[0]},
   {solarMpptCurrentLimitA:0},{solarBusVoltageV:0}])
   assert.throws(()=>configuration(bad));
+
+// The native engine must never silently turn a malformed result into a zero
+// supply reading: this would conceal a broken source integration.
+for(const result of [null,{}, {status:'estimated',controllerMaximumEnvelopeW:NaN},
+  {status:'estimated',controllerMaximumEnvelopeW:-1},
+  {status:'unrecognized'}]){
+  context.SolarNextCore.shadowPv=()=>result;
+  assert.throws(()=>solarEnvelopeW(12,baseline));
+}
+context.SolarNextCore.shadowPv=()=>({status:'unsupported',reason:'incompatible topology'});
+const unsupported=solarEnvelopeW(12,baseline);
+assert.equal(unsupported.status,'unsupported');
+assert.equal(unsupported.envelopeW,0);
+assert.equal(unsupported.reason,'incompatible topology');
+
 console.log('Native Solar PV topology configuration and hourly coupling: passed');
