@@ -60,7 +60,13 @@
       pvCableLoopOhm:0.06,controllerCableLoopOhm:0.02,busVoltageV:c.solarBusVoltageV,
       legacyControllerOutputW:null,legacySnowFraction:0
     });
-    if(estimate.status!=="estimated")return {envelopeW:0,irradiance,cellC,status:estimate.status,reason:estimate.reason||"Unsupported",provenance};
+    must(estimate && typeof estimate==="object" && typeof estimate.status==="string",
+      "Native Solar PV result missing status");
+    if(estimate.status!=="estimated"){
+      must(["unsupported","invalid","no_sun"].includes(estimate.status),
+        "Unexpected native Solar PV status: "+estimate.status);
+      return {envelopeW:0,irradiance,cellC,status:estimate.status,reason:estimate.reason||"Unsupported",provenance};
+    }
     return {envelopeW:number("envelope",estimate.controllerMaximumEnvelopeW),irradiance,cellC,status:"estimated",provenance};
   }
   function allocateEnergy(params){
