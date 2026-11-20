@@ -22,6 +22,8 @@
   function number(name,x,lower=0){must(Number.isFinite(x)&&x>=lower,name+" must be finite and >= "+lower);return x}
   const configDefaults=Object.freeze({
     solarUtilization:0.72, // Assumed fraction of PV published-reference upper envelope
+    solarPanelId:"lg435",solarControllerId:"150/70",solarSeries:2,
+    solarStringsByController:[2],solarMpptCurrentLimitA:70,solarBusVoltageV:24,
     cloudTransmittance:0.82, // Assumed clear-sky transmission; NOT weather data
     batteryCapacityWh:10000,batteryStartWh:6000,batteryReserveWh:1000,
     chargeEfficiency:0.95,dischargeEfficiency:0.92,
@@ -47,15 +49,15 @@
     const provenance=record?"supplied_hourly_weather":"illustrative_sky";
     if(irradiance<0.01)return {envelopeW:0,irradiance,cellC,status:"no_sun",provenance};
     const estimate=root.SolarNextCore.shadowPv({
-      panelId:"lg435",controllerId:"150/70",
+      panelId:c.solarPanelId,controllerId:c.solarControllerId,
       irradianceWm2:irradiance,cellTemperatureC:cellC,
       coldDesignMinimumCellTemperatureC:-25,
       hotDesignMaximumCellTemperatureC:70,
       maximumDesignEffectiveIrradianceWm2:1200,
-      series:2,stringsByController:[2],
-      mpptCurrentLimitA:70,mpptAbsoluteVocV:150,mpptOperatingVocV:145,
+      series:c.solarSeries,stringsByController:c.solarStringsByController,
+      mpptCurrentLimitA:c.solarMpptCurrentLimitA,mpptAbsoluteVocV:150,mpptOperatingVocV:145,
       mpptIscLimitA:50,mpptEfficiency:0.98,
-      pvCableLoopOhm:0.06,controllerCableLoopOhm:0.02,busVoltageV:24,
+      pvCableLoopOhm:0.06,controllerCableLoopOhm:0.02,busVoltageV:c.solarBusVoltageV,
       legacyControllerOutputW:null,legacySnowFraction:0
     });
     if(estimate.status!=="estimated")return {envelopeW:0,irradiance,cellC,status:estimate.status,reason:estimate.reason||"Unsupported",provenance};
@@ -215,6 +217,12 @@
         return {irradianceWm2,cellTemperatureC:record.cellTemperatureC};
       });
     }
+    must(typeof c.solarPanelId==="string" && c.solarPanelId.length>0 && typeof c.solarControllerId==="string" && c.solarControllerId.length>0,"Solar native component IDs required");
+    must(Number.isSafeInteger(c.solarSeries)&&c.solarSeries>=1&&c.solarSeries<=100,"Solar series must be an integer 1..100");
+    must(Array.isArray(c.solarStringsByController)&&c.solarStringsByController.length>0&&c.solarStringsByController.length<=100&&c.solarStringsByController.every(n=>Number.isSafeInteger(n)&&n>=1&&n<=100),"Solar controller string topology invalid");
+    c.solarStringsByController=[...c.solarStringsByController];
+    number("solarMpptCurrentLimitA",c.solarMpptCurrentLimitA);must(c.solarMpptCurrentLimitA>0,"Solar MPPT limit must be positive");
+    number("solarBusVoltageV",c.solarBusVoltageV);must(c.solarBusVoltageV>0,"Solar bus voltage must be positive");
     for(const key of ["solarUtilization","cloudTransmittance","chargeEfficiency","dischargeEfficiency"]){
       number(key,c[key]);must(c[key]<=1,key+" must be <=1");
     }
