@@ -9,7 +9,7 @@ const assert=require("node:assert/strict");
 const fs=require("node:fs");
 const vm=require("node:vm");
 const path=require("node:path");
-const ctx=vm.createContext({console,Date,Math,Map,Set,Number,String,Array,Object,
+const ctx=vm.createContext({console,structuredClone,Date,Math,Map,Set,Number,String,Array,Object,
  JSON,Error,Uint8Array,Float64Array,Float32Array,Int32Array,Infinity,NaN,
  performance:require("node:perf_hooks").performance});
 for(const file of ["vendor/solar-next-core.js","vendor/solar-battery-native.js","vendor/water-engine.js",

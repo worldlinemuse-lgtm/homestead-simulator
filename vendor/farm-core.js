@@ -7255,5 +7255,19 @@ function equipmentSnapshot(){
    return equipmentSnapshot().find(part=>part.id===c.id);
  }
 
-return Object.freeze({reset,advanceDay,snapshot,setParameter,setEquipmentParameter,nativeVisual,equipmentSnapshot});
+// Transactional checkpoints capture the complete native mutable biological state,
+// including RNG, incubation, history, and component state. No derived snapshot
+// can reconstruct those hidden fields after a failed midnight advancement.
+function checkpoint(){
+  if(!S)throw new Error("Farm must be initialized before checkpoint");
+  return structuredClone(S);
+}
+function restoreCheckpoint(state){
+  if(!state || typeof state!=="object" || !Number.isSafeInteger(state.day) ||
+      !Array.isArray(state.animals) || !Array.isArray(state.comps) ||
+      !Array.isArray(state.hist))throw new TypeError("Invalid native Farm checkpoint");
+  S=structuredClone(state);
+  return snapshot();
+}
+return Object.freeze({reset,advanceDay,snapshot,setParameter,setEquipmentParameter,nativeVisual,equipmentSnapshot,checkpoint,restoreCheckpoint});
 })();

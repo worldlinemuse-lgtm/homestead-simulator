@@ -6,7 +6,7 @@ import {FARM_STUDY_FIELDS} from "../src/farm-native-study.mjs";
 // Read and instrument the exact bundled source in a throwaway VM. The shipped
 // native Farm closure remains byte-for-byte UNMODIFIED.
 const original=fs.readFileSync(new URL("../vendor/farm-core.js",import.meta.url),"utf8");
-const marker="return Object.freeze({reset,advanceDay,snapshot,setParameter,setEquipmentParameter,nativeVisual,equipmentSnapshot});";
+const marker="return Object.freeze({reset,advanceDay,snapshot,setParameter,setEquipmentParameter,nativeVisual,equipmentSnapshot,checkpoint,restoreCheckpoint});";
 const inserted=original.replace(marker,
  "globalThis.__sourceSettings = PARAMS.map(row=>[row[0],row[3],row[4]]);\n"+marker);
 test("Farm utility controls exactly mirror source/src/core/settings.js keys, defaults and units",()=>{
