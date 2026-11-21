@@ -17,7 +17,8 @@ for(const command of ["setFarmParameter","setFarmEquipmentParameter"]){
       },
       checkpoint:()=>native.checkpoint(),
       restoreCheckpoint:state=>native.restoreCheckpoint(state),
-      snapshot:()=>native.snapshot()
+      snapshot:()=>native.snapshot(),
+      equipmentSnapshot:()=>native.equipmentSnapshot()
     };
     assert.throws(()=>command==="setFarmParameter"
       ?coordinator.setFarmParameter("water",1)
