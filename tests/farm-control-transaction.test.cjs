@@ -10,7 +10,7 @@ for(const command of ["setFarmParameter","setFarmEquipmentParameter"]){
     const native=coordinator.farm;
     const before=JSON.stringify(native.snapshot());
     const publicBefore=JSON.stringify(coordinator.snapshot());
-    coordinator.farm=Object.assign(Object.create(native),{
+    coordinator.farm={
       [command==="setFarmParameter"?"setParameter":"setEquipmentParameter"](){
         native.reset(999);
         throw new Error("injected native command failure");
@@ -18,7 +18,7 @@ for(const command of ["setFarmParameter","setFarmEquipmentParameter"]){
       checkpoint:()=>native.checkpoint(),
       restoreCheckpoint:state=>native.restoreCheckpoint(state),
       snapshot:()=>native.snapshot()
-    });
+    };
     assert.throws(()=>command==="setFarmParameter"
       ?coordinator.setFarmParameter("water",1)
       :coordinator.setFarmEquipmentParameter("fixture","watts",1),/injected native command failure/);
