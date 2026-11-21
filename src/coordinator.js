@@ -483,28 +483,34 @@
           operationalSupply:{...nextOperationalSupply},
           hourlyDeliveries:copyData(nextFarmDeliveryTrace),
           equipment:copyData(completedEquipment)};
-        // Native Farm is a singleton without a clone/rollback API. This ordering
-        // protects physical state on a thrown advancement, but a Farm exception
-        // after internal mutation still requires native engine rollback support.
-        const previousFarmDay=this.farmSnapshot.day;
-        this.farm.advanceDay({waterCoverage:nextOperationalSupply.waterCoverage,
-          electricityCoverage:nextOperationalSupply.electricityCoverage,
-          equipmentCoverageById});
+        // Native Farm advances transactionally: any thrown exception or invalid
+        // result restores the exact biological state and random generator.
+        must(typeof this.farm.checkpoint==="function" &&
+          typeof this.farm.restoreCheckpoint==="function",
+          "Native Farm transactional checkpoint API unavailable");
+        const farmCheckpoint=this.farm.checkpoint();
+        try {
+          const previousFarmDay=this.farmSnapshot.day;
+          this.farm.advanceDay({waterCoverage:nextOperationalSupply.waterCoverage,
+            electricityCoverage:nextOperationalSupply.electricityCoverage,
+            equipmentCoverageById});
+          nextFarmSnapshot=this.farm.snapshot();
+          must(nextFarmSnapshot && Number.isSafeInteger(nextFarmSnapshot.day) &&
+            nextFarmSnapshot.day===previousFarmDay+1,
+            "Native Farm must advance exactly one biological day");
+          must(nextFarmSnapshot.daily && Number.isFinite(nextFarmSnapshot.daily.waterGal) &&
+            nextFarmSnapshot.daily.waterGal>=0 && Number.isFinite(nextFarmSnapshot.daily.kWh) &&
+            nextFarmSnapshot.daily.kWh>=0,
+            "Native Farm returned invalid daily resource demand");
+        } catch(error) {
+          this.farm.restoreCheckpoint(farmCheckpoint);
+          throw error;
+        }
         nextOperationalSupply.biologicalEffectsApplied=true;
         nextOperationalSupply.electricityBlackoutEffectsApplied=nextOperationalSupply.electricityCoverage===0;
         nextOperationalSupply.partialElectricityEffectsModeled=true;
         nextOperationalSupply.equipmentOperatingCoverage=copyData(equipmentCoverageById);
         completedDelivery.operationalSupply=copyData(nextOperationalSupply);
-        nextFarmSnapshot=this.farm.snapshot();
-        // Reject a silently failed or malformed native advance before committing
-        // electricity, water, clock, or the completed delivery record.
-        must(nextFarmSnapshot && Number.isSafeInteger(nextFarmSnapshot.day) &&
-          nextFarmSnapshot.day===previousFarmDay+1,
-          "Native Farm must advance exactly one biological day");
-        must(nextFarmSnapshot.daily && Number.isFinite(nextFarmSnapshot.daily.waterGal) &&
-          nextFarmSnapshot.daily.waterGal>=0 && Number.isFinite(nextFarmSnapshot.daily.kWh) &&
-          nextFarmSnapshot.daily.kWh>=0,
-          "Native Farm returned invalid daily resource demand");
       }
       // Hydraulic state, tank inventory and electricity commit together.
       this.water=nextWater;
