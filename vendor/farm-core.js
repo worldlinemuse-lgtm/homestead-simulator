@@ -7260,13 +7260,21 @@ function equipmentSnapshot(){
 // can reconstruct those hidden fields after a failed midnight advancement.
 function checkpoint(){
   if(!S)throw new Error("Farm must be initialized before checkpoint");
-  return structuredClone(S);
+  const state=structuredClone(S);
+  state.__homesteadSettings=structuredClone(P);
+  return state;
 }
 function restoreCheckpoint(state){
   if(!state || typeof state!=="object" || !Number.isSafeInteger(state.day) ||
       !Array.isArray(state.animals) || !Array.isArray(state.comps) ||
       !Array.isArray(state.hist))throw new TypeError("Invalid native Farm checkpoint");
+  if(state.__homesteadSettings){
+    const saved=state.__homesteadSettings;
+    for(const key of Object.keys(P))if(!Object.prototype.hasOwnProperty.call(saved,key))delete P[key];
+    for(const [key,value] of Object.entries(saved))P[key]=structuredClone(value);
+  }
   S=structuredClone(state);
+  delete S.__homesteadSettings;
   return snapshot();
 }
 return Object.freeze({reset,advanceDay,snapshot,setParameter,setEquipmentParameter,nativeVisual,equipmentSnapshot,checkpoint,restoreCheckpoint});
