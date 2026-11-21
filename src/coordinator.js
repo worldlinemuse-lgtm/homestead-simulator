@@ -295,12 +295,22 @@
       must(Number.isFinite(value),"Farm parameter must be finite");
       must(this.farm && typeof this.farm.setParameter==="function",
         "Native Farm parameter command unavailable");
-      this.farm.setParameter(key,value);
-      const next=this.farm.snapshot();
-      must(next && next.day===this.farmSnapshot.day &&
-        next.daily && Number.isFinite(next.daily.waterGal) &&
-        next.daily.waterGal>=0 && Number.isFinite(next.daily.kWh) &&
-        next.daily.kWh>=0,"Native Farm parameter update returned invalid demand");
+      must(typeof this.farm.checkpoint==="function" &&
+        typeof this.farm.restoreCheckpoint==="function",
+        "Native Farm transactional checkpoint API unavailable");
+      const checkpoint=this.farm.checkpoint();
+      let next;
+      try {
+        this.farm.setParameter(key,value);
+        next=this.farm.snapshot();
+        must(next && next.day===this.farmSnapshot.day &&
+          next.daily && Number.isFinite(next.daily.waterGal) &&
+          next.daily.waterGal>=0 && Number.isFinite(next.daily.kWh) &&
+          next.daily.kWh>=0,"Native Farm parameter update returned invalid demand");
+      } catch(error) {
+        this.farm.restoreCheckpoint(checkpoint);
+        throw error;
+      }
       this.farmSnapshot=next;
       return this.snapshot();
     }
@@ -310,12 +320,23 @@
     setFarmEquipmentParameter(id,key,value){
       must(this.farm && typeof this.farm.setEquipmentParameter==="function",
         "Original Farm equipment command unavailable");
+      must(typeof this.farm.checkpoint==="function" &&
+        typeof this.farm.restoreCheckpoint==="function",
+        "Native Farm transactional checkpoint API unavailable");
+      const checkpoint=this.farm.checkpoint();
       const before=this.farmSnapshot.day;
-      this.farm.setEquipmentParameter(id,key,value);
-      const next=this.farm.snapshot();
-      must(next.day===before && next.daily &&
-        Number.isFinite(next.daily.waterGal) && Number.isFinite(next.daily.kWh),
-        "Native Farm equipment update returned invalid biological state");
+      let next;
+      try {
+        this.farm.setEquipmentParameter(id,key,value);
+        next=this.farm.snapshot();
+        must(next && next.day===before && next.daily &&
+          Number.isFinite(next.daily.waterGal) && next.daily.waterGal>=0 &&
+          Number.isFinite(next.daily.kWh) && next.daily.kWh>=0,
+          "Native Farm equipment update returned invalid biological state");
+      } catch(error) {
+        this.farm.restoreCheckpoint(checkpoint);
+        throw error;
+      }
       this.farmSnapshot=next;
       return this.snapshot();
     }
