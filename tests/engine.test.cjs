@@ -1,7 +1,7 @@
 "use strict";
 const assert=require("node:assert/strict"),fs=require("node:fs"),vm=require("node:vm");
 const path=require("node:path"),test=require("node:test");
-const ctx=vm.createContext({console,Date,Math,Map,Set,Number,String,Array,Object,JSON,Error,Uint8Array,Float64Array,Float32Array,Int32Array,Infinity,NaN,performance:require('node:perf_hooks').performance});
+const ctx=vm.createContext({console,structuredClone,Date,Math,Map,Set,Number,String,Array,Object,JSON,Error,Uint8Array,Float64Array,Float32Array,Int32Array,Infinity,NaN,performance:require('node:perf_hooks').performance});
 for(const p of ["vendor/solar-next-core.js","vendor/solar-battery-native.js","vendor/water-engine.js","vendor/farm-core.js","src/resource-contract.js","src/coordinator.js"]){
  const code=fs.readFileSync(path.join(__dirname,"..",p),"utf8");
  vm.runInContext(code,ctx,{filename:p,timeout:60000});
@@ -1121,4 +1121,35 @@ test("partial native fixture delivery is conserved and deterministic with active
  const coop=day.equipment.find(e=>e.type==="coop");
  assert.ok(coop && coop.coverage>0 && coop.coverage<1);
  assert.ok(Math.abs(day.equipment.reduce((sum,e)=>sum+e.servedWh,0)-day.electricityDeliveredWh)<1e-6);
+});
+
+
+test("native Farm checkpoints restore hidden RNG, biological state, and equipment",()=>{
+ const farm=ctx.HomesteadFarmCore;
+ farm.reset(19);
+ const before=JSON.stringify(farm.snapshot());
+ const checkpoint=farm.checkpoint();
+ const expected=JSON.stringify(farm.advanceDay());
+ farm.restoreCheckpoint(checkpoint);
+ assert.equal(JSON.stringify(farm.snapshot()),before);
+ assert.equal(JSON.stringify(farm.advanceDay()),expected,
+   "restoring the checkpoint must replay the identical next biological day");
+});
+
+test("midnight Farm exception rolls back biology, water, energy and clock",()=>{
+ const c=new ctx.HomesteadCoordinator.Coordinator();
+ for(let i=0;i<14;i++)c.stepHour();
+ const before=JSON.stringify(c.snapshot());
+ const native=c.farm;
+ c.farm={
+   ...native,
+   advanceDay(supply){native.advanceDay(supply);throw new Error("injected post-mutation failure");}
+ };
+ assert.throws(()=>c.stepHour(),/injected post-mutation failure/);
+ c.farm=native;
+ assert.equal(JSON.stringify(c.snapshot()),before,
+   "failed midnight must not change any public or hidden native state");
+ const after=c.stepHour();
+ assert.equal(after.clock.hours,15);
+ assert.equal(after.farm.day,2);
 });
