@@ -6,6 +6,7 @@ export function exchangeNativeHour({clockMinute,loads,solarStep,waterStep,farmSt
  if(!Array.isArray(loads)||loads.length!==60)throw new RangeError("60 minute demands required");
  for(const fn of [solarStep,waterStep,farmStep])if(typeof fn!=="function")throw new TypeError("native callback required");
  const next=clone(state),ledger=[];
+ let carriedWaterL=0;
  for(let i=0;i<60;i++){
   const minute=clockMinute+i,d=loads[i];
   const baseWh=valid("baseWh",d?.baseWh),waterWh=valid("waterWh",d?.waterWh),farmWh=valid("farmWh",d?.farmWh);
@@ -20,11 +21,15 @@ export function exchangeNativeHour({clockMinute,loads,solarStep,waterStep,farmSt
   const farmServedWh=Math.min(farmWh,deliveredWh-baseServedWh-waterServedWh);
   const water=waterStep({minute,requestedWh:waterWh,deliveredWh:waterServedWh,state:next.water});
   const waterDeliveredL=valid("waterDeliveredL",water?.deliveredL);
-  const farm=farmStep({minute,requestedWh:farmWh,deliveredWh:farmServedWh,waterDeliveredL,state:next.farm});
+  const availableWaterL=valid("availableWaterL",carriedWaterL+waterDeliveredL);
+  const farm=farmStep({minute,requestedWh:farmWh,deliveredWh:farmServedWh,waterDeliveredL:availableWaterL,state:next.farm});
+  const waterConsumedL=valid("waterConsumedL",farm?.waterConsumedL??0);
+  if(waterConsumedL>availableWaterL+1e-7)throw new RangeError("native Farm water over-consumption");
+  carriedWaterL=Math.max(0,availableWaterL-waterConsumedL);
   if(water?.state===undefined||farm?.state===undefined)throw new TypeError("resource state missing");
   next.water=water.state;next.farm=farm.state;
   if(Math.abs(baseServedWh+waterServedWh+farmServedWh-deliveredWh)>1e-7)throw new Error("energy conservation");
-  ledger.push({minute,requestedWh,deliveredWh,baseServedWh,waterServedWh,farmServedWh,waterDeliveredL});
+  ledger.push({minute,requestedWh,deliveredWh,baseServedWh,waterServedWh,farmServedWh,waterDeliveredL,waterConsumedL,waterRemainingL:carriedWaterL});
  }
  return {state:next,ledger};
 }
