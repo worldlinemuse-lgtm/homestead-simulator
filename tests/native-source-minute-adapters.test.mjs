@@ -25,11 +25,11 @@ function loadOriginalEngines(){
 // Contract-only Solar test double. The production adapter NEVER falls back to
 // these equations: it insists on an original SIM supplied by the runtime.
 function solarTestDouble(){
- const S={t:0,stats:{served:0},loads:[],live:null,cfg:{},quiet:false,playing:false};
+ const S={t:0,soc:0.6,stats:{served:0},loads:[],live:null,cfg:{},quiet:false,playing:false};
  const sim={
   S,
-  grabState(){return {t:S.t,stats:S.stats,loads:S.loads,live:S.live};},
-  putState(next){for(const k of ["t","stats","loads","live"])S[k]=structuredClone(next[k]);},
+  grabState(){return {t:S.t,soc:S.soc,stats:S.stats,loads:S.loads,live:S.live};},
+  putState(next){for(const k of ["t","soc","stats","loads","live"])S[k]=structuredClone(next[k]);},
   step(){
    const delivered=Math.min(1,S.loads[0].w/60);
    S.stats.served+=delivered;
