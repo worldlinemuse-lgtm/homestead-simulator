@@ -29,3 +29,20 @@ test("forged overdelivery and nonfinite inputs rejected",()=>{
  assert.throws(()=>exchangeNativeHour({...args,loads:loads.map((x,i)=>i===5?{...x,farmWh:NaN}:x),
  solarStep:()=>({deliveredWh:0,state:{}})}),/finite/);
 });
+
+test("water transfers are conserved across minute boundaries",()=>{
+ const result=exchangeNativeHour({clockMinute:0,loads:Array.from({length:60},()=>({baseWh:0,waterWh:1,farmWh:1})),
+ state,solarStep:({requestedWh,state})=>({deliveredWh:requestedWh,state}),
+ waterStep:({state})=>({deliveredL:3,state}),
+ farmStep:({state,waterDeliveredL})=>({waterConsumedL:Math.min(2,waterDeliveredL),state})});
+ assert.equal(result.ledger[0].waterRemainingL,1);
+ assert.equal(result.ledger[1].waterRemainingL,2);
+ assert.equal(result.ledger[59].waterRemainingL,60);
+ assert.equal(result.ledger.reduce((n,x)=>n+x.waterDeliveredL-x.waterConsumedL,0),60);
+});
+test("farm cannot consume water not delivered by native Water",()=>{
+ assert.throws(()=>exchangeNativeHour({clockMinute:0,loads:Array.from({length:60},()=>({baseWh:0,waterWh:0,farmWh:0})),
+ state,solarStep:({state})=>({deliveredWh:0,state}),
+ waterStep:({state})=>({deliveredL:0,state}),
+ farmStep:({state})=>({waterConsumedL:1,state})}),/over-consumption/);
+});
