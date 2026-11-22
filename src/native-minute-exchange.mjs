@@ -5,8 +5,12 @@ export function exchangeNativeHour({clockMinute,loads,solarStep,waterStep,farmSt
  if(!Number.isSafeInteger(clockMinute)||clockMinute<0||clockMinute%60)throw new RangeError("unaligned clock");
  if(!Array.isArray(loads)||loads.length!==60)throw new RangeError("60 minute demands required");
  for(const fn of [solarStep,waterStep,farmStep])if(typeof fn!=="function")throw new TypeError("native callback required");
+ if(!state||typeof state!=="object")throw new TypeError("world state required");
  const next=clone(state),ledger=[];
- let carriedWaterL=0;
+ let carriedWaterL=valid("storedWaterL",next.storedWaterL??0);
+ const capacityL=valid("waterCapacityL",next.waterCapacityL??Number.MAX_VALUE);
+ if(carriedWaterL>capacityL)throw new RangeError("water inventory exceeds capacity");
+ let overflowTotalL=0;
  for(let i=0;i<60;i++){
   const minute=clockMinute+i,d=loads[i];
   const baseWh=valid("baseWh",d?.baseWh),waterWh=valid("waterWh",d?.waterWh),farmWh=valid("farmWh",d?.farmWh);
@@ -25,11 +29,15 @@ export function exchangeNativeHour({clockMinute,loads,solarStep,waterStep,farmSt
   const farm=farmStep({minute,requestedWh:farmWh,deliveredWh:farmServedWh,waterDeliveredL:availableWaterL,state:next.farm});
   const waterConsumedL=valid("waterConsumedL",farm?.waterConsumedL??0);
   if(waterConsumedL>availableWaterL+1e-7)throw new RangeError("native Farm water over-consumption");
-  carriedWaterL=Math.max(0,availableWaterL-waterConsumedL);
+  const remainingL=Math.max(0,availableWaterL-waterConsumedL);
+  const overflowL=Math.max(0,remainingL-capacityL);
+  carriedWaterL=remainingL-overflowL;
+  overflowTotalL+=overflowL;
   if(water?.state===undefined||farm?.state===undefined)throw new TypeError("resource state missing");
   next.water=water.state;next.farm=farm.state;
   if(Math.abs(baseServedWh+waterServedWh+farmServedWh-deliveredWh)>1e-7)throw new Error("energy conservation");
-  ledger.push({minute,requestedWh,deliveredWh,baseServedWh,waterServedWh,farmServedWh,waterDeliveredL,waterConsumedL,waterRemainingL:carriedWaterL});
+  ledger.push({minute,requestedWh,deliveredWh,baseServedWh,waterServedWh,farmServedWh,waterDeliveredL,waterConsumedL,waterOverflowL:overflowL,waterRemainingL:carriedWaterL});
  }
- return {state:next,ledger};
+ next.storedWaterL=carriedWaterL;
+ return {state:next,ledger,waterOverflowL:overflowTotalL};
 }
