@@ -113,6 +113,25 @@ export function advanceOriginalNativeHours({advanceHour,state,hours=1,includeLed
         throw new RangeError("Invalid native hourly total: "+key);
       totals[key]+=value;
     }
+    const sums={energyRequestedWh:0,energyDeliveredWh:0,waterProducedL:0,waterConsumedL:0,waterOverflowL:0};
+    for(const entry of result.ledger){
+      for(const [total,field] of [["energyRequestedWh","requestedWh"],["energyDeliveredWh","deliveredWh"],["waterProducedL","waterDeliveredL"],["waterConsumedL","waterConsumedL"],["waterOverflowL","waterOverflowL"]]){
+        if(!Number.isFinite(entry[field])||entry[field]<0)throw new RangeError("Invalid minute resource: "+field);
+        sums[total]+=entry[field];
+      }
+      if(entry.deliveredWh>entry.requestedWh+1e-7)throw new Error("Native minute energy over-delivery");
+      const allocations=["baseServedWh","waterServedWh","farmServedWh"];
+      if(allocations.some(key=>!Number.isFinite(entry[key])||entry[key]<0)||
+         Math.abs(allocations.reduce((sum,key)=>sum+entry[key],0)-entry.deliveredWh)>1e-6)
+        throw new Error("Native minute energy allocation mismatch");
+    }
+    for(const key of ["energyRequestedWh","energyDeliveredWh","waterProducedL","waterConsumedL"]){
+      if(Math.abs(sums[key]-result.totals[key])>1e-6)throw new Error("Native hour ledger mismatch: "+key);
+    }
+    if(Math.abs(sums.waterOverflowL-result.waterOverflowL)>1e-6)throw new Error("Native overflow ledger mismatch");
+    if(!Number.isFinite(next.storedWaterL)||!Number.isFinite(result.state.storedWaterL)||
+       Math.abs(next.storedWaterL+sums.waterProducedL-sums.waterConsumedL-sums.waterOverflowL-result.state.storedWaterL)>1e-6)
+      throw new Error("Native hour water inventory mismatch");
     const overflow=result.waterOverflowL;
     if(!Number.isFinite(overflow) || overflow<0)
       throw new RangeError("Invalid native water overflow");
