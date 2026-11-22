@@ -176,6 +176,20 @@ export function createOriginalNativeController({initialState,advanceHour}) {
       return {...result,state:snapshot()};
     },
     /**
+     * Advance to an absolute hour-aligned model minute. The scene timeline
+     * and Utilities use the same authoritative clock, never separate counters.
+     * Reject backwards jumps rather than silently replaying or resetting
+     * battery, water and biological inventories.
+     */
+    advanceToMinute(targetMinute,{includeLedger=false}={}){
+      if(!Number.isSafeInteger(targetMinute) || targetMinute<0 || targetMinute%60)
+        throw new RangeError("Target native minute must be a nonnegative aligned hour");
+      const delta=targetMinute-current.clockMinute;
+      if(delta<=0 || delta%60)
+        throw new RangeError("Native clock target must be later than the current hour");
+      return this.advance(delta/60,{includeLedger});
+    },
+    /**
      * Atomic state edit for a selected 3D object or Utilities control.
      * The caller owns mapping scene IDs to native engine IDs. Refuse changes
      * to the clock; only the native execution path may advance time.
