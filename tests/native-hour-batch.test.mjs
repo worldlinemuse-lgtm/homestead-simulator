@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {advanceOriginalNativeHours} from "../src/native-coupled-runtime.mjs";
 
 function fakeHour({clockMinute,state}){
-  const ledger=Array.from({length:60},(_,i)=>({minute:clockMinute+i}));
+  const ledger=Array.from({length:60},(_,i)=>({minute:clockMinute+i,requestedWh:1,deliveredWh:50/60,baseServedWh:50/60,waterServedWh:0,farmServedWh:0,waterDeliveredL:5/60,waterConsumedL:2/60,waterOverflowL:1/60}));
   return {state:{...state,clockMinute:clockMinute+60,storedWaterL:state.storedWaterL+2},
     ledger,waterOverflowL:1,
     totals:{energyRequestedWh:60,energyDeliveredWh:50,waterProducedL:5,waterConsumedL:2}};
@@ -37,4 +37,16 @@ test("native batch failures do not mutate caller's world",()=>{
    return fakeHour({clockMinute,state});
  }}),/engine failure/);
  assert.deepEqual(initial,{clockMinute:0,storedWaterL:3,nested:{count:0}});
+});
+
+test("native batch rejects energy allocation, summary and water inventory corruption",()=>{
+ const initial={clockMinute:0,storedWaterL:3};
+ const corrupt=(change)=>({clockMinute,state})=>{
+   const result=fakeHour({clockMinute,state});change(result);return result;
+ };
+ assert.throws(()=>advanceOriginalNativeHours({state:initial,advanceHour:corrupt(r=>{r.ledger[0].baseServedWh=0;})}),/allocation mismatch/);
+ assert.throws(()=>advanceOriginalNativeHours({state:initial,advanceHour:corrupt(r=>{r.totals.waterProducedL=10;})}),/ledger mismatch/);
+ assert.throws(()=>advanceOriginalNativeHours({state:initial,advanceHour:corrupt(r=>{r.state.storedWaterL=99;})}),/inventory mismatch/);
+ assert.throws(()=>advanceOriginalNativeHours({state:initial,advanceHour:corrupt(r=>{r.ledger[0].deliveredWh=2;})}),/over-delivery/);
+ assert.deepEqual(initial,{clockMinute:0,storedWaterL:3});
 });
