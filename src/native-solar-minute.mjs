@@ -58,8 +58,8 @@ export function createOriginalSolarMinuteStep(sim, {originMinute = 0} = {}) {
       }];
       const previousServed = finiteNonnegative("native servedWh", input.stats?.served);
       sim.S.quiet = true; // prevent browser log/UI mutations during model invocation
+      entered = true; // putState may mutate partially before throwing; still restore
       sim.putState(input);
-      entered = true;
       sim.step(false);
       const updated = clone(sim.grabState());
       if (updated.t !== (input.t + 1) % YEAR_MINUTES)
