@@ -77,3 +77,43 @@ test("invalid stored water and capacity fail before callbacks run",()=>{
  }
  assert.equal(called,false);
 });
+
+test("world clock advances exactly one hour and rejects skipped or repeated hours",()=>{
+ const first=run();
+ assert.equal(first.state.clockMinute,180);
+ const args={clockMinute:180,loads,state:first.state,
+ solarStep:({state,requestedWh})=>({state,deliveredWh:requestedWh}),
+ waterStep:({state})=>({state,deliveredL:0}),
+ farmStep:({state})=>({state,waterConsumedL:0})};
+ const second=exchangeNativeHour(args);
+ assert.equal(second.state.clockMinute,240);
+ assert.throws(()=>exchangeNativeHour({...args,clockMinute:240,state:first.state}),/discontinuity/);
+ assert.throws(()=>exchangeNativeHour({...args,clockMinute:120}),/discontinuity/);
+});
+test("callback mutations do not escape failed transactions",()=>{
+ const initial={solar:{x:1},water:{x:2},farm:{x:3},storedWaterL:2};
+ const before=structuredClone(initial);
+ assert.throws(()=>exchangeNativeHour({clockMinute:0,loads,
+ state:initial,
+ solarStep:({state,requestedWh})=>{state.x=999;return {state,deliveredWh:requestedWh};},
+ waterStep:({state})=>{state.x=999;return {state,deliveredL:0};},
+ farmStep:({state})=>{state.x=999;return {state,waterConsumedL:999};}}),/over-consumption/);
+ assert.deepEqual(initial,before);
+});
+test("aggregate energy and water accounting reconcile with minute ledger",()=>{
+ const result=run();
+ assert.equal(result.totals.energyRequestedWh,360);
+ assert.equal(result.totals.energyDeliveredWh,240);
+ assert.equal(result.totals.waterProducedL,240);
+ assert.equal(result.totals.waterConsumedL,0);
+ assert.equal(result.totals.waterStoredL,240);
+ assert.equal(result.ledger.reduce((s,x)=>s+x.deliveredWh,0),result.totals.energyDeliveredWh);
+});
+test("invalid demand in final minute is rejected before native dispatch",()=>{
+ let calls=0;
+ assert.throws(()=>exchangeNativeHour({clockMinute:0,loads:loads.map((x,i)=>i===59?{...x,baseWh:Infinity}:x),state,
+ solarStep:()=>{calls++;return {state:{},deliveredWh:0};},
+ waterStep:()=>({state:{},deliveredL:0}),
+ farmStep:()=>({state:{},waterConsumedL:0})}),/finite/);
+ assert.equal(calls,0);
+});
