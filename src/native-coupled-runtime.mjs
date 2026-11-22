@@ -142,3 +142,60 @@ export function advanceOriginalNativeHours({advanceHour,state,hours=1,includeLed
   totals.waterStoredL=next.storedWaterL;
   return {state:next,totals,...(includeLedger?{ledger}:{})};
 }
+
+/**
+ * Mutable control boundary for the scene and Utilities panel. Both must use
+ * the same instance: edits are committed only after a successful native batch.
+ * No engine is approximated or reimplemented here.
+ */
+export function createOriginalNativeController({initialState,advanceHour}) {
+  if (!initialState || typeof initialState !== "object")
+    throw new TypeError("Native controller initial state required");
+  if (typeof advanceHour !== "function")
+    throw new TypeError("Native controller hour callback required");
+  let current=structuredClone(initialState);
+  let revision=0;
+  const listeners=new Set();
+  const snapshot=()=>structuredClone(current);
+  const notify=()=>{const value=snapshot();for(const fn of listeners)fn(value,revision);};
+  return Object.freeze({
+    snapshot,
+    get revision(){return revision;},
+    subscribe(fn){
+      if(typeof fn!=="function")throw new TypeError("Native subscriber must be a function");
+      listeners.add(fn);
+      return ()=>listeners.delete(fn);
+    },
+    advance(hours=1,{includeLedger=false}={}){
+      const result=advanceOriginalNativeHours({
+        advanceHour,state:current,hours,includeLedger
+      });
+      current=structuredClone(result.state);
+      revision++;
+      notify();
+      return {...result,state:snapshot()};
+    },
+    /**
+     * Atomic state edit for a selected 3D object or Utilities control.
+     * The caller owns mapping scene IDs to native engine IDs. Refuse changes
+     * to the clock; only the native execution path may advance time.
+     */
+    edit(mutator){
+      if(typeof mutator!=="function")throw new TypeError("Native edit callback required");
+      const draft=snapshot(),clock=draft.clockMinute;
+      const replacement=mutator(draft);
+      const next=replacement===undefined?draft:replacement;
+      if(!next || typeof next!=="object" ||
+         next.clockMinute!==clock || !Number.isSafeInteger(clock))
+        throw new RangeError("Native edit must preserve the world clock");
+      if(!Number.isFinite(next.storedWaterL)||next.storedWaterL<0||
+         !Number.isFinite(next.waterCapacityL)||next.waterCapacityL<0||
+         next.storedWaterL>next.waterCapacityL)
+        throw new RangeError("Native edit violates treated-water capacity");
+      current=structuredClone(next);
+      revision++;
+      notify();
+      return snapshot();
+    }
+  });
+}
