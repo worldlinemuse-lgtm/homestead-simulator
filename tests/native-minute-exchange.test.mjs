@@ -46,3 +46,34 @@ test("farm cannot consume water not delivered by native Water",()=>{
  waterStep:({state})=>({deliveredL:0,state}),
  farmStep:({state})=>({waterConsumedL:1,state})}),/over-consumption/);
 });
+
+test("water persists between hours, capacity overflow is accounted and original state is isolated",()=>{
+ const constant=Array.from({length:60},()=>({baseWh:0,waterWh:1,farmWh:0}));
+ const callbacks={
+  solarStep:({state,requestedWh})=>({state,deliveredWh:requestedWh}),
+  waterStep:({state})=>({state,deliveredL:1}),
+  farmStep:({state})=>({state,waterConsumedL:0})
+ };
+ const original={...state,storedWaterL:5,waterCapacityL:50};
+ const first=exchangeNativeHour({clockMinute:0,loads:constant,state:original,...callbacks});
+ assert.equal(first.state.storedWaterL,50);
+ assert.equal(first.waterOverflowL,15);
+ assert.equal(first.ledger.reduce((a,x)=>a+x.waterOverflowL,0),15);
+ assert.equal(original.storedWaterL,5);
+ const second=exchangeNativeHour({clockMinute:60,loads:constant,state:first.state,...callbacks});
+ assert.equal(second.state.storedWaterL,50);
+ assert.equal(second.waterOverflowL,60);
+ assert.equal(second.ledger[0].minute,60);
+});
+test("invalid stored water and capacity fail before callbacks run",()=>{
+ let called=false;
+ const callbacks={
+  solarStep:()=>{called=true;return {deliveredWh:0,state:{}};},
+  waterStep:()=>({deliveredL:0,state:{}}),
+  farmStep:()=>({state:{}})
+ };
+ for(const stateOverride of [{storedWaterL:-1},{storedWaterL:10,waterCapacityL:5},{storedWaterL:Infinity}]){
+  assert.throws(()=>exchangeNativeHour({clockMinute:0,loads,state:{...state,...stateOverride},...callbacks}),/water|finite|capacity/i);
+ }
+ assert.equal(called,false);
+});
