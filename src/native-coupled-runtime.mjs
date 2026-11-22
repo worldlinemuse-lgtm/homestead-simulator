@@ -77,3 +77,49 @@ export function createOriginalCoupledHour({
     };
   };
 }
+
+
+/**
+ * Advance a shared native world by complete hours without changing the caller's
+ * state. The existing native Solar/Water/Farm adapters own all physics.
+ * A failed hour rejects the entire batch: no partially advanced world escapes.
+ * This is suitable for the 3D clock's fixed-hour catch-up and deterministic
+ * replay; it deliberately does not interpolate scientific engine state.
+ */
+export function advanceOriginalNativeHours({advanceHour,state,hours=1,includeLedger=false}) {
+  if (typeof advanceHour !== "function") throw new TypeError("Native hour callback required");
+  if (!state || typeof state !== "object") throw new TypeError("Native world state required");
+  if (!Number.isSafeInteger(state.clockMinute) || state.clockMinute < 0 ||
+      state.clockMinute % 60) throw new RangeError("Native world clock must be hour aligned");
+  if (!Number.isSafeInteger(hours) || hours < 1 || hours > 8760)
+    throw new RangeError("Native batch must contain 1 to 8760 complete hours");
+  let next=structuredClone(state);
+  const totals={
+    energyRequestedWh:0,energyDeliveredWh:0,
+    waterProducedL:0,waterConsumedL:0,waterOverflowL:0
+  };
+  const ledger=includeLedger?[]:undefined;
+  for(let i=0;i<hours;i++){
+    const minute=next.clockMinute;
+    const result=advanceHour({clockMinute:minute,state:next});
+    if(!result?.state || result.state.clockMinute!==minute+60)
+      throw new Error("Native hour did not advance exactly 60 minutes");
+    if(!Array.isArray(result.ledger) || result.ledger.length!==60 ||
+       result.ledger.some((entry,j)=>entry.minute!==minute+j))
+      throw new Error("Native hour ledger has missing or unordered minutes");
+    for(const key of ["energyRequestedWh","energyDeliveredWh","waterProducedL","waterConsumedL"]){
+      const value=result.totals?.[key];
+      if(!Number.isFinite(value) || value<0)
+        throw new RangeError("Invalid native hourly total: "+key);
+      totals[key]+=value;
+    }
+    const overflow=result.waterOverflowL;
+    if(!Number.isFinite(overflow) || overflow<0)
+      throw new RangeError("Invalid native water overflow");
+    totals.waterOverflowL+=overflow;
+    if(includeLedger) ledger.push(...result.ledger);
+    next=structuredClone(result.state);
+  }
+  totals.waterStoredL=next.storedWaterL;
+  return {state:next,totals,...(includeLedger?{ledger}:{})};
+}
