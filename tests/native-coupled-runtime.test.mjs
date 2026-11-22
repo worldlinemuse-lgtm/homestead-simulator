@@ -21,11 +21,11 @@ function engines(){
 
 // Wiring-test stand-in only. Production requires original Solar window.SIM.
 function meteredSolarHarness(){
- const S={cfg:{},quiet:false,playing:false,t:0,stats:{served:0},loads:[],live:null};
+ const S={cfg:{},quiet:false,playing:false,t:0,soc:0.6,stats:{served:0},loads:[],live:null};
  return {
   S,
-  grabState(){return {t:S.t,stats:S.stats,loads:S.loads,live:S.live};},
-  putState(s){for(const k of ["t","stats","loads","live"])S[k]=structuredClone(s[k]);},
+  grabState(){return {t:S.t,soc:S.soc,stats:S.stats,loads:S.loads,live:S.live};},
+  putState(s){for(const k of ["t","soc","stats","loads","live"])S[k]=structuredClone(s[k]);},
   step(){
    const watts=S.loads[0].w;
    S.stats.served+=watts/60;
