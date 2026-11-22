@@ -46,3 +46,23 @@ test("successful native hour commits once and returns isolated snapshots",()=>{
  result.state.clockMinute=999;
  assert.equal(controller.snapshot().clockMinute,120);
 });
+
+test("absolute native clock target advances atomically and refuses rewind",()=>{
+ const controller=createOriginalNativeController({initialState:initial(),advanceHour:({clockMinute,state})=>{
+  const next=structuredClone(state);next.clockMinute=clockMinute+60;
+  return {state:next,ledger:Array.from({length:60},(_,i)=>({
+   minute:clockMinute+i,requestedWh:0,deliveredWh:0,baseServedWh:0,
+   waterServedWh:0,farmServedWh:0,waterDeliveredL:0,
+   waterConsumedL:0,waterOverflowL:0
+  })),waterOverflowL:0,totals:{
+   energyRequestedWh:0,energyDeliveredWh:0,waterProducedL:0,waterConsumedL:0
+  }};
+ }});
+ assert.throws(()=>controller.advanceToMinute(61),/aligned/);
+ assert.throws(()=>controller.advanceToMinute(0),/later/);
+ assert.equal(controller.advanceToMinute(180).state.clockMinute,180);
+ assert.equal(controller.revision,1);
+ assert.throws(()=>controller.advanceToMinute(120),/later/);
+ assert.equal(controller.snapshot().clockMinute,180);
+ assert.equal(controller.revision,1);
+});
