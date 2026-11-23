@@ -20,7 +20,8 @@ const advanceHour=({clockMinute,state})=>({
   ledger:Array.from({length:60},(_,i)=>({
     minute:clockMinute+i,requestedWh:0,deliveredWh:0,
     baseServedWh:0,waterServedWh:0,farmServedWh:0,
-    waterDeliveredL:0,waterConsumedL:0,waterOverflowL:0
+    waterDeliveredL:0,waterConsumedL:0,waterOverflowL:0,
+    waterRemainingL:state.storedWaterL
   })),
   totals:{energyRequestedWh:0,energyDeliveredWh:0,waterProducedL:0,waterConsumedL:0},
   waterOverflowL:0
@@ -105,7 +106,8 @@ test("native console reports measured nonzero resource totals without inventing 
     ledger:Array.from({length:60},(_,i)=>({
       minute:clockMinute+i,requestedWh:2,deliveredWh:1,
       baseServedWh:0.5,waterServedWh:0.25,farmServedWh:0.25,
-      waterDeliveredL:0.05,waterConsumedL:2/60,waterOverflowL:0
+      waterDeliveredL:0.05,waterConsumedL:2/60,waterOverflowL:0,
+      waterRemainingL:state.storedWaterL+(i+1)/60
     })),
     totals:{energyRequestedWh:120,energyDeliveredWh:60,waterProducedL:3,waterConsumedL:2},
     waterOverflowL:0
