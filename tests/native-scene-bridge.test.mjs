@@ -29,3 +29,24 @@ test("rejects missing scene editor and malformed clocks",()=>{
  const bridge=createNativeSceneBridge({scene:scene()});
  assert.throws(()=>bridge.renderNativeWorld({clockMinute:1.5},0),/Invalid/);
 });
+
+test("native selection synchronizes the actual editor before callbacks",()=>{
+ let active="tank-1";
+ const selections=[];
+ const editor={
+  list:()=>[{id:"panel-1",label:"Solar panel"},{id:"tank-1",label:"Tank"}],
+  selected:()=>({id:active}),
+  select:id=>{selections.push(id);active=id;return {id};}
+ };
+ const events=[];
+ const bridge=createNativeSceneBridge({scene:{editor},
+  onSelection:item=>events.push([item.id,active])});
+ assert.equal(bridge.select("panel-1").id,"panel-1");
+ assert.deepEqual(selections,["panel-1"]);
+ assert.deepEqual(events,[["panel-1","panel-1"]]);
+ bridge.select("panel-1");
+ assert.deepEqual(selections,["panel-1"],"reselecting must not mutate the editor");
+ assert.throws(()=>bridge.select("unknown"),/Unknown/);
+ assert.equal(active,"panel-1");
+ bridge.dispose();
+});
