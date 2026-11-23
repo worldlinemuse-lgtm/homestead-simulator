@@ -1,6 +1,7 @@
 import {loadOriginalSolarBrowserRuntime} from "./native-solar-browser.mjs";
 import {mountOriginalNativeHomestead} from "./native-browser-homestead.mjs";
 import {projectNativeSceneSnapshot} from "./native-scene-projection.mjs";
+import {initializeOriginalSolarForFarm} from "./native-solar-calendar.mjs";
 
 /**
  * Development-branch opt-in: activate the complete original Solar, Water and
@@ -52,6 +53,10 @@ export async function enableOriginalNative3D({
   const frame=await loadOriginalSolarBrowserRuntime({documentRoot});
   let mounted=null,disposed=false;
   try{
+    // Match the actual 3D four-panel installation to the ORIGINAL source
+    // catalog and align Solar weather's local hour/date with Farm's civil day.
+    initializeOriginalSolarForFarm({sim:frame.sim,
+      farmDate:legacy.clock.date,startHour});
     mounted=mountOriginalNativeHomestead({
       solarSim:frame.sim,waterCore,farmCore,waterWorld,scene,utilitiesRoot,
       clockMinute:startHour*60,storedWaterL:legacy.waterStoredL,
