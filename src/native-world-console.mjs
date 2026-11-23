@@ -20,8 +20,13 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
   const advance=doc.createElement("button");
   advance.type="button";
   advance.textContent="Advance native world 1 hour";
+  const day=doc.createElement("button");
+  day.type="button";
+  day.textContent="Advance native world 24 hours";
+  const metering=doc.createElement("output");
+  metering.setAttribute("aria-live","polite");
   const table=doc.createElement("dl");
-  container.append(heading,status,advance,table);
+  container.append(heading,status,advance,day,metering,table);
   root.append(container);
   let disposed=false;
   let latestMinute=null;
@@ -50,7 +55,7 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
   try{
     binding=bindNativeWorldViews({controller,scene,utilities,onError});
   }catch(error){container.remove();throw error;}
-  const onAdvance=()=>{
+  const runHours=(hours)=>{
     if(disposed)return;
     try{
       advance.disabled=true;
@@ -59,9 +64,12 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
     }catch(error){
       status.textContent="Native advance failed: "+error.message;
       onError(error);
-    }finally{advance.disabled=false;}
+    }finally{advance.disabled=day.disabled=false;}
   };
+  const onAdvance=()=>runHours(1);
+  const onDay=()=>runHours(24);
   advance.addEventListener("click",onAdvance);
+  day.addEventListener("click",onDay);
   return Object.freeze({
     snapshot:()=>binding.snapshot(),
     advanceToMinute:(minute,options)=>binding.advanceToMinute(minute,options),
@@ -71,6 +79,7 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
       if(disposed)return;
       disposed=true;
       advance.removeEventListener("click",onAdvance);
+      day.removeEventListener("click",onDay);
       binding.dispose();
       container.remove();
     }
