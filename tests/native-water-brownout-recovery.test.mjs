@@ -37,3 +37,24 @@ test('repeated unpowered minutes preserve the requested pressure without produci
   }
   assert.equal(world.produced,0);
 });
+
+test('partial power cannot run the native pump and full restoration resumes output', () => {
+  const step=createOriginalWaterMinuteStep(core,{pumpPressurePsi:35,pumpId:'pump-1'});
+  const partial=step({minute:0,requestedWh:2,deliveredWh:1.99,state:initial()});
+  assert.equal(partial.native.pumpEnabled,false);
+  assert.equal(partial.deliveredL,0);
+  assert.equal(partial.state.parts[0].params.psi,35);
+  const recovered=step({minute:1,requestedWh:2,deliveredWh:2,state:partial.state});
+  assert.equal(recovered.native.pumpEnabled,true);
+  assert.equal(recovered.deliveredL,35/50);
+  assert.equal(recovered.state.parts[0].params.psi,35);
+});
+
+test('a stale 3D pump identity fails closed even during an unpowered minute', () => {
+  const wrongId=createOriginalWaterMinuteStep(core,{pumpPressurePsi:50,pumpId:'missing'});
+  const wrongType=createOriginalWaterMinuteStep(core,{pumpPressurePsi:50,pumpId:'pump-1'});
+  assert.throws(()=>wrongId({minute:0,requestedWh:0,deliveredWh:0,state:initial()}),/pump identity/);
+  const invalid=initial();invalid.parts[0].type='tank';
+  assert.throws(()=>wrongType({minute:0,requestedWh:0,deliveredWh:0,state:invalid}),/pump identity/);
+  assert.equal(invalid.parts[0].params.psi,50);
+});
