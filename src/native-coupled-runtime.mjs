@@ -156,7 +156,16 @@ export function createOriginalNativeController({initialState,advanceHour,onSubsc
   if(typeof onSubscriberError!=="function") throw new TypeError("Subscriber error handler must be callable");
   let current=structuredClone(initialState);
   let revision=0;
+  // Reject nested mutations from a solver callback or subscriber. Otherwise a
+  // subscriber could advance the clock while an outer batch is committing,
+  // producing out-of-order revisions and diverging scene/Utilities snapshots.
+  let mutating=false;
   const listeners=new Set();
+  const transaction=fn=>{
+    if(mutating)throw new Error("Native controller mutation already in progress");
+    mutating=true;
+    try{return fn();}finally{mutating=false;}
+  };
   const snapshot=()=>structuredClone(current);
   // Each subscriber receives its own copy. Scene rendering must not be able to
   // contaminate Utilities observations or another subscriber's authoritative view.
@@ -180,13 +189,15 @@ export function createOriginalNativeController({initialState,advanceHour,onSubsc
       return ()=>listeners.delete(fn);
     },
     advance(hours=1,{includeLedger=false}={}){
-      const result=advanceOriginalNativeHours({
-        advanceHour,state:current,hours,includeLedger
+      return transaction(()=>{
+        const result=advanceOriginalNativeHours({
+          advanceHour,state:current,hours,includeLedger
+        });
+        current=structuredClone(result.state);
+        revision++;
+        notify();
+        return {...result,state:snapshot()};
       });
-      current=structuredClone(result.state);
-      revision++;
-      notify();
-      return {...result,state:snapshot()};
     },
     /**
      * Advance to an absolute hour-aligned model minute. The scene timeline
@@ -208,6 +219,7 @@ export function createOriginalNativeController({initialState,advanceHour,onSubsc
      * to the clock; only the native execution path may advance time.
      */
     edit(mutator){
+      return transaction(()=>{
       if(typeof mutator!=="function")throw new TypeError("Native edit callback required");
       const draft=snapshot(),clock=draft.clockMinute;
       const replacement=mutator(draft);
@@ -223,6 +235,7 @@ export function createOriginalNativeController({initialState,advanceHour,onSubsc
       revision++;
       notify();
       return snapshot();
+      });
     }
   });
 }
