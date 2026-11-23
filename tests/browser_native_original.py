@@ -56,6 +56,20 @@ def main():
             assert initial["view"]["nativeOriginal"] is True
             assert initial["view"]["nativeMeter"] is None
             assert initial["native"]["solar"]["t"] >= 0
+            # A single civil date/time and the depicted 4x435W hardware must
+            # agree with the SOURCE Solar runtime, not a second PV model.
+            import datetime
+            date = datetime.date.fromisoformat(initial["view"]["clock"]["date"])
+            nonleap_months = [31,28,31,30,31,30,31,31,30,31,30,31]
+            source_day = sum(nonleap_months[:date.month-1]) + date.day - 1
+            assert initial["native"]["solar"]["t"] == source_day*1440+9*60
+            original_pv = page.evaluate("""() => {
+                const iframe=document.querySelector('iframe[title="Original Solar Sandbox native electrical engine"]');
+                const cfg=iframe?.contentWindow?.SIM?.S?.cfg;
+                return cfg ? {panel:cfg.panel,series:cfg.ser,strings:cfg.par,mppt:cfg.mppt} : null;
+            }""")
+            assert original_pv == {"panel":"lg435","series":2,"strings":2,"mppt":"150/70"}
+            assert not page.locator("#errors").is_visible(),                 page.locator("#errors").inner_text()
             assert initial["view"]["clock"]["hourOfDay"] == 9
             assert initial["view"]["farm"]["counts"]["n"] > 0
 
@@ -86,7 +100,10 @@ def main():
                 assert row["deliveredWh"] <= row["requestedWh"] + 1e-6
             assert minute["meter"]["energyDeliveredWh"] <= \
                 minute["meter"]["energyRequestedWh"] + 1e-6
-            assert minute["view"] if "view" in minute else True
+            assert not page.locator("#errors").is_visible(), (
+                "3D model reports failure after native step: " +
+                page.locator("#errors").inner_text())
+
 
             # Change the NATIVE Water pump, through the existing live Utilities
             # input; no independent Water preview or old coordinator edit.
@@ -116,6 +133,9 @@ def main():
                        next_hour["native"]["storedWaterL"]) < 1e-7
             # Existing scene readouts reflect the native model.
             assert "% SoC" in page.locator("#energyValue").inner_text()
+            assert not page.locator("#errors").is_visible(), (
+                "3D model reports failure after native resource edits: " +
+                page.locator("#errors").inner_text())
             assert not errors, f"Browser exception(s): {errors!r}"
             dest = ROOT / "tests" / "artifacts"
             dest.mkdir(parents=True, exist_ok=True)
