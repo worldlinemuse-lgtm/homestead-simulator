@@ -1,5 +1,5 @@
 /* Homestead-only offline caching, isolated from other Worldline Muse Pages repos. */
-const NAME="homestead-3d-2026-11-23-v8",PREFIX="homestead-3d-";
+const NAME="homestead-3d-2026-11-23-v9",PREFIX="homestead-3d-";
 const FILES=[
  "./","./index.html",
  "./src/coordinator.js","./src/main.js","./src/scene.js",
@@ -12,6 +12,7 @@ const FILES=[
  "./src/native-coupled-runtime.mjs","./src/native-solar-browser.mjs",
  "./src/native-browser-homestead.mjs","./src/native-world-console.mjs",
  "./src/native-world-view-binding.mjs","./src/native-scene-bridge.mjs",
+ "./src/native-scene-projection.mjs","./src/native-3d-mode.mjs",
  "./vendor/solar-original-runtime.html",
  "./src/water-preset-utility.mjs","./src/solar-battery-utility.mjs",
  "./src/farm-native-study.mjs","./src/farm-study-ui.mjs","./src/farm-study-worker.js",
