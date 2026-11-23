@@ -98,3 +98,27 @@ test("failed 24-hour advance does not publish metering or partial state",()=>{
   assert.equal(section.children[4].textContent,"");
   ui.dispose();
 });
+
+test("native console reports measured nonzero resource totals without inventing values",()=>{
+  const measured=({clockMinute,state})=>({
+    state:{...state,clockMinute:clockMinute+60,storedWaterL:state.storedWaterL+1},
+    ledger:Array.from({length:60},(_,i)=>({
+      minute:clockMinute+i,requestedWh:2,deliveredWh:1,
+      baseServedWh:0.5,waterServedWh:0.25,farmServedWh:0.25,
+      waterDeliveredL:0.05,waterConsumedL:2/60,waterOverflowL:0
+    })),
+    totals:{energyRequestedWh:120,energyDeliveredWh:60,waterProducedL:3,waterConsumedL:2},
+    waterOverflowL:0
+  });
+  const controller=createOriginalNativeController({initialState:state,advanceHour:measured});
+  const root=new Element(document,"main");
+  const ui=mountNativeWorldConsole({controller,root,scene:{renderNativeWorld(){}}});
+  root.children[0].children[3].click();
+  const display=root.children[0].children[4].textContent;
+  assert.match(display,/Last 24 h/);
+  assert.match(display,/1440.00 Wh delivered \/ 2880.00 Wh requested/);
+  assert.match(display,/72.00 L produced, 48.00 L consumed/);
+  assert.match(display,/28.00 L stored/);
+  assert.equal(controller.snapshot().clockMinute,1440);
+  ui.dispose();
+});
