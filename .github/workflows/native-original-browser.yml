@@ -10,11 +10,11 @@ on:
       - '.github/workflows/native-original-browser.yml'
   workflow_dispatch:
 concurrency:
-  group: \${{ github.workflow }}-\${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   original-native-browser:
-    name: original-native-\${{ matrix.viewport }}
+    name: original-native-${{ matrix.viewport }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -32,10 +32,10 @@ jobs:
           python -m playwright install chromium
       - name: Run original Solar Water Farm 3D acceptance
         env:
-          HOMESTEAD_BROWSER_VIEWPORT: \${{ matrix.viewport }}
+          HOMESTEAD_BROWSER_VIEWPORT: ${{ matrix.viewport }}
         run: python tests/browser_native_original.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: original-native-3d-\${{ matrix.viewport }}
-          path: tests/artifacts/native-original-\${{ matrix.viewport }}.png
+          name: original-native-3d-${{ matrix.viewport }}
+          path: tests/artifacts/native-original-${{ matrix.viewport }}.png
