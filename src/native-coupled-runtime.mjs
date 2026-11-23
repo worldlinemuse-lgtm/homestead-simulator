@@ -157,7 +157,9 @@ export function createOriginalNativeController({initialState,advanceHour}) {
   let revision=0;
   const listeners=new Set();
   const snapshot=()=>structuredClone(current);
-  const notify=()=>{const value=snapshot();for(const fn of listeners)fn(value,revision);};
+  // Each subscriber receives its own copy. Scene rendering must not be able to
+  // contaminate Utilities observations or another subscriber's authoritative view.
+  const notify=()=>{for(const fn of listeners)fn(snapshot(),revision);};
   return Object.freeze({
     snapshot,
     get revision(){return revision;},
