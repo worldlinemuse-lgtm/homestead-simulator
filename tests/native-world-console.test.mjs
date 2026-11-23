@@ -61,3 +61,40 @@ test("invalid native advance reports error and does not mutate state",()=>{
   assert.equal(controller.revision,0);
   ui.dispose();
 });
+
+test("24-hour native advance uses the same controller and displays actual ledger totals",()=>{
+  const controller=createOriginalNativeController({initialState:state,advanceHour});
+  const root=new Element(document,"main");
+  const sceneRevisions=[];
+  const ui=mountNativeWorldConsole({controller,root,
+    scene:{renderNativeWorld(s,r){sceneRevisions.push([s.clockMinute,r]);}}});
+  const section=root.children[0];
+  const dayButton=section.children[3];
+  dayButton.click();
+  assert.equal(controller.snapshot().clockMinute,1440);
+  assert.equal(ui.clockMinute,1440);
+  assert.deepEqual(sceneRevisions.at(-1),[1440,1]);
+  assert.match(section.children[4].textContent,/Last 24 h/);
+  assert.match(section.children[4].textContent,/electricity 0.00 Wh/);
+  assert.match(section.children[4].textContent,/water 0.00 L produced/);
+  assert.equal(dayButton.disabled,false);
+  ui.dispose();
+  assert.equal(dayButton.handlers.size,0);
+});
+test("failed 24-hour advance does not publish metering or partial state",()=>{
+  const controller=createOriginalNativeController({initialState:state,
+    advanceHour({clockMinute,state}){
+      if(clockMinute===120)throw Error("native water solver failed");
+      return advanceHour({clockMinute,state});
+    }});
+  const errors=[],root=new Element(document,"main");
+  const ui=mountNativeWorldConsole({controller,root,
+    scene:{renderNativeWorld(){}},onError:e=>errors.push(e.message)});
+  const section=root.children[0];
+  section.children[3].click();
+  assert.deepEqual(errors,["native water solver failed"]);
+  assert.equal(controller.snapshot().clockMinute,0);
+  assert.equal(controller.revision,0);
+  assert.equal(section.children[4].textContent,"");
+  ui.dispose();
+});
