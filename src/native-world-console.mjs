@@ -58,7 +58,7 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
   const runHours=(hours)=>{
     if(disposed)return;
     try{
-      advance.disabled=true;
+      advance.disabled=day.disabled=true;
       // Always use the controller's authoritative clock, not a UI timer.
       const result=binding.advanceToMinute(binding.snapshot().clockMinute+hours*60);
       const totals=result.totals;
