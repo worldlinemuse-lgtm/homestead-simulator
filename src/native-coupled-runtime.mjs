@@ -148,18 +148,29 @@ export function advanceOriginalNativeHours({advanceHour,state,hours=1,includeLed
  * the same instance: edits are committed only after a successful native batch.
  * No engine is approximated or reimplemented here.
  */
-export function createOriginalNativeController({initialState,advanceHour}) {
+export function createOriginalNativeController({initialState,advanceHour,onSubscriberError=()=>{}}) {
   if (!initialState || typeof initialState !== "object")
     throw new TypeError("Native controller initial state required");
   if (typeof advanceHour !== "function")
     throw new TypeError("Native controller hour callback required");
+  if(typeof onSubscriberError!=="function") throw new TypeError("Subscriber error handler must be callable");
   let current=structuredClone(initialState);
   let revision=0;
   const listeners=new Set();
   const snapshot=()=>structuredClone(current);
   // Each subscriber receives its own copy. Scene rendering must not be able to
   // contaminate Utilities observations or another subscriber's authoritative view.
-  const notify=()=>{for(const fn of listeners)fn(snapshot(),revision);};
+  const notify=()=>{
+    // A failed view must not turn an already committed native hour into an
+    // apparent solver failure or prevent the other view from refreshing.
+    for(const fn of [...listeners]){
+      try{fn(snapshot(),revision);}
+      catch(error){
+        try{onSubscriberError(error,revision);}
+        catch(reportError){console.error("Native subscriber error reporter failed",reportError);}
+      }
+    }
+  };
   return Object.freeze({
     snapshot,
     get revision(){return revision;},
