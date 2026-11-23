@@ -65,7 +65,7 @@ function runEdit(operation){
 }
 function renderAsset(s){
  const target=$("assetReadout");if(!target)return;
- if(s.nativeOriginal&&selectedAsset){
+ if(s.nativeOriginal){
    // Real original-engine source meters replace all legacy PV-envelope/battery
    // calculator readouts while native science owns the authoritative clock.
    const m=s.nativeMeter;
