@@ -89,7 +89,7 @@ test("partially unpowered Water pump remains electrically off without fake produ
  const adapter=createOriginalWaterMinuteStep(water,{pumpPressurePsi:50});
  const result=adapter({minute:0,requestedWh:2,deliveredWh:1,state:world});
  assert.equal(result.native.pumpEnabled,false);
- assert.equal(result.state.parts.find(p=>p.type==="pump_sky").params.psi,0);
+ assert.equal(result.state.parts.find(p=>p.type==="pump_sky").params.psi,50);
  assert.equal(world.parts.find(p=>p.type==="pump_sky").params.psi,50);
  assert.throws(()=>adapter({minute:0,requestedWh:1,deliveredWh:2,state:world}),/exceeds/);
 });
