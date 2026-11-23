@@ -46,7 +46,7 @@ test('partial power cannot run the native pump and full restoration resumes outp
   assert.equal(partial.state.parts[0].params.psi,35);
   const recovered=step({minute:1,requestedWh:2,deliveredWh:2,state:partial.state});
   assert.equal(recovered.native.pumpEnabled,true);
-  assert.equal(recovered.deliveredL,35/50);
+  assert.equal(recovered.deliveredL,35);
   assert.equal(recovered.state.parts[0].params.psi,35);
 });
 
