@@ -42,12 +42,18 @@ export async function enableOriginalNative3D({
   // resulting hydraulic world on the next minute advance.
   const applyPumpEdit=(draft,nativeId,patch)=>{
     if(nativeId!==nativePumpId || Object.keys(patch).length!==1 ||
-       !Object.hasOwn(patch,"psi") ||
-       !Number.isFinite(patch.psi)||patch.psi<0)
-      throw new RangeError("Native pump edit requires original pump identity and finite PSI");
+       !(Object.hasOwn(patch,"psi") || Object.hasOwn(patch,"pumpLoadW")))
+      throw new RangeError("Native pump edit requires original pump identity and PSI or pumpLoadW");
+    const [field,value]=Object.entries(patch)[0];
+    if(!Number.isFinite(value)||value<0)
+      throw new RangeError("Native pump setting must be finite and nonnegative");
+    if(field==="pumpLoadW"){
+      draft.operatingSettings={...draft.operatingSettings,pumpLoadW:value};
+      return draft;
+    }
     const part=draft.water.parts.find(x=>String(x.id)===nativePumpId && x.type==="pump_sky");
     if(!part?.params)throw new Error("Native Water pump identity changed");
-    part.params.psi=patch.psi;
+    part.params.psi=value;
     return draft;
   };
   const frame=await loadOriginalSolarBrowserRuntime({documentRoot});
@@ -88,6 +94,11 @@ export async function enableOriginalNative3D({
       selectSceneAsset(id){
         if(disposed)throw Error("Original native 3D mode disposed");
         return mounted.selectSceneAsset(id);
+      },
+      // Scene-selected pump edits share the Utilities controller and dispatch settings.
+      editSelectedEquipment(patch){
+        if(disposed)throw Error("Original native 3D mode disposed");
+        return mounted.editSelectedSceneAsset(patch);
       },
       // Both scene selection and global Utilities call this same mapping.
       editPumpPressure(psi){
