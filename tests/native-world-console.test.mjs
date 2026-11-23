@@ -122,3 +122,21 @@ test("native console reports measured nonzero resource totals without inventing 
   assert.equal(controller.snapshot().clockMinute,1440);
   ui.dispose();
 });
+
+test("both native advance controls remain disabled throughout a coupled batch",()=>{
+  const root=new Element(document,"main");
+  let section,observed;
+  const controller=createOriginalNativeController({initialState:state,
+    advanceHour(args){
+      observed=[section.children[2].disabled,section.children[3].disabled];
+      return advanceHour(args);
+    }
+  });
+  const ui=mountNativeWorldConsole({controller,root,scene:{renderNativeWorld(){}}});
+  section=root.children[0];
+  section.children[3].click();
+  assert.deepEqual(observed,[true,true]);
+  assert.equal(section.children[2].disabled,false);
+  assert.equal(section.children[3].disabled,false);
+  ui.dispose();
+});
