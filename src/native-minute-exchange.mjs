@@ -41,7 +41,7 @@ export function exchangeNativeHour({clockMinute,loads,solarStep,waterStep,farmSt
   if(water?.state===undefined||farm?.state===undefined)throw new TypeError("resource state missing");
   next.water=water.state;next.farm=farm.state;
   if(Math.abs(baseServedWh+waterServedWh+farmServedWh-deliveredWh)>1e-7)throw new Error("energy conservation");
-  ledger.push({minute,requestedWh,deliveredWh,baseServedWh,waterServedWh,farmServedWh,waterDeliveredL,waterConsumedL,waterOverflowL:overflowL,waterRemainingL:carriedWaterL,
+  ledger.push({minute,requestedWh,deliveredWh,baseRequestedWh:baseWh,waterRequestedWh:waterWh,farmRequestedWh:farmWh,baseServedWh,waterServedWh,farmServedWh,waterDeliveredL,waterConsumedL,waterOverflowL:overflowL,waterRemainingL:carriedWaterL,
    native:{solar:solar.native===undefined?null:clone(solar.native),water:water.native===undefined?null:clone(water.native),farm:farm.native===undefined?null:clone(farm.native)}});
  }
  next.storedWaterL=carriedWaterL;
