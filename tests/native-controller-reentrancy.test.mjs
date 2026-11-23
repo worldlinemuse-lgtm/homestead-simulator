@@ -31,8 +31,9 @@ test("subscriber cannot recursively advance or edit a committed native world",()
   assert.equal(controller.snapshot().clockMinute,60);
   assert.equal(controller.revision,1);
   assert.deepEqual(observed,[[60,1]]);
-  assert.equal(errors.length,2);
-  assert.ok(errors.every(e=>/mutation already in progress/.test(e)));
+  // The second subscriber intentionally catches its edit rejection with
+  // assert.throws; only the uncaught recursive advance reaches onSubscriberError.
+  assert.deepEqual(errors,["Native controller mutation already in progress"]);
   controller.advance();
   assert.equal(controller.snapshot().clockMinute,120);
   assert.equal(controller.revision,2);
