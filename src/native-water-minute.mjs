@@ -60,6 +60,9 @@ export function createOriginalWaterMinuteStep(core, {pumpPressurePsi, pumpId} = 
       elapsed += r.dt;
       if (++iterations > 1000) throw new Error("Native Water substep iteration limit");
     }
+    // Brownout pressure suppression is temporary, not an operator setting.
+    // Keep the configured PSI for the next minute after a power interruption.
+    if (pump) pump.params.psi = pumpPressurePsi;
     const produced = validate("cumulative native water production", world.produced);
     if (produced + EPS < before)
       throw new RangeError("Original Water production moved backwards");
