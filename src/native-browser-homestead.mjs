@@ -20,7 +20,7 @@ export function mountOriginalNativeHomestead({
     solarSim,waterCore,farmCore,waterWorld,clockMinute,storedWaterL,waterCapacityL
   });
   const advanceHour=createOriginalCoupledHour({
-    solarSim,waterCore,farmCore,solarOriginMinute:initialState.solar.t-clockMinute,
+    solarSim,waterCore,farmCore,solarOriginMinute:((initialState.solar.t-clockMinute)%(365*1440)+(365*1440))%(365*1440),
     backgroundLoadW,pumpLoadW,pumpPressurePsi,pumpId
   });
   const controller=createOriginalNativeController({initialState,advanceHour});
