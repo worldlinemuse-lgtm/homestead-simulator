@@ -39,7 +39,7 @@ export function createOriginalWaterMinuteStep(core, {pumpPressurePsi, pumpId} = 
     if (!world || world === state || !Array.isArray(world.parts))
       throw new Error("Original Water engine did not isolate state");
     const before = validate("cumulative native water production", world.produced);
-    const pump = world.parts.find(p => pumpId ? p.id === pumpId : p.type === "pump_sky");
+    const pump = world.parts.find(p => pumpId ? String(p.id) === pumpId : p.type === "pump_sky");
     if (requestedWh > 0 && !pump) throw new Error("Powered native Water pump not found");
     const pumpEnabled = !!pump && requestedWh > 0 &&
       deliveredWh + EPS >= requestedWh && pumpPressurePsi > 0;
