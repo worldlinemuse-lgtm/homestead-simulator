@@ -973,6 +973,10 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
   $("inspectTitle").textContent=selectedAsset||descriptions[kind][0];
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
   renderAsset(activeSnapshot());refreshObjectEditor();
+  if(nativeMode){
+    const picked=scene?.editor?.selected();
+    if(picked?.id)nativeMode.selectSceneAsset(picked.id);
+  }
   if(options.silentInspector){
    editMessage("Moved "+(label||"selected object")+" · visual layout only; native models unchanged");
    return;
@@ -988,6 +992,11 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
   const selectedBattery=kind==="energy"&&(label==="Battery storage module"||label==="Solar inverter and battery");
   $("solarBatteryReturn").hidden=!selectedBattery;
   if(selectedWater){
+   if(nativeMode){
+     jumpToUtility("scenarioControls");
+     $("pumpPressure").focus({preventScroll:true});
+     return;
+   }
    // A source reference study, not an edit to the coupled equipment inventory.
    $("waterPresetSelect").value=selectedWaterRole==="storage"?"D":"E";
    $("waterPresetSelect").dispatchEvent(new Event("change",{bubbles:true}));
@@ -996,10 +1005,12 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
    $("waterNativeControls").querySelector('[data-native-field="'+field+'"]')?.focus({preventScroll:true});
   }
   else if(selectedBattery){
+   if(nativeMode){jumpToUtility("scenarioControls");return;}
    jumpToUtility("solarBatteryUtility");
    $("solarBatteryCurrentA").focus({preventScroll:true});
   }
   else if(selectedFarm){
+   if(nativeMode){jumpToUtility("scenarioControls");return;}
    if(["Henhouse","Rabbit hutches","Pasture, hutches and livestock"].includes(selectedAsset))
      jumpToUtility("assetReadout");
    else{
@@ -1031,6 +1042,10 @@ window.HomesteadApp=Object.freeze({snapshot:()=>activeSnapshot(),
  editSwap:type=>scene.editor.swap(type),
  editUndo:()=>scene.editor.undo(),
  reset:()=>{stop();return resetScenario()},
+ nativeReady:()=>Boolean(nativeMode),
+ nativeWorld:()=>nativeMode?.controller.snapshot()??null,
+ nativeLastBatch:()=>nativeMode?.controller.lastBatch()??null,
+ activateNative:()=>activateOriginalNativeWorld(),
  focusHutch:()=>scene?.go("hutch"),
  focusCoopRoof:()=>scene?.go("coopRoof"),
  world:()=>({...scene?.stats(),nativeFarm:farmVisual.stats(),farmWorldOriginM})});
