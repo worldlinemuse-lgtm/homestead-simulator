@@ -972,8 +972,8 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
   selectArea(kind,false);selectedAsset=label||null;
   $("inspectTitle").textContent=selectedAsset||descriptions[kind][0];
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
-  renderAsset(activeSnapshot());refreshObjectEditor();
-  if(nativeMode){
+  renderAsset(nativeMode?activeSnapshot():coordinator.snapshot());refreshObjectEditor();
+  if(typeof nativeMode!=="undefined"&&nativeMode){
     const picked=scene?.editor?.selected();
     if(picked?.id)nativeMode.selectSceneAsset(picked.id);
   }
@@ -992,7 +992,7 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
   const selectedBattery=kind==="energy"&&(label==="Battery storage module"||label==="Solar inverter and battery");
   $("solarBatteryReturn").hidden=!selectedBattery;
   if(selectedWater){
-   if(nativeMode){
+   if(typeof nativeMode!=="undefined"&&nativeMode){
      jumpToUtility("scenarioControls");
      $("pumpPressure").focus({preventScroll:true});
      return;
@@ -1005,12 +1005,12 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
    $("waterNativeControls").querySelector('[data-native-field="'+field+'"]')?.focus({preventScroll:true});
   }
   else if(selectedBattery){
-   if(nativeMode){jumpToUtility("scenarioControls");return;}
+   if(typeof nativeMode!=="undefined"&&nativeMode){jumpToUtility("scenarioControls");return;}
    jumpToUtility("solarBatteryUtility");
    $("solarBatteryCurrentA").focus({preventScroll:true});
   }
   else if(selectedFarm){
-   if(nativeMode){jumpToUtility("scenarioControls");return;}
+   if(typeof nativeMode!=="undefined"&&nativeMode){jumpToUtility("scenarioControls");return;}
    if(["Henhouse","Rabbit hutches","Pasture, hutches and livestock"].includes(selectedAsset))
      jumpToUtility("assetReadout");
    else{
@@ -1019,7 +1019,7 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
    }
   }
   else setInspectorOpen(true);
-},farmVisual);selectArea("overview");redraw(activeSnapshot());
+},farmVisual);selectArea("overview");redraw(coordinator.snapshot());
  refreshObjectEditor()}catch(e){fail(e)}
 window.HomesteadApp=Object.freeze({snapshot:()=>activeSnapshot(),
  solarBattery:()=>lastSolarBatteryStudy,
