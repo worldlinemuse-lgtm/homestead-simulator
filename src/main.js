@@ -1050,4 +1050,50 @@ window.HomesteadApp=Object.freeze({snapshot:()=>activeSnapshot(),
  focusCoopRoof:()=>scene?.go("coopRoof"),
  world:()=>({...scene?.stats(),nativeFarm:farmVisual.stats(),farmWorldOriginM})});
 
+// DEVELOPMENT PREVIEW. Original Solar, Water, and Farm become the only
+// advancing scientific world once enabled; no approximate PV fallback runs.
+const nativeControls=$("scenarioControls");
+const nativeStartButton=document.createElement("button");
+nativeStartButton.id="nativeModeBtn";
+nativeStartButton.type="button";
+nativeStartButton.textContent="Activate original Solar → Water → Farm world (preview)";
+const nativeStatus=document.createElement("p");
+nativeStatus.id="nativeActivationStatus";
+nativeStatus.setAttribute("role","status");
+nativeStatus.className="editorNote";
+nativeStatus.textContent="Original-engine linked mode is available for verification on this development branch.";
+const nativeRoot=document.createElement("div");
+nativeRoot.id="nativeCoupledControls";
+nativeControls.append(nativeStartButton,nativeStatus,nativeRoot);
+async function activateOriginalNativeWorld(){
+  if(nativeMode)return nativeMode;
+  if(nativeStarting)throw new Error("Original native engines are already initializing");
+  stop();nativeStarting=true;nativeStartButton.disabled=true;
+  nativeStatus.textContent="Initializing original Solar minute dispatch, Water hydraulics and Farm biology…";
+  try{
+    const mode=await enableOriginalNative3D({
+      coordinator,scene,utilitiesRoot:nativeRoot,
+      onView:state=>redraw(state),
+      onError:err=>{nativeStatus.textContent="Native controller error: "+(err?.message||err);console.error(err);}
+    });
+    nativeMode=mode;
+    // Legacy scenario cloud fraction is NOT a native Solar weather parameter.
+    $("cloud").disabled=true;
+    $("cloudOut").textContent="Original Solar model";
+    // The native console exports its own complete source-measured minute ledger.
+    $("ledgerCsvBtn").disabled=true;
+    nativeStartButton.textContent="Original source engines active";
+    nativeStatus.textContent="Native Solar, Water and Farm now share the 3D clock and Utilities. Select the real pump to change source PSI.";
+    redraw(activeSnapshot());
+    return mode;
+  }catch(error){
+    nativeStatus.textContent="Original native initialization failed; no substitute engine used: "+(error?.message||error);
+    fail(error);nativeStartButton.disabled=false;
+    throw error;
+  }finally{nativeStarting=false;}
+}
+nativeStartButton.addEventListener("click",()=>activateOriginalNativeWorld().catch(()=>{}));
+if(new URLSearchParams(window.location.search).get("native")==="1")
+  window.addEventListener("load",()=>activateOriginalNativeWorld().catch(()=>{}),{once:true});
+
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(console.warn));
