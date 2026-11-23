@@ -59,7 +59,7 @@ export async function enableOriginalNative3D({
       backgroundLoadW:legacy.config.backgroundLoadW,
       pumpLoadW:legacy.config.pumpElectricalW,
       pumpPressurePsi:legacy.config.pumpPressurePsi,
-      pumpId:pump.id,
+      pumpId:nativePumpId,
       assetMappings:{"site-water-treatment":nativePumpId},
       applyNativePatch:applyPumpEdit,
       onSelection,
