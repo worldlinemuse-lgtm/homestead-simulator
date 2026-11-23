@@ -40,7 +40,11 @@ export function createOriginalWaterMinuteStep(core, {pumpPressurePsi, pumpId} = 
       throw new Error("Original Water engine did not isolate state");
     const before = validate("cumulative native water production", world.produced);
     const pump = world.parts.find(p => pumpId ? String(p.id) === pumpId : p.type === "pump_sky");
-    if (requestedWh > 0 && !pump) throw new Error("Powered native Water pump not found");
+    // Never silently route power to a missing or non-pump component. This
+    // also protects zero-load hours, when a broken 3D-to-source identity would
+    // otherwise go unnoticed until the pump was enabled.
+    if (!pump || pump.type !== "pump_sky")
+      throw new Error("Original Water pump identity missing or not a pump_sky");
     const pumpEnabled = !!pump && requestedWh > 0 &&
       deliveredWh + EPS >= requestedWh && pumpPressurePsi > 0;
     if (pump) {
