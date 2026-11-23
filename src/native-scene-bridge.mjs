@@ -31,7 +31,11 @@ export function createNativeSceneBridge({scene,onSelection=()=>{},onSnapshot=()=
       if(typeof id!=="string" || !find(id))
         throw new RangeError("Unknown existing scene object identity");
       const item=structuredClone(find(id));
-      // Keep native selection and the existing scene editor in agreement. The\n      // editor owns visual identity; native selection never invents an object.\n      if(typeof scene.editor.select==="function" && scene.editor.selected()?.id!==id)\n        scene.editor.select(id);\n      onSelection(item,current===null?null:structuredClone(current),revision);
+      // Keep native selection and the existing scene editor in agreement. The
+      // editor owns visual identity; native selection never invents an object.
+      if(typeof scene.editor.select==="function" && scene.editor.selected()?.id!==id)
+        scene.editor.select(id);
+      onSelection(item,current===null?null:structuredClone(current),revision);
       return item;
     },
     editSelected(patch){
