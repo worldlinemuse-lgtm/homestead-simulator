@@ -57,7 +57,7 @@ export function createOriginalCoupledHour({
     if (!state || !state.farm || !state.water) throw new TypeError("Native Farm/Water world state required");
     // Source Water component pressure is authoritative. A 3D pump edit changes
     // this native part, not a separate illustrative PSI number.
-    const nativePump=state.water.parts?.find(p=>pumpId?p.id===pumpId:p.type==="pump_sky");
+    const nativePump=state.water.parts?.find(p=>pumpId?String(p.id)===pumpId:p.type==="pump_sky");
     const livePsi=nativePump?.params?.psi ?? pumpPressurePsi;
     validate("Native Water pump pressure PSI",livePsi);
     const waterStep=createOriginalWaterMinuteStep(waterCore,{pumpPressurePsi:livePsi,pumpId});
