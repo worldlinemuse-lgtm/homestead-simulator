@@ -30,7 +30,26 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
   const metering=doc.createElement("output");
   metering.setAttribute("aria-live","polite");
   const table=doc.createElement("dl");
-  container.append(heading,status,advance,day,exportButton,metering,table);
+  const settings=doc.createElement("form");
+  settings.className="nativeWorldSettings";
+  const controls=[
+    ["waterCapacityL","Treated-water tank capacity (L)"],
+    ["backgroundLoadW","Background electrical load (W)"],
+    ["pumpLoadW","Pump nameplate load (W)"]
+  ];
+  const inputs=new Map();
+  for(const [key,title] of controls){
+    const label=doc.createElement("label");
+    label.textContent=title+" ";
+    const input=doc.createElement("input");
+    input.type="number";input.min="0";input.step="any";input.required=true;
+    input.name=key;label.append(input);settings.append(label);
+    inputs.set(key,input);
+  }
+  const save=doc.createElement("button");
+  save.type="submit";save.textContent="Apply native equipment settings";
+  settings.append(save);
+  container.append(heading,status,advance,day,settings,exportButton,metering,table);
   root.append(container);
   let disposed=false;
   let latestMinute=null;
@@ -52,6 +71,12 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
   const utilities={
     renderNativeWorld(snapshot,revision){
       latestMinute=snapshot.clockMinute;
+      if(!settings.contains(doc.activeElement)){
+        for(const [key,input] of inputs){
+          const value=key==="waterCapacityL"?snapshot.waterCapacityL:snapshot.operatingSettings?.[key];
+          if(Number.isFinite(value))input.value=String(value);
+        }
+      }
       const fields=[
         ["Revision",revision],
         ["World minute",snapshot.clockMinute],
@@ -92,6 +117,30 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
       onError(error);
     }finally{advance.disabled=day.disabled=false;}
   };
+  const onSettings=event=>{
+    event.preventDefault();
+    if(disposed)return;
+    try{
+      const values={};
+      for(const [key,input] of inputs){
+        const value=Number(input.value);
+        if(input.value.trim()===""||!Number.isFinite(value)||value<0)
+          throw new RangeError("Invalid native equipment setting: "+key);
+        values[key]=value;
+      }
+      binding.editAsset("native-site-settings",draft=>{
+        if(values.waterCapacityL<draft.storedWaterL)
+          throw new RangeError("Tank capacity cannot be below stored water inventory");
+        draft.waterCapacityL=values.waterCapacityL;
+        draft.operatingSettings={...draft.operatingSettings,
+          backgroundLoadW:values.backgroundLoadW,pumpLoadW:values.pumpLoadW};
+        return draft;
+      });
+      lastLedger=null;exportButton.disabled=true;metering.textContent="";
+      status.textContent="Native equipment settings committed";
+    }catch(error){status.textContent="Native settings rejected: "+error.message;onError(error);}
+  };
+  settings.addEventListener("submit",onSettings);
   const onExport=()=>{
     if(disposed||lastLedger===null)return;
     const BlobType=doc.defaultView?.Blob ?? Blob;
@@ -117,6 +166,7 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
       if(disposed)return;
       disposed=true;
       exportButton.removeEventListener("click",onExport);
+      settings.removeEventListener("submit",onSettings);
       lastLedger=null;
       advance.removeEventListener("click",onAdvance);
       day.removeEventListener("click",onDay);
