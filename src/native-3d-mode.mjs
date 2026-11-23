@@ -56,6 +56,21 @@ export async function enableOriginalNative3D({
     part.params.psi=value;
     return draft;
   };
+  // The tank is a site inventory asset rather than a Water hydraulic part.
+  // Its native identity is explicit and never aliases the original pump.
+  const nativeTankId="native-treated-water-storage";
+  const tankSceneAsset=scene.editor.list().find(item=>item.id==="site-water-storage");
+  const applySiteEdit=(draft,nativeId,patch)=>{
+    if(nativeId===nativeTankId && Object.keys(patch).length===1 &&
+       Object.hasOwn(patch,"waterCapacityL")){
+      const capacity=patch.waterCapacityL;
+      if(!Number.isFinite(capacity)||capacity<draft.storedWaterL)
+        throw new RangeError("Tank capacity must be finite and at least stored inventory");
+      draft.waterCapacityL=capacity;
+      return draft;
+    }
+    return applyPumpEdit(draft,nativeId,patch);
+  };
   const frame=await loadOriginalSolarBrowserRuntime({documentRoot});
   let mounted=null,disposed=false;
   try{
@@ -71,8 +86,9 @@ export async function enableOriginalNative3D({
       pumpLoadW:legacy.config.pumpElectricalW,
       pumpPressurePsi:legacy.config.pumpPressurePsi,
       pumpId:nativePumpId,
-      assetMappings:{"site-water-treatment":nativePumpId},
-      applyNativePatch:applyPumpEdit,
+      assetMappings:{"site-water-treatment":nativePumpId,
+        ...(tankSceneAsset?{"site-water-storage":nativeTankId}:{})},
+      applyNativePatch:applySiteEdit,
       onSelection,
       onSnapshot(){
         if(mounted&&!disposed)onView(project());
@@ -104,6 +120,10 @@ export async function enableOriginalNative3D({
       editPumpPressure(psi){
         if(disposed)throw Error("Original native 3D mode disposed");
         return mounted.controller.edit(draft=>applyPumpEdit(draft,nativePumpId,{psi}));
+      },
+      editTankCapacity(capacityL){
+        if(disposed)throw Error("Original native 3D mode disposed");
+        return mounted.controller.edit(draft=>applySiteEdit(draft,nativeTankId,{waterCapacityL:capacityL}));
       },
       configurePower(key,watts){
         if(disposed)throw Error("Original native 3D mode disposed");
