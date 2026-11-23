@@ -23,13 +23,32 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
   const day=doc.createElement("button");
   day.type="button";
   day.textContent="Advance native world 24 hours";
+  const exportButton=doc.createElement("button");
+  exportButton.type="button";
+  exportButton.textContent="Export last native minute ledger (CSV)";
+  exportButton.disabled=true;
   const metering=doc.createElement("output");
   metering.setAttribute("aria-live","polite");
   const table=doc.createElement("dl");
-  container.append(heading,status,advance,day,metering,table);
+  container.append(heading,status,advance,day,exportButton,metering,table);
   root.append(container);
   let disposed=false;
   let latestMinute=null;
+  let lastLedger=null;
+  const csvHeader="minute,requestedWh,deliveredWh,baseServedWh,waterServedWh,farmServedWh,waterDeliveredL,waterConsumedL,waterOverflowL,waterRemainingL";
+  const csvFields=csvHeader.split(",");
+  const serializeLedger=ledger=>{
+    if(!Array.isArray(ledger)||!ledger.length)throw new TypeError("Native minute ledger unavailable");
+    return [csvHeader,...ledger.map((entry,index)=>{
+      if(!Number.isSafeInteger(entry.minute)|| (index>0&&entry.minute!==ledger[index-1].minute+1))
+        throw new RangeError("Native ledger minute chronology invalid");
+      return csvFields.map(field=>{
+        const value=entry[field];
+        if(!Number.isFinite(value)||value<0)throw new RangeError("Invalid native CSV field: "+field);
+        return String(value);
+      }).join(",");
+    })].join("\r\n")+"\r\n";
+  };
   const utilities={
     renderNativeWorld(snapshot,revision){
       latestMinute=snapshot.clockMinute;
@@ -60,7 +79,11 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
     try{
       advance.disabled=day.disabled=true;
       // Always use the controller's authoritative clock, not a UI timer.
-      const result=binding.advanceToMinute(binding.snapshot().clockMinute+hours*60);
+      const result=binding.advanceToMinute(binding.snapshot().clockMinute+hours*60,{includeLedger:true});
+      // Export is enabled only for a fully verified chronological native ledger.
+      const csv=serializeLedger(result.ledger);
+      lastLedger=csv;
+      exportButton.disabled=false;
       const totals=result.totals;
       const fmt=value=>Number(value).toFixed(2);
       metering.textContent=`Last ${hours} h · electricity ${fmt(totals.energyDeliveredWh)} Wh delivered / ${fmt(totals.energyRequestedWh)} Wh requested · water ${fmt(totals.waterProducedL)} L produced, ${fmt(totals.waterConsumedL)} L consumed, ${fmt(totals.waterOverflowL)} L overflow · ${fmt(totals.waterStoredL)} L stored`;
@@ -69,6 +92,18 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
       onError(error);
     }finally{advance.disabled=day.disabled=false;}
   };
+  const onExport=()=>{
+    if(disposed||lastLedger===null)return;
+    const BlobType=doc.defaultView?.Blob ?? Blob;
+    const blob=new BlobType([lastLedger],{type:"text/csv;charset=utf-8"});
+    const url=doc.defaultView.URL.createObjectURL(blob);
+    const anchor=doc.createElement("a");
+    anchor.href=url;
+    anchor.download="homestead-native-minute-ledger.csv";
+    container.append(anchor);
+    try{anchor.click();}finally{anchor.remove();doc.defaultView.URL.revokeObjectURL(url);}
+  };
+  exportButton.addEventListener("click",onExport);
   const onAdvance=()=>runHours(1);
   const onDay=()=>runHours(24);
   advance.addEventListener("click",onAdvance);
@@ -81,6 +116,8 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
     dispose(){
       if(disposed)return;
       disposed=true;
+      exportButton.removeEventListener("click",onExport);
+      lastLedger=null;
       advance.removeEventListener("click",onAdvance);
       day.removeEventListener("click",onDay);
       binding.dispose();
