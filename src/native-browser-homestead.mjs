@@ -27,6 +27,15 @@ export function mountOriginalNativeHomestead({
   const initialState=createOriginalNativeWorld({
     solarSim,waterCore,farmCore,waterWorld,clockMinute,storedWaterL,waterCapacityL
   });
+  // Scenario load nameplates are explicit assumptions; original Solar owns
+  // generation, original Water owns hydraulic pressure and original Farm owns
+  // equipment demand. Edits to these settings are transactional world changes.
+  for(const [name,value] of [["backgroundLoadW",backgroundLoadW],["pumpLoadW",pumpLoadW],["pumpPressurePsi",pumpPressurePsi]])
+    if(!Number.isFinite(value)||value<0)throw new RangeError("Invalid native "+name);
+  initialState.operatingSettings={backgroundLoadW,pumpLoadW};
+  const pump=initialState.water.parts.find(p=>pumpId?p.id===pumpId:p.type==="pump_sky");
+  if(!pump || !pump.params)throw new Error("Original Water pump part unavailable");
+  pump.params.psi=pumpPressurePsi;
   const advanceHour=createOriginalCoupledHour({
     solarSim,waterCore,farmCore,
     solarOriginMinute:((initialState.solar.t-clockMinute)%(365*1440)+(365*1440))%(365*1440),
