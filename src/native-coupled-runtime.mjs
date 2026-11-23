@@ -52,15 +52,23 @@ export function createOriginalCoupledHour({
   validate("backgroundLoadW",backgroundLoadW);
   validate("pumpLoadW",pumpLoadW);
   const solarStep=createOriginalSolarMinuteStep(solarSim,{originMinute:solarOriginMinute});
-  const waterStep=createOriginalWaterMinuteStep(waterCore,{pumpPressurePsi,pumpId});
   const farmStep=createOriginalFarmMinuteStep(farmCore);
   return function advanceNativeHour({clockMinute,state}) {
-    if (!state || !state.farm) throw new TypeError("Native Farm world state required");
+    if (!state || !state.farm || !state.water) throw new TypeError("Native Farm/Water world state required");
+    // Source Water component pressure is authoritative. A 3D pump edit changes
+    // this native part, not a separate illustrative PSI number.
+    const nativePump=state.water.parts?.find(p=>pumpId?p.id===pumpId:p.type==="pump_sky");
+    const livePsi=nativePump?.params?.psi ?? pumpPressurePsi;
+    validate("Native Water pump pressure PSI",livePsi);
+    const waterStep=createOriginalWaterMinuteStep(waterCore,{pumpPressurePsi:livePsi,pumpId});
+    const settings=state.operatingSettings ?? {};
+    const baseLoad=validate("Background equipment W",settings.backgroundLoadW ?? backgroundLoadW);
+    const pumpLoad=validate("Water pump nameplate W",settings.pumpLoadW ?? pumpLoadW);
     // The original source's equipment identity, watts and duty calculations
     // determine Farm demand. No second set of Farm watts is maintained here.
     const farm=originalFarmDemandPerMinute(farmCore,state.farm.checkpoint);
-    const baseWh=validate("baseWh",backgroundLoadW/60);
-    const waterWh=validate("waterWh",pumpPressurePsi > 0 ? pumpLoadW/60 : 0);
+    const baseWh=validate("baseWh",baseLoad/60);
+    const waterWh=validate("waterWh",livePsi > 0 ? pumpLoad/60 : 0);
     const farmWh=validate("farmWh",farm.electricityRequestedWh);
     const loads=Array.from({length:60},()=>({baseWh,waterWh,farmWh}));
     const result=exchangeNativeHour({
@@ -156,6 +164,9 @@ export function createOriginalNativeController({initialState,advanceHour,onSubsc
   if(typeof onSubscriberError!=="function") throw new TypeError("Subscriber error handler must be callable");
   let current=structuredClone(initialState);
   let revision=0;
+  // Most recent committed batch is a read-only observation for both 3D and
+  // Utilities. It is not a second model or independent conservation ledger.
+  let lastBatch=null;
   // Reject nested mutations from a solver callback or subscriber. Otherwise a
   // subscriber could advance the clock while an outer batch is committing,
   // producing out-of-order revisions and diverging scene/Utilities snapshots.
@@ -183,6 +194,7 @@ export function createOriginalNativeController({initialState,advanceHour,onSubsc
   return Object.freeze({
     snapshot,
     get revision(){return revision;},
+    lastBatch:()=>lastBatch===null?null:structuredClone(lastBatch),
     subscribe(fn){
       if(typeof fn!=="function")throw new TypeError("Native subscriber must be a function");
       listeners.add(fn);
@@ -194,6 +206,9 @@ export function createOriginalNativeController({initialState,advanceHour,onSubsc
           advanceHour,state:current,hours,includeLedger
         });
         current=structuredClone(result.state);
+        lastBatch={clockMinute:current.clockMinute,
+          totals:structuredClone(result.totals),
+          ledger:includeLedger?structuredClone(result.ledger):null};
         revision++;
         notify();
         return {...result,state:snapshot()};
@@ -232,6 +247,7 @@ export function createOriginalNativeController({initialState,advanceHour,onSubsc
          next.storedWaterL>next.waterCapacityL)
         throw new RangeError("Native edit violates treated-water capacity");
       current=structuredClone(next);
+      lastBatch=null; // a native equipment edit invalidates the preceding meter display
       revision++;
       notify();
       return snapshot();
