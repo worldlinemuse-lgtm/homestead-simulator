@@ -60,7 +60,10 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
     try{
       advance.disabled=true;
       // Always use the controller's authoritative clock, not a UI timer.
-      binding.advanceToMinute(binding.snapshot().clockMinute+60);
+      const result=binding.advanceToMinute(binding.snapshot().clockMinute+hours*60);
+      const totals=result.totals;
+      const fmt=value=>Number(value).toFixed(2);
+      metering.textContent=`Last ${hours} h · electricity ${fmt(totals.energyDeliveredWh)} Wh delivered / ${fmt(totals.energyRequestedWh)} Wh requested · water ${fmt(totals.waterProducedL)} L produced, ${fmt(totals.waterConsumedL)} L consumed, ${fmt(totals.waterOverflowL)} L overflow · ${fmt(totals.waterStoredL)} L stored`;
     }catch(error){
       status.textContent="Native advance failed: "+error.message;
       onError(error);
