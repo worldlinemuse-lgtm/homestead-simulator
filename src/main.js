@@ -972,7 +972,7 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
   selectArea(kind,false);selectedAsset=label||null;
   $("inspectTitle").textContent=selectedAsset||descriptions[kind][0];
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
-  renderAsset(nativeMode?activeSnapshot():coordinator.snapshot());refreshObjectEditor();
+  renderAsset(typeof nativeMode!=="undefined"&&nativeMode?activeSnapshot():coordinator.snapshot());refreshObjectEditor();
   if(typeof nativeMode!=="undefined"&&nativeMode){
     const picked=scene?.editor?.selected();
     if(picked?.id)nativeMode.selectSceneAsset(picked.id);
