@@ -7,6 +7,7 @@ class Element {
   constructor(doc,tag){this.ownerDocument=doc;this.tagName=tag;this.children=[];this.handlers=new Map();this.textContent="";this.disabled=false;}
   append(...children){this.children.push(...children);}
   replaceChildren(...children){this.children=[...children];}
+  contains(node){return node===this||this.children.some(child=>child.contains(node));}
   remove(){this.removed=true;}
   setAttribute(key,value){this[key]=value;}
   addEventListener(name,fn){this.handlers.set(name,fn);}
@@ -75,9 +76,9 @@ test("24-hour native advance uses the same controller and displays actual ledger
   assert.equal(controller.snapshot().clockMinute,1440);
   assert.equal(ui.clockMinute,1440);
   assert.deepEqual(sceneRevisions.at(-1),[1440,1]);
-  assert.match(section.children[5].textContent,/Last 24 h/);
-  assert.match(section.children[5].textContent,/electricity 0.00 Wh/);
-  assert.match(section.children[5].textContent,/water 0.00 L produced/);
+  assert.match(section.children[6].textContent,/Last 24 h/);
+  assert.match(section.children[6].textContent,/electricity 0.00 Wh/);
+  assert.match(section.children[6].textContent,/water 0.00 L produced/);
   assert.equal(dayButton.disabled,false);
   ui.dispose();
   assert.equal(dayButton.handlers.size,0);
@@ -96,7 +97,7 @@ test("failed 24-hour advance does not publish metering or partial state",()=>{
   assert.deepEqual(errors,["native water solver failed"]);
   assert.equal(controller.snapshot().clockMinute,0);
   assert.equal(controller.revision,0);
-  assert.equal(section.children[5].textContent,"");
+  assert.equal(section.children[6].textContent,"");
   ui.dispose();
 });
 
@@ -112,11 +113,11 @@ test("native console reports measured nonzero resource totals without inventing 
     totals:{energyRequestedWh:120,energyDeliveredWh:60,waterProducedL:3,waterConsumedL:2},
     waterOverflowL:0
   });
-  const controller=createOriginalNativeController({initialState:state,advanceHour:measured});
+  const controller=createOriginalNativeController({initialState:{...state,waterCapacityL:40},advanceHour:measured});
   const root=new Element(document,"main");
   const ui=mountNativeWorldConsole({controller,root,scene:{renderNativeWorld(){}}});
   root.children[0].children[3].click();
-  const display=root.children[0].children[5].textContent;
+  const display=root.children[0].children[6].textContent;
   assert.match(display,/Last 24 h/);
   assert.match(display,/1440.00 Wh delivered \/ 2880.00 Wh requested/);
   assert.match(display,/72.00 L produced, 48.00 L consumed/);
@@ -148,12 +149,14 @@ test("native CSV export is enabled only after a complete metered batch",()=>{
   const controller=createOriginalNativeController({initialState:state,advanceHour});
   const root=new Element(document,"main");
   const ui=mountNativeWorldConsole({controller,root,scene:{renderNativeWorld(){}}});
-  const section=root.children[0],exportButton=section.children[4];
+  const section=root.children[0],exportButton=section.children[5];
   assert.equal(exportButton.disabled,true);
   section.children[2].click();
   assert.equal(exportButton.disabled,false);
   assert.equal(controller.snapshot().clockMinute,60);
   assert.equal(exportButton.handlers.has("click"),true);
+  ui.editAsset("site",draft=>{draft.waterCapacityL=12;});
+  assert.equal(exportButton.disabled,true);
   ui.dispose();
   assert.equal(exportButton.handlers.size,0);
 });
@@ -164,7 +167,7 @@ test("failed native batch cannot enable CSV export",()=>{
   const ui=mountNativeWorldConsole({controller,root,scene:{renderNativeWorld(){}},onError(){}});
   const section=root.children[0];
   section.children[2].click();
-  assert.equal(section.children[4].disabled,true);
+  assert.equal(section.children[5].disabled,true);
   assert.equal(controller.snapshot().clockMinute,0);
   ui.dispose();
 });
