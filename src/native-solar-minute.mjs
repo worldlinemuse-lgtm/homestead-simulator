@@ -19,6 +19,11 @@ function finiteNonnegative(name, value) {
 }
 const clone = value => structuredClone(value);
 
+// Original grabState deliberately excludes cfg; capture it separately so
+// independent Homestead worlds can carry their own operating settings.
+export function captureOriginalSolarState(sim){
+  return {...clone(sim.grabState()),cfg:clone(sim.S.cfg)};
+}
 export const ORIGINAL_SOLAR_STEP_BLOB = "dccf27949460a044661c1b99eca0e19343ef0c47";
 
 /**
@@ -45,7 +50,7 @@ export function createOriginalSolarMinuteStep(sim, {originMinute = 0} = {}) {
 
     // grabState() in the original is a SHALLOW snapshot; deep-copy both sides
     // so nested stats, logs and appliance state cannot leak across a rollback.
-    const original = clone(sim.grabState());
+    const original = captureOriginalSolarState(sim);
     const quietBefore = sim.S.quiet;
     let entered = false;
     try {
@@ -59,9 +64,10 @@ export function createOriginalSolarMinuteStep(sim, {originMinute = 0} = {}) {
       const previousServed = finiteNonnegative("native servedWh", input.stats?.served);
       sim.S.quiet = true; // prevent browser log/UI mutations during model invocation
       entered = true; // putState may mutate partially before throwing; still restore
+      if(input.cfg)sim.S.cfg=clone(input.cfg);
       sim.putState(input);
       sim.step(false);
-      const updated = clone(sim.grabState());
+      const updated = captureOriginalSolarState(sim);
       if (updated.t !== (input.t + 1) % YEAR_MINUTES)
         throw new Error("Original Solar engine did not advance one minute");
       const nextServed = finiteNonnegative("native servedWh", updated.stats?.served);
@@ -92,7 +98,7 @@ export function createOriginalSolarMinuteStep(sim, {originMinute = 0} = {}) {
       // Restoration is mandatory even when the native runtime throws after a
       // partial state mutation; never let a failed minute corrupt another run.
       try {
-        if (entered) sim.putState(original);
+        if (entered) {sim.S.cfg=clone(original.cfg);sim.putState(original);}
       } finally {
         sim.S.quiet = quietBefore;
       }

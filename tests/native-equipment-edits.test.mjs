@@ -25,3 +25,15 @@ test("native Farm edit isolates singleton and retains delivered day ledger",()=>
  const before=controller.snapshot();assert.throws(()=>controller.edit(d=>editOriginalFarmEquipment(d,farm,"2","watts",1)));
  assert.deepEqual(controller.snapshot(),before);assert.equal(live.day,2);
 });
+
+import {captureOriginalSolarState,createOriginalSolarMinuteStep} from "../src/native-solar-minute.mjs";
+test("source grabState omits cfg; adapter persists and restores operating settings",()=>{
+ const sim={S:{t:0,cfg:{tilt:30,az:180,reserve:10},stats:{served:0},soc:.5,playing:false},
+ grabState(){const {cfg,playing,quiet,...state}=this.S;return state;},
+ putState(state){const {cfg,...rest}=state;Object.assign(this.S,rest);},
+ step(){assert.equal(this.S.cfg.tilt,45);this.S.t++;this.S.live={served:0,mOut:0};}};
+ const state=captureOriginalSolarState(sim);
+ editOriginalSolarSetting({solar:state},"tilt",45);
+ const result=createOriginalSolarMinuteStep(sim)({minute:0,requestedWh:0,state});
+ assert.equal(result.state.cfg.tilt,45);assert.equal(sim.S.cfg.tilt,30);assert.equal(sim.S.t,0);
+});

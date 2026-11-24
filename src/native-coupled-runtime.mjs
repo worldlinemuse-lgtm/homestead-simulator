@@ -12,7 +12,7 @@
  * pinned and checked in the Homestead page.
  */
 import {exchangeNativeHour} from "./native-minute-exchange.mjs";
-import {createOriginalSolarMinuteStep} from "./native-solar-minute.mjs";
+import {createOriginalSolarMinuteStep,captureOriginalSolarState} from "./native-solar-minute.mjs";
 import {createOriginalWaterMinuteStep} from "./native-water-minute.mjs";
 import {createOriginalFarmMinuteStep,initialOriginalFarmMinuteState,
   originalFarmDemandPerMinute} from "./native-farm-minute.mjs";
@@ -37,7 +37,7 @@ export function createOriginalNativeWorld({
   if (!waterCore || typeof waterCore.cloneWorld !== "function")
     throw new TypeError("Original Water world unavailable");
   return {
-    clockMinute,solar:structuredClone(solarSim.grabState()),
+    clockMinute,solar:captureOriginalSolarState(solarSim),
     water:waterCore.cloneWorld(waterWorld),
     farm:initialOriginalFarmMinuteState(farmCore),
     storedWaterL,waterCapacityL
