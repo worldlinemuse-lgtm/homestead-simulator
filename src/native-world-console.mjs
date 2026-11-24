@@ -75,7 +75,9 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
     renderNativeWorld(snapshot,revision){
       latestMinute=snapshot.clockMinute;
       if(typeof controller.lastBatch==="function" && controller.lastBatch()===null){lastLedger=null;exportButton.disabled=true;metering.textContent="";}
-      if(!settings.contains(doc.activeElement)){
+      // A committed external edit must refresh the form even if it has focus;
+      // otherwise applying another field could restore obsolete native settings.
+      {
         for(const [key,input] of inputs){
           const value=key==="waterCapacityL"?snapshot.waterCapacityL:Object.hasOwn(SOLAR_FIELDS,key)?snapshot.solar?.cfg?.[key]:snapshot.operatingSettings?.[key];
           if(Number.isFinite(value))input.value=String(value);

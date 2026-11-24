@@ -88,7 +88,7 @@ def main():
                 const device=devices.find(d=>d.type==="hutch"||d.type==="coop");
                 if(!device)throw Error("Original Farm fixture missing");
                 app.nativeEditFarm(device.id,"lights",1);
-                app.nativeEditFarm(device.id,"lightHours",12);
+                app.nativeEditFarm(device.id,"lightHours",24);
                 app.nativeEditFarm(device.id,"lightWatts",35);
                 return {native:app.nativeWorld(),device:app.snapshot().farmEquipment.find(d=>d.id===device.id)};
             }""")
@@ -99,7 +99,9 @@ def main():
             assert edited["native"]["clockMinute"] == initial["native"]["clockMinute"]
             assert edited["native"]["storedWaterL"] == initial["native"]["storedWaterL"]
             assert edited["device"]["lightWatts"] == 35
-            assert edited["device"]["nativeDailyDemandWh"] == 420
+            expected_wh = 35 * max(0, 24 - edited["native"]["farm"]["checkpoint"]["today"]["env"]["day"])
+            assert expected_wh > 0
+            assert abs(edited["device"]["nativeDailyDemandWh"] - expected_wh) < 1e-6
 
             # Use the ACTUAL 3D toolbar. Its active clock must dispatch to the
             # same controller and original Solar SIM.step as native Utilities.
@@ -130,7 +132,7 @@ def main():
                 assert abs(sum(d["requestedWh"] for d in fixtures)-row["farmRequestedWh"]) < 1e-6
                 assert abs(sum(d["servedWh"] for d in fixtures)-row["farmServedWh"]) < 1e-6
                 assert any(str(d["id"])==str(edited["device"]["id"]) and
-                           abs(d["requestedWh"]-420/1440)<1e-6 for d in fixtures)
+                           abs(d["requestedWh"]-expected_wh/1440)<1e-6 for d in fixtures)
 
             assert minute["meter"]["energyDeliveredWh"] <= \
                 minute["meter"]["energyRequestedWh"] + 1e-6
