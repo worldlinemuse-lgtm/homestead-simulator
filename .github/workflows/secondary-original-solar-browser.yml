@@ -1,0 +1,30 @@
+name: Secondary original-source parity browser
+on:
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: secondary-native-parity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  original-solar-and-coupled-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install original-source browser harness
+        run: |
+          pip install playwright
+          python -m playwright install chromium
+      - name: Verify original Solar dispatch and coupled 2h replay
+        run: python tests/secondary_original_solar_parity.py
+      - name: Verify original-engine 24h Farm midnight, 23+1 parity, rollback and scarcity
+        run: python tests/secondary_native_farm_boundary.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: secondary-native-source-parity
+          path: tests/artifacts/secondary-original-solar-native.png
+          if-no-files-found: ignore
