@@ -73,6 +73,34 @@ def main():
             assert initial["view"]["clock"]["hourOfDay"] == 9
             assert initial["view"]["farm"]["counts"]["n"] > 0
 
+            # Native scene selections and Utilities must change the same
+            # original runtime configuration, without advancing time or SoC.
+            edited = page.evaluate("""() => {
+                const app=window.HomesteadApp;
+                app.nativeSelect("site-solar-array");
+                app.nativeEditSelected({tilt:45});
+                app.nativeSelect("site-solar-battery");
+                app.nativeEditSelected({reserve:35});
+                const form=document.querySelector(".nativeWorldSettings");
+                form.querySelector("[name=az]").value="190";
+                form.requestSubmit();
+                const devices=app.snapshot().farmEquipment;
+                const device=devices.find(d=>d.type==="hutch"||d.type==="coop");
+                if(!device)throw Error("Original Farm fixture missing");
+                app.nativeEditFarm(device.id,"lights",1);
+                app.nativeEditFarm(device.id,"lightHours",12);
+                app.nativeEditFarm(device.id,"lightWatts",35);
+                return {native:app.nativeWorld(),device:app.snapshot().farmEquipment.find(d=>d.id===device.id)};
+            }""")
+            assert edited["native"]["solar"]["cfg"]["tilt"] == 45
+            assert edited["native"]["solar"]["cfg"]["az"] == 190
+            assert edited["native"]["solar"]["cfg"]["reserve"] == 35
+            assert edited["native"]["solar"]["soc"] == initial["native"]["solar"]["soc"]
+            assert edited["native"]["clockMinute"] == initial["native"]["clockMinute"]
+            assert edited["native"]["storedWaterL"] == initial["native"]["storedWaterL"]
+            assert edited["device"]["lightWatts"] == 35
+            assert edited["device"]["nativeDailyDemandWh"] == 420
+
             # Use the ACTUAL 3D toolbar. Its active clock must dispatch to the
             # same controller and original Solar SIM.step as native Utilities.
             page.evaluate("() => window.HomesteadApp.step()")
@@ -98,6 +126,12 @@ def main():
                     row["baseServedWh"] + row["waterServedWh"] +
                     row["farmServedWh"])) < 1e-6
                 assert row["deliveredWh"] <= row["requestedWh"] + 1e-6
+                fixtures = row["native"]["farm"]["equipment"]
+                assert abs(sum(d["requestedWh"] for d in fixtures)-row["farmRequestedWh"]) < 1e-6
+                assert abs(sum(d["servedWh"] for d in fixtures)-row["farmServedWh"]) < 1e-6
+                assert any(str(d["id"])==str(edited["device"]["id"]) and
+                           abs(d["requestedWh"]-420/1440)<1e-6 for d in fixtures)
+
             assert minute["meter"]["energyDeliveredWh"] <= \
                 minute["meter"]["energyRequestedWh"] + 1e-6
             assert not page.locator("#errors").is_visible(), (
