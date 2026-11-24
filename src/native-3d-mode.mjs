@@ -1,6 +1,7 @@
 import {loadOriginalSolarBrowserRuntime} from "./native-solar-browser.mjs";
 import {mountOriginalNativeHomestead} from "./native-browser-homestead.mjs";
 import {projectNativeSceneSnapshot} from "./native-scene-projection.mjs";
+import {editOriginalSolarSetting,editOriginalFarmEquipment} from "./native-equipment-edits.mjs";
 import {initializeOriginalSolarForFarm} from "./native-solar-calendar.mjs";
 
 /**
@@ -69,6 +70,9 @@ export async function enableOriginalNative3D({
       draft.waterCapacityL=capacity;
       return draft;
     }
+    const [key,value]=Object.entries(patch)[0]||[];
+    if(Object.keys(patch).length===1 && ((nativeId==="native-solar-array"&&["tilt","az"].includes(key))||(nativeId==="native-solar-battery"&&key==="reserve")))
+      return editOriginalSolarSetting(draft,key,value);
     return applyPumpEdit(draft,nativeId,patch);
   };
   const frame=await loadOriginalSolarBrowserRuntime({documentRoot});
@@ -87,7 +91,8 @@ export async function enableOriginalNative3D({
       pumpPressurePsi:legacy.config.pumpPressurePsi,
       pumpId:nativePumpId,
       assetMappings:{"site-water-treatment":nativePumpId,
-        ...(tankSceneAsset?{"site-water-storage":nativeTankId}:{})},
+        ...(tankSceneAsset?{"site-water-storage":nativeTankId}:{}),
+        "site-solar-array":"native-solar-array","site-solar-battery":"native-solar-battery"},
       applyNativePatch:applySiteEdit,
       onSelection,
       onSnapshot(){
@@ -124,6 +129,14 @@ export async function enableOriginalNative3D({
       editTankCapacity(capacityL){
         if(disposed)throw Error("Original native 3D mode disposed");
         return mounted.controller.edit(draft=>applySiteEdit(draft,nativeTankId,{waterCapacityL:capacityL}));
+      },
+      editSolarSetting(key,value){
+        if(disposed)throw Error("Original native 3D mode disposed");
+        return mounted.controller.edit(draft=>editOriginalSolarSetting(draft,key,value));
+      },
+      editFarmEquipment(id,key,value){
+        if(disposed)throw Error("Original native 3D mode disposed");
+        return mounted.controller.edit(draft=>editOriginalFarmEquipment(draft,farmCore,id,key,value));
       },
       configurePower(key,watts){
         if(disposed)throw Error("Original native 3D mode disposed");

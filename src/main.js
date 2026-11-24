@@ -280,8 +280,8 @@ function renderAsset(s){
        try{
          const value=Number(input.value);
          if(!input.value.trim() || !Number.isFinite(value))throw new Error("Enter a finite numeric value");
-         const result=coordinator.setFarmEquipmentParameter(selector.value,field.value,value);
-         redraw(result);
+         if(nativeMode){nativeMode.editFarmEquipment(selector.value,field.value,value);redraw(activeSnapshot());}
+         else redraw(coordinator.setFarmEquipmentParameter(selector.value,field.value,value));
        }catch(err){editMessage(err.message,true);}
      });
      panel.append(apply);target.append(panel);
@@ -993,8 +993,9 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
   $("solarBatteryReturn").hidden=!selectedBattery;
   if(selectedWater){
    if(typeof nativeMode!=="undefined"&&nativeMode){
-     jumpToUtility("scenarioControls");
-     $("pumpPressure").focus({preventScroll:true});
+     jumpToUtility("nativeCoupledControls");
+     if(selectedWaterRole==="storage")nativeRoot.querySelector("[name=waterCapacityL]")?.focus({preventScroll:true});
+     else $("pumpPressure").focus({preventScroll:true});
      return;
    }
    // A source reference study, not an edit to the coupled equipment inventory.
@@ -1005,18 +1006,21 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
    $("waterNativeControls").querySelector('[data-native-field="'+field+'"]')?.focus({preventScroll:true});
   }
   else if(selectedBattery){
-   if(typeof nativeMode!=="undefined"&&nativeMode){jumpToUtility("scenarioControls");return;}
+   if(typeof nativeMode!=="undefined"&&nativeMode){jumpToUtility("nativeCoupledControls");nativeRoot.querySelector("[name=reserve]")?.focus({preventScroll:true});return;}
    jumpToUtility("solarBatteryUtility");
    $("solarBatteryCurrentA").focus({preventScroll:true});
   }
   else if(selectedFarm){
-   if(typeof nativeMode!=="undefined"&&nativeMode){jumpToUtility("scenarioControls");return;}
+   if(typeof nativeMode!=="undefined"&&nativeMode){jumpToUtility("assetReadout");return;}
    if(["Henhouse","Rabbit hutches","Pasture, hutches and livestock"].includes(selectedAsset))
      jumpToUtility("assetReadout");
    else{
      jumpToUtility("farmStudyUtility");
      $(selectedAsset?.startsWith("Rabbit")?"farmStudyDoes":"farmStudyHens").focus({preventScroll:true});
    }
+  }
+  else if(nativeMode && scene?.editor?.selected()?.id==="site-solar-array"){
+    jumpToUtility("nativeCoupledControls");nativeRoot.querySelector("[name=tilt]")?.focus({preventScroll:true});
   }
   else setInspectorOpen(true);
 },farmVisual);selectArea("overview");redraw(coordinator.snapshot());
@@ -1045,6 +1049,9 @@ window.HomesteadApp=Object.freeze({snapshot:()=>activeSnapshot(),
  nativeReady:()=>Boolean(nativeMode),
  nativeWorld:()=>nativeMode?.controller.snapshot()??null,
  nativeLastBatch:()=>nativeMode?.controller.lastBatch()??null,
+ nativeSelect:id=>nativeMode?.selectSceneAsset(id),
+ nativeEditSelected:patch=>nativeMode?.editSelectedEquipment(patch),
+ nativeEditFarm:(id,key,value)=>nativeMode?.editFarmEquipment(id,key,value),
  activateNative:()=>activateOriginalNativeWorld(),
  focusHutch:()=>scene?.go("hutch"),
  focusCoopRoof:()=>scene?.go("coopRoof"),

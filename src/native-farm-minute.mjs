@@ -90,10 +90,12 @@ export function createOriginalFarmMinuteStep(farm) {
       totals.waterDeliveredL += waterConsumedL;
       totals.electricityRequestedWh += requestedWh;
       totals.electricityDeliveredWh += deliveredWh;
+      const equipmentMinute=[];
       let remainingWh = deliveredWh;
       for (const e of demand.equipment) {
         const served = Math.min(e.requestedWh,remainingWh);
         remainingWh -= served;
+        equipmentMinute.push({id:e.id,type:e.type,requestedWh:e.requestedWh,servedWh:served});
         const total = totals.equipment[e.id] || {requestedWh:0,servedWh:0};
         total.requestedWh += e.requestedWh;
         total.servedWh += served;
@@ -120,7 +122,7 @@ export function createOriginalFarmMinuteStep(farm) {
         waterConsumedL,
         state:{checkpoint:clone(farm.checkpoint()),dayTotals:nextTotals},
         native:{source:"farm-sim/source/src/",advancedDay,completedDay,
-          biologicalDay:farm.snapshot().day,waterRequiredL:demand.waterRequiredL}
+          biologicalDay:farm.snapshot().day,waterRequiredL:demand.waterRequiredL,equipment:equipmentMinute}
       };
     } finally {
       farm.restoreCheckpoint(original);

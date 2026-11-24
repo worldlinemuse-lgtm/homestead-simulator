@@ -99,6 +99,13 @@ export function projectNativeSceneSnapshot({world,legacy,farmCore,lastBatch=null
       farmWaterRequestedL:animalWaterRequestedL,pumpEnabled,
       solarSoc:soc,minutes:records.length
     };
+    const fixtureTotals=new Map();
+    for(const row of records)for(const device of row.native?.farm?.equipment||[]){
+      const total=fixtureTotals.get(device.id)||{id:device.id,type:device.type,requestedWh:0,servedWh:0};
+      total.requestedWh+=requireNonnegative("fixture requestedWh",device.requestedWh);
+      total.servedWh+=requireNonnegative("fixture servedWh",device.servedWh);
+      fixtureTotals.set(device.id,total);
+    }
     const electricalLoads={
       backgroundRequestedWh:baseRequested,backgroundServedWh:baseServed,
       backgroundDeficitWh:baseRequested-baseServed,
@@ -107,7 +114,7 @@ export function projectNativeSceneSnapshot({world,legacy,farmCore,lastBatch=null
       farmRequestedWh:farmRequested,farmServedWh:farmServed,
       farmDeficitWh:farmRequested-farmServed,
       // Per-fixture attribution is not created from aggregate totals.
-      equipment:[]
+      equipment:[...fixtureTotals.values()]
     };
     last={
       pv:{envelopeW:0},

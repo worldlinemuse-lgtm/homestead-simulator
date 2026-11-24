@@ -1,3 +1,4 @@
+import {editOriginalSolarSetting,SOLAR_FIELDS} from "./native-equipment-edits.mjs";
 import {bindNativeWorldViews} from "./native-world-view-binding.mjs";
 
 /**
@@ -35,7 +36,8 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
   const controls=[
     ["waterCapacityL","Treated-water tank capacity (L)"],
     ["backgroundLoadW","Background electrical load (W)"],
-    ["pumpLoadW","Pump nameplate load (W)"]
+    ["pumpLoadW","Pump nameplate load (W)"],
+    ...[["tilt","Solar array tilt (°)"],["az","Solar array azimuth (°)"],["reserve","Battery reserve (%)"]].filter(([key])=>Object.hasOwn(controller.snapshot().solar?.cfg||{},key))
   ];
   const inputs=new Map();
   for(const [key,title] of controls){
@@ -43,6 +45,7 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
     label.textContent=title+" ";
     const input=doc.createElement("input");
     input.type="number";input.min="0";input.step="any";input.required=true;
+    if(Object.hasOwn(SOLAR_FIELDS,key)){input.min=String(SOLAR_FIELDS[key][0]);input.max=String(SOLAR_FIELDS[key][1]);input.step="1";}
     input.name=key;label.append(input);settings.append(label);
     inputs.set(key,input);
   }
@@ -71,9 +74,10 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
   const utilities={
     renderNativeWorld(snapshot,revision){
       latestMinute=snapshot.clockMinute;
+      if(typeof controller.lastBatch==="function" && controller.lastBatch()===null){lastLedger=null;exportButton.disabled=true;metering.textContent="";}
       if(!settings.contains(doc.activeElement)){
         for(const [key,input] of inputs){
-          const value=key==="waterCapacityL"?snapshot.waterCapacityL:snapshot.operatingSettings?.[key];
+          const value=key==="waterCapacityL"?snapshot.waterCapacityL:Object.hasOwn(SOLAR_FIELDS,key)?snapshot.solar?.cfg?.[key]:snapshot.operatingSettings?.[key];
           if(Number.isFinite(value))input.value=String(value);
         }
       }
@@ -134,6 +138,7 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
         draft.waterCapacityL=values.waterCapacityL;
         draft.operatingSettings={...draft.operatingSettings,
           backgroundLoadW:values.backgroundLoadW,pumpLoadW:values.pumpLoadW};
+        for(const key of Object.keys(SOLAR_FIELDS))if(Object.hasOwn(values,key))editOriginalSolarSetting(draft,key,values[key]);
         return draft;
       });
       lastLedger=null;exportButton.disabled=true;metering.textContent="";
