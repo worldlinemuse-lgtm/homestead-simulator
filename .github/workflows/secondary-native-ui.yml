@@ -1,0 +1,22 @@
+name: Secondary native UI acceptance
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  native-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          pip install playwright
+          python -m playwright install chromium
+      - run: python tests/secondary_native_ui_acceptance.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: secondary-native-ui
+          path: tests/artifacts/secondary-ui-*.png
