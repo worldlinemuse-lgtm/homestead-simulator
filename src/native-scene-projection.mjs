@@ -1,3 +1,4 @@
+import {originalBatteryCapacityWh} from "./native-equipment-edits.mjs";
 /**
  * Read-only bridge from the ORIGINAL three-engine world to the already shipped
  * 3D scene snapshot schema. Never performs physical calculations or advances
@@ -16,7 +17,7 @@ const sum=(entries,key)=>entries.reduce((total,entry)=>
   total+requireNonnegative(key,entry[key]),0);
 const close=(a,b)=>Math.abs(a-b)<=1e-6;
 
-export function projectNativeSceneSnapshot({world,legacy,farmCore,lastBatch=null,startHour=9}){
+export function projectNativeSceneSnapshot({world,legacy,farmCore,solarSim,lastBatch=null,startHour=9}){
   if(!world || !legacy?.config || !legacy.clock || !farmCore ||
      typeof farmCore.checkpoint!=="function" ||
      typeof farmCore.restoreCheckpoint!=="function" ||
@@ -55,7 +56,10 @@ export function projectNativeSceneSnapshot({world,legacy,farmCore,lastBatch=null
   config.pumpPressurePsi=requireNonnegative("native Water pressure",pump.params.psi);
   // Renderer only needs a fractional battery bar. The displayed bar uses the
   // original Solar SoC; this visualization value is NOT available stored Wh.
-  const visualBatteryWh=soc*requireNonnegative("visual battery scale",legacy.config.batteryCapacityWh);
+  if(solarSim?.capWh&&world.solar?.cfg){
+    config.batteryCapacityWh=originalBatteryCapacityWh(solarSim,world.solar);
+  }
+  const visualBatteryWh=soc*requireNonnegative("visual battery scale",config.batteryCapacityWh);
   const clock={
     hours:world.clockMinute/60-startHour,startHour,
     hourOfDay:Math.floor(world.clockMinute/60)%24,
@@ -140,7 +144,8 @@ export function projectNativeSceneSnapshot({world,legacy,farmCore,lastBatch=null
   return {
     ...clone(legacy),model:"original-native-coupled-runtime",
     nativeOriginal:true,nativeMeter,
-    nativeSolarSoc:soc,
+    nativeSolarSoc:soc,nativeSolarConfig:clone(world.solar.cfg),
+    batteryInventoryEdits:clone(world.batteryInventoryEdits||[]),
     clock,config,farm,farmEquipment:equipment,
     batteryWh:visualBatteryWh,waterStoredL:world.storedWaterL,last
   };

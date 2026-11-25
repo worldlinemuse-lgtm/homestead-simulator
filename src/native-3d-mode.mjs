@@ -71,8 +71,8 @@ export async function enableOriginalNative3D({
       return draft;
     }
     const [key,value]=Object.entries(patch)[0]||[];
-    if(Object.keys(patch).length===1 && ((nativeId==="native-solar-array"&&["tilt","az"].includes(key))||(nativeId==="native-solar-battery"&&key==="reserve")))
-      return editOriginalSolarSetting(draft,key,value);
+    if(Object.keys(patch).length===1 && ((nativeId==="native-solar-array"&&["tilt","az","ser","par","nMppt","shade"].includes(key))||(nativeId==="native-solar-battery"&&["reserve","bpar"].includes(key))))
+      return editOriginalSolarSetting(draft,key,value,frame.sim);
     return applyPumpEdit(draft,nativeId,patch);
   };
   const frame=await loadOriginalSolarBrowserRuntime({documentRoot});
@@ -101,7 +101,7 @@ export async function enableOriginalNative3D({
       onError
     });
     const project=()=>projectNativeSceneSnapshot({
-      world:mounted.snapshot(),legacy,farmCore,
+      world:mounted.snapshot(),legacy,farmCore,solarSim:frame.sim,
       lastBatch:mounted.controller.lastBatch(),startHour
     });
     const api={
@@ -132,7 +132,7 @@ export async function enableOriginalNative3D({
       },
       editSolarSetting(key,value){
         if(disposed)throw Error("Original native 3D mode disposed");
-        return mounted.controller.edit(draft=>editOriginalSolarSetting(draft,key,value));
+        return mounted.controller.edit(draft=>editOriginalSolarSetting(draft,key,value,frame.sim));
       },
       editFarmEquipment(id,key,value){
         if(disposed)throw Error("Original native 3D mode disposed");

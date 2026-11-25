@@ -55,7 +55,7 @@ export function mountOriginalNativeHomestead({
   let consoleView;
   try {
     consoleView=mountNativeWorldConsole({
-      controller,scene:bridge,root:utilitiesRoot,onError
+      controller,scene:bridge,root:utilitiesRoot,solarSim,onError
     });
   } catch(error) {
     bridge.dispose();

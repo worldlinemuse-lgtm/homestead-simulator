@@ -37,3 +37,23 @@ test("source grabState omits cfg; adapter persists and restores operating settin
  const result=createOriginalSolarMinuteStep(sim)({minute:0,requestedWh:0,state});
  assert.equal(result.state.cfg.tilt,45);assert.equal(sim.S.cfg.tilt,30);assert.equal(sim.S.t,0);
 });
+
+test("native battery expansion accounts for external charged inventory and restores source config",()=>{
+ const sim={BATT:{id:"bb100",maxPar:8},S:{cfg:{batt:"bb100",bpar:1}},capWh(){return 2560*this.S.cfg.bpar;}};
+ const original=sim.S.cfg;
+ const state={clockMinute:60,storedWaterL:1,waterCapacityL:20,solar:{soc:.5,lastI:10,cfg:{batt:"bb100",bpar:2,ser:2,par:2,nMppt:1,shade:0},mpptDead:true}};
+ const controller=createOriginalNativeController({initialState:state,advanceHour:()=>{throw Error("unexpected advance");}});
+ controller.edit(d=>editOriginalSolarSetting(d,"bpar",3,sim));
+ let after=controller.snapshot();
+ assert.equal(after.solar.soc,.5);assert.equal(after.solar.lastI,0);
+ assert.equal(after.batteryInventoryEdits[0].externalStoredWhDelta,1280);
+ assert.equal(sim.S.cfg,original);
+ assert.throws(()=>controller.edit(d=>editOriginalSolarSetting(d,"bpar",9,sim)));
+ assert.deepEqual(controller.snapshot(),after);
+ controller.edit(d=>editOriginalSolarSetting(d,"bpar",1,sim));
+ assert.equal(controller.snapshot().batteryInventoryEdits[1].externalStoredWhDelta,-2560);
+ controller.edit(d=>editOriginalSolarSetting(d,"par",3,sim));
+ after=controller.snapshot();assert.equal(after.solar.cfg.par,3);assert.equal(after.solar.mpptDead,false);
+ assert.throws(()=>controller.edit(d=>editOriginalSolarSetting(d,"ser",0,sim)));
+ assert.deepEqual(controller.snapshot(),after);assert.equal(after.clockMinute,60);
+});

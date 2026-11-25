@@ -1,5 +1,5 @@
 /* Homestead-only offline caching, isolated from other Worldline Muse Pages repos. */
-const NAME="homestead-3d-2026-11-24-v12",PREFIX="homestead-3d-";
+const NAME="homestead-3d-2026-11-25-v13",PREFIX="homestead-3d-";
 const FILES=[
  "./","./index.html",
  "./src/coordinator.js","./src/main.js","./src/scene.js",
