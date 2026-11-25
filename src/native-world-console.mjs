@@ -1,4 +1,4 @@
-import {editOriginalSolarSetting,SOLAR_FIELDS} from "./native-equipment-edits.mjs";
+import {editOriginalSolarSetting,SOLAR_FIELDS,originalBatteryCapacityWh} from "./native-equipment-edits.mjs";
 import {bindNativeWorldViews} from "./native-world-view-binding.mjs";
 
 /**
@@ -6,7 +6,7 @@ import {bindNativeWorldViews} from "./native-world-view-binding.mjs";
  * snapshots; does not compute or substitute any simulation results.
  * The scene and Utilities always observe the same controller revision.
  */
-export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) {
+export function mountNativeWorldConsole({controller,scene,root,solarSim,onError=()=>{}}) {
   if (!root || typeof root.append !== "function")
     throw new TypeError("Native Utilities root element required");
   if (!scene || typeof scene.renderNativeWorld !== "function")
@@ -37,7 +37,7 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
     ["waterCapacityL","Treated-water tank capacity (L)"],
     ["backgroundLoadW","Background electrical load (W)"],
     ["pumpLoadW","Pump nameplate load (W)"],
-    ...[["tilt","Solar array tilt (°)"],["az","Solar array azimuth (°)"],["reserve","Battery reserve (%)"]].filter(([key])=>Object.hasOwn(controller.snapshot().solar?.cfg||{},key))
+    ...[["tilt","Solar array tilt (°)"],["az","Solar array azimuth (°)"],["reserve","Battery reserve (%)"],["ser","PV panels per string"],["par","PV parallel strings"],["nMppt","MPPT controller count"],["shade","PV shading (%)"],["bpar","Battery parallel strings"]].filter(([key])=>Object.hasOwn(controller.snapshot().solar?.cfg||{},key))
   ];
   const inputs=new Map();
   for(const [key,title] of controls){
@@ -46,6 +46,7 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
     const input=doc.createElement("input");
     input.type="number";input.min="0";input.step="any";input.required=true;
     if(Object.hasOwn(SOLAR_FIELDS,key)){input.min=String(SOLAR_FIELDS[key][0]);input.max=String(SOLAR_FIELDS[key][1]);input.step="1";}
+    if(key==="bpar"&&solarSim?.BATT)input.max=String(solarSim.BATT.maxPar);
     input.name=key;label.append(input);settings.append(label);
     inputs.set(key,input);
   }
@@ -92,6 +93,11 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
         ["Original Water state",snapshot.water==null?"Unavailable":"Connected"],
         ["Original Farm state",snapshot.farm==null?"Unavailable":"Connected"]
       ];
+      if(solarSim?.capWh&&snapshot.solar?.cfg){
+        fields.push(["Original battery capacity (Wh)",originalBatteryCapacityWh(solarSim,snapshot.solar)],["PV panel count",snapshot.solar.cfg.ser*snapshot.solar.cfg.par]);
+        const edit=snapshot.batteryInventoryEdits?.at(-1);
+        if(edit)fields.push(["Last external battery inventory change (Wh)",edit.externalStoredWhDelta]);
+      }
       table.replaceChildren();
       for(const [name,value] of fields){
         const dt=doc.createElement("dt"),dd=doc.createElement("dd");
@@ -140,7 +146,7 @@ export function mountNativeWorldConsole({controller,scene,root,onError=()=>{}}) 
         draft.waterCapacityL=values.waterCapacityL;
         draft.operatingSettings={...draft.operatingSettings,
           backgroundLoadW:values.backgroundLoadW,pumpLoadW:values.pumpLoadW};
-        for(const key of Object.keys(SOLAR_FIELDS))if(Object.hasOwn(values,key))editOriginalSolarSetting(draft,key,values[key]);
+        for(const key of Object.keys(SOLAR_FIELDS))if(Object.hasOwn(values,key))editOriginalSolarSetting(draft,key,values[key],solarSim);
         return draft;
       });
       lastLedger=null;exportButton.disabled=true;metering.textContent="";
