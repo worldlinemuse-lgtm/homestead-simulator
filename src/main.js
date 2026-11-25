@@ -6,10 +6,17 @@ import {evaluateWaterPreset,evaluateWaterPresetComparison,evaluateWaterTimeToVol
 import {UTILITY_CAPABILITIES,assertUtilityRegistry} from "./utility-registry.mjs";
 import {seasonalSun} from "./seasonal-sun.mjs";
 import {ScenarioTimeline,formatHour} from "./sim-clock.mjs";
+import {enableOriginalNative3D} from "./native-3d-mode.mjs";
 const $=id=>document.getElementById(id);
 const fmt=(n,d=1)=>Number(n).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
 const solarClock=h=>{const minute=Math.round(h*60);return String(Math.floor(minute/60)).padStart(2,"0")+":"+String(minute%60).padStart(2,"0")};
 const coordinator=new window.HomesteadCoordinator.Coordinator();
+let nativeMode=null,nativeStarting=false;
+function activeSnapshot(){return nativeMode?nativeMode.snapshot():coordinator.snapshot();}
+function stepAuthoritativeHour(){
+  if(nativeStarting&&!nativeMode)throw new Error("Native source engines are still initializing");
+  return nativeMode?nativeMode.stepHour():coordinator.stepHour();
+}
 // This is the ORIGINAL Farm world, running inside the same biological model closure.
 // It has an independent seeded visual RNG and never writes numeric model results.
 const farmVisual=window.HomesteadFarmCore.nativeVisual;
@@ -48,12 +55,42 @@ function editMessage(message,error=false){
 function runEdit(operation){
  try{
   const result=operation();refreshObjectEditor();
+  if(nativeMode){
+    const item=scene?.editor?.selected();
+    if(item?.id)nativeMode.selectSceneAsset(item.id);
+  }
   editMessage(result?.label?"Selected "+result.label:"Visual layout updated");
-  redraw(coordinator.snapshot());
+  redraw(activeSnapshot());
  }catch(e){editMessage(e.message,true)}
 }
 function renderAsset(s){
  const target=$("assetReadout");if(!target)return;
+ if(s.nativeOriginal){
+   // Real original-engine source meters replace all legacy PV-envelope/battery
+   // calculator readouts while native science owns the authoritative clock.
+   const m=s.nativeMeter;
+   const rows=[
+     ["Native original engine","Solar SIM.step + Water hydraulic step + Farm biology"],
+     ["Solar battery state of charge",fmt(s.nativeSolarSoc*100,1)+"%"],
+     ["PV controller output",m?fmt(m.pvControllerWh,2)+" Wh this hour":"Awaiting minute dispatch"],
+     ["AC delivery",m?fmt(m.energyDeliveredWh,2)+" / "+fmt(m.energyRequestedWh,2)+" Wh":"—"],
+     ["Home electrical delivery",m?fmt(m.baseServedWh,2)+" / "+fmt(m.baseRequestedWh,2)+" Wh":"—"],
+     ["Water pump delivery",m?fmt(m.waterServedWh,2)+" / "+fmt(m.waterRequestedWh,2)+" Wh":"—"],
+     ["Farm electrical delivery",m?fmt(m.farmServedWh,2)+" / "+fmt(m.farmRequestedWh,2)+" Wh":"—"],
+     ["Original Water pump PSI",fmt(s.config.pumpPressurePsi,1)+" psi · change via Live Utilities"],
+     ["Native treated storage",fmt(s.waterStoredL,2)+" / "+fmt(s.config.waterStorageCapacityL,2)+" L"],
+     ["Water produced / consumed",m?fmt(m.waterProducedL,2)+" / "+fmt(m.waterConsumedL,2)+" L":"—"],
+     ["Native Farm animals",String(s.farm.counts.n)],
+     ["Safety","Modeled original-engine outputs, not field calibrated or potable-water certification"]
+   ];
+   target.replaceChildren();
+   for(const [name,value] of rows){
+     const row=document.createElement("div"),label=document.createElement("span"),val=document.createElement("strong");
+     row.className="assetRow";label.textContent=name;val.textContent=value;
+     row.append(label,val);target.append(row);
+   }
+   return;
+ }
  const l=s.last,e=l?.energy,w=l?.water,d=s.farm?.daily;
  const readouts={
   "Ground-mounted solar array":[
@@ -226,13 +263,13 @@ function renderAsset(s){
        option.value=String(d.id);option.textContent=d.type+" #"+d.id;selector.append(option);}
      selector.value=selectedFarmDeviceId;
      selector.addEventListener("change",()=>{selectedFarmDeviceId=selector.value;
-       selectedFarmDeviceKey=null;renderAsset(coordinator.snapshot());});
+       selectedFarmDeviceKey=null;renderAsset(activeSnapshot());});
      makeLabel("Native equipment ID",selector);
      const field=document.createElement("select");field.setAttribute("aria-label","Original Farm equipment property");
      for(const key of settings){const option=document.createElement("option");
        option.value=key;option.textContent=key;field.append(option);}
      field.value=selectedFarmDeviceKey;
-     field.addEventListener("change",()=>{selectedFarmDeviceKey=field.value;renderAsset(coordinator.snapshot());});
+     field.addEventListener("change",()=>{selectedFarmDeviceKey=field.value;renderAsset(activeSnapshot());});
      makeLabel("Native setting",field);
      const input=document.createElement("input");input.type="number";input.step="any";
      input.value=String(Number(device[selectedFarmDeviceKey])||0);
@@ -243,8 +280,8 @@ function renderAsset(s){
        try{
          const value=Number(input.value);
          if(!input.value.trim() || !Number.isFinite(value))throw new Error("Enter a finite numeric value");
-         const result=coordinator.setFarmEquipmentParameter(selector.value,field.value,value);
-         redraw(result);
+         if(nativeMode){nativeMode.editFarmEquipment(selector.value,field.value,value);redraw(activeSnapshot());}
+         else redraw(coordinator.setFarmEquipmentParameter(selector.value,field.value,value));
        }catch(err){editMessage(err.message,true);}
      });
      panel.append(apply);target.append(panel);
@@ -253,6 +290,28 @@ function renderAsset(s){
 }
 
 function redraw(s){
+ if(s.nativeOriginal){
+   // The scene uses its existing selectable geometry and native Farm animal
+   // aggregates. Do not inject the old Farm visual RNG's physical positions.
+   scene?.update({...s,farmWorld:null,farmWorldOriginM});renderAsset(s);
+   const m=s.nativeMeter;
+   $("energyValue").textContent=fmt(s.nativeSolarSoc*100,1)+"% SoC";
+   $("energyDetail").textContent=m?
+     "Original Solar MPPT "+fmt(m.pvControllerWh,2)+" Wh · AC "+fmt(m.energyDeliveredWh,2)+"/"+fmt(m.energyRequestedWh,2)+" Wh":
+     "Original Solar dispatcher ready · advance native time to meter supply";
+   $("waterValue").textContent=fmt(s.waterStoredL,1)+" L";
+   $("waterDetail").textContent=m?
+     "Native hydraulic output "+fmt(m.waterProducedL,2)+" L · farm water "+fmt(m.waterConsumedL,2)+" L":
+     "Original Water solver ready · untreated water is not certified potable";
+   $("farmValue").textContent=s.farm.counts.n+" animals";
+   $("farmDetail").textContent=m?
+     "Original Farm "+fmt(m.farmServedWh,2)+"/"+fmt(m.farmRequestedWh,2)+" Wh · "+
+       fmt(m.waterConsumedL,2)+" L delivered":
+     "Original Farm biological model ready";
+   updateVisibleClock(s);
+   $("alerts").textContent="Native engines active in development preview. Original science remains assumption-sensitive and is not field calibrated.";
+   return;
+ }
  farmVisual.sync(s.clock.hourOfDay);
  scene?.update({...s,farmWorld:farmVisual.world(),farmWorldOriginM});renderAsset(s);
  const e=s.last?.energy,w=s.last?.water,f=s.farm;
@@ -265,7 +324,7 @@ function redraw(s){
  updateVisibleClock(s);
  $("alerts").textContent=s.last?.warnings.length?s.last.warnings.join(" "):"See Details for the model assumptions and limitations.";
 }
-function updateVisibleClock(s=coordinator.snapshot()){
+function updateVisibleClock(s=activeSnapshot()){
  const view=timeline.display(s);
  const visualMinute=Math.min(1439,Math.floor(view.minuteOfDay+1e-7));
  $("simDate").textContent=view.date+" · "+formatHour(view.hour)+(view.preview?" · Preview":"");
@@ -281,8 +340,8 @@ function updateVisibleClock(s=coordinator.snapshot()){
 function advanceMinutes(minutes){
  try{
    $("errors").style.display="none";
-   timeline.advance(minutes,()=>coordinator.stepHour());
-   redraw(coordinator.snapshot());
+   timeline.advance(minutes,()=>stepAuthoritativeHour());
+   redraw(activeSnapshot());
  }catch(e){fail(e)}
 }
 function stop(){playing=false;scene?.setPlayback(false);$("playBtn").textContent="▶ Play"}
@@ -298,8 +357,8 @@ function clockFrame(now){
    const seconds=previousFrame===null?0:Math.max(0,Math.min(.25,(now-previousFrame)/1000));
    try{
      const stepped=timeline.advanceRealSeconds(document.hidden?0:seconds,
-       ()=>coordinator.stepHour());
-     if(stepped)redraw(coordinator.snapshot());
+       ()=>stepAuthoritativeHour());
+     if(stepped)redraw(activeSnapshot());
    }catch(e){fail(e)}
  }
  previousFrame=now;
@@ -323,6 +382,7 @@ $("timeSlider").addEventListener("input",()=>{
 });
 $("timeResume").addEventListener("click",()=>{stop();timeline.resume();updateVisibleClock()});
 function resetScenario(){
+  if(nativeMode){window.location.reload();return nativeMode.snapshot();}
   scene?.editor?.reset();
   refreshObjectEditor();
   const next=coordinator.reset();
@@ -334,7 +394,7 @@ function resetScenario(){
 $("resetBtn").addEventListener("click",()=>{stop();try{resetScenario();$("errors").style.display="none"}catch(e){fail(e)}});
 document.querySelectorAll("nav [data-view]").forEach(b=>b.addEventListener("click",()=>{selectedAsset=b.dataset.view==="farm"?"Henhouse":null;selectArea(b.dataset.view);$("sceneHint").textContent=selected==="farm"
   ?"Tap an animal to follow · Drag to orbit · Pinch to zoom"
-  :"Drag to orbit · Pinch to zoom · Select equipment";renderAsset(coordinator.snapshot())}));
+  :"Drag to orbit · Pinch to zoom · Select equipment";renderAsset(activeSnapshot())}));
 // Navigation is generated from the executable capability registry. A source
 // calculator is never presented as a live scene control; unavailable tools
 // are labeled, never exposed as fake clickable actions.
@@ -445,12 +505,23 @@ for(const [id,dx,dz] of [["objectLeft",-1,0],["objectRight",1,0],
 }
 $("objectRotate").addEventListener("click",()=>runEdit(()=>scene.editor.rotate(Math.PI/2)));
 for(const [id,out,key,fn] of [["cloud","cloudOut","cloudTransmittance",x=>fmt(x*100,0)+"%"],["houseLoad","houseLoadOut","backgroundLoadW",x=>fmt(x,0)+" W"],["pumpLoad","pumpLoadOut","pumpElectricalW",x=>fmt(x,0)+" W"],["pumpPressure","pumpPressureOut","pumpPressurePsi",x=>fmt(x,0)+" psi"]]){
- $(id).addEventListener("input",()=>{const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;$(out).textContent=fn(v);try{redraw(coordinator.configure({[key]:v}))}catch(e){fail(e)}})
+ $(id).addEventListener("input",()=>{
+   const raw=Number($(id).value),v=id==="cloud"?raw/100:raw;
+   $(out).textContent=fn(v);
+   try{
+     if(nativeMode){
+       if(id==="cloud")throw new Error("Source Solar shading has no verified native setting exposed here");
+       if(id==="pumpPressure")nativeMode.editPumpPressure(v);
+       else nativeMode.configurePower(id==="houseLoad"?"backgroundLoadW":"pumpLoadW",v);
+       redraw(activeSnapshot());
+     }else redraw(coordinator.configure({[key]:v}));
+   }catch(e){fail(e)}
+ })
 }
 
 // Live weather is validated atomically by the shared coordinator; failed input leaves state unchanged.
 function syncLiveSolarWeather(){
- const series=coordinator.snapshot().config.solarHourlyWeather;
+ const series=activeSnapshot().config.solarHourlyWeather;
  $("solarWeatherJson").value=series?JSON.stringify(series,null,2):"";
  $("solarWeatherStatus").textContent=series?
    series.length+" hourly records ("+(series.length/24)+" days) active in the coupled world.":
@@ -674,12 +745,12 @@ $("waterCompareRun").addEventListener("click",()=>{
  const host=$("waterComparisonReport");
  host.hidden=false;
  try{
-  const before=JSON.stringify(coordinator.snapshot());
+  const before=JSON.stringify(activeSnapshot());
   const comparison=evaluateWaterPresetComparison(window.HomesteadWaterCore,{
    scenario:Number($("waterPresetScenario").value),
    seconds:Number($("waterPresetDuration").value)
   });
-  if(JSON.stringify(coordinator.snapshot())!==before)
+  if(JSON.stringify(activeSnapshot())!==before)
    throw new Error("Source comparison unexpectedly changed the coupled scenario");
   lastWaterComparison=comparison;
   host.replaceChildren();
@@ -733,7 +804,7 @@ $("waterCompareRun").addEventListener("click",()=>{
 $("waterTimeRun").addEventListener("click",()=>{
  const report=$("waterTimeReport");
  try{
-  const before=JSON.stringify(coordinator.snapshot());
+  const before=JSON.stringify(activeSnapshot());
   const liters=Number($("waterTargetLiters").value);
   if(!$("waterTargetLiters").value.trim())throw new RangeError("Enter a target volume in liters");
   const result=evaluateWaterTimeToVolume(window.HomesteadWaterCore,{
@@ -741,7 +812,7 @@ $("waterTimeRun").addEventListener("click",()=>{
    liters,scenario:Number($("waterPresetScenario").value),
    componentEdits:readNativeWaterEdits()
   });
-  if(JSON.stringify(coordinator.snapshot())!==before)
+  if(JSON.stringify(activeSnapshot())!==before)
    throw new Error("Time-to-volume study changed live Homestead state");
   report.replaceChildren();
   report.dataset.resultState=result.minutes===null?"no-flow":"flow";
@@ -765,14 +836,14 @@ $("waterTimeRun").addEventListener("click",()=>{
 $("waterPresetRun").addEventListener("click",()=>{
  const report=$("waterPresetReport");
  try{
-  const before=JSON.stringify(coordinator.snapshot());
+  const before=JSON.stringify(activeSnapshot());
   const result=evaluateWaterPreset(window.HomesteadWaterCore,{
    preset:$("waterPresetSelect").value,
    scenario:Number($("waterPresetScenario").value),
    seconds:Number($("waterPresetDuration").value),
    componentEdits:readNativeWaterEdits()
   });
-  if(JSON.stringify(coordinator.snapshot())!==before)
+  if(JSON.stringify(activeSnapshot())!==before)
    throw new Error("Isolated Water preview unexpectedly changed the coupled scenario");
   lastWaterPreset=result;
   report.replaceChildren();
@@ -880,7 +951,7 @@ $("waterPresetRun").addEventListener("click",()=>{
 });
 $("ledgerCsvBtn").addEventListener("click",()=>{
  try{
-  const snapshot=coordinator.snapshot();
+  const snapshot=activeSnapshot();
   const csv=nativeLedgerCsv(snapshot);
   const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob);
   const a=document.createElement("a");
@@ -889,7 +960,7 @@ $("ledgerCsvBtn").addEventListener("click",()=>{
  }catch(e){fail(e)}
 });
 $("exportBtn").addEventListener("click",()=>{
- const payload=coordinator.snapshot();
+ const payload=activeSnapshot();
  payload.visualLayout=scene?.editor?.layout()||null;
  payload.visualTime=timeline.display(payload);
  payload.exportNote="Experimental, assumption-sensitive scenario; not certified electrical or water design.";
@@ -901,7 +972,11 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
   selectArea(kind,false);selectedAsset=label||null;
   $("inspectTitle").textContent=selectedAsset||descriptions[kind][0];
   $("sceneHint").textContent=selectedAsset?"Selected: "+selectedAsset:"Drag to orbit · Pinch to zoom · Select equipment";
-  renderAsset(coordinator.snapshot());refreshObjectEditor();
+  renderAsset(typeof nativeMode!=="undefined"&&nativeMode?activeSnapshot():coordinator.snapshot());refreshObjectEditor();
+  if(typeof nativeMode!=="undefined"&&nativeMode){
+    const picked=scene?.editor?.selected();
+    if(picked?.id)nativeMode.selectSceneAsset(picked.id);
+  }
   if(options.silentInspector){
    editMessage("Moved "+(label||"selected object")+" · visual layout only; native models unchanged");
    return;
@@ -917,6 +992,12 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
   const selectedBattery=kind==="energy"&&(label==="Battery storage module"||label==="Solar inverter and battery");
   $("solarBatteryReturn").hidden=!selectedBattery;
   if(selectedWater){
+   if(typeof nativeMode!=="undefined"&&nativeMode){
+     jumpToUtility("nativeCoupledControls");
+     if(selectedWaterRole==="storage")nativeRoot.querySelector("[name=waterCapacityL]")?.focus({preventScroll:true});
+     else $("pumpPressure").focus({preventScroll:true});
+     return;
+   }
    // A source reference study, not an edit to the coupled equipment inventory.
    $("waterPresetSelect").value=selectedWaterRole==="storage"?"D":"E";
    $("waterPresetSelect").dispatchEvent(new Event("change",{bubbles:true}));
@@ -925,10 +1006,12 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
    $("waterNativeControls").querySelector('[data-native-field="'+field+'"]')?.focus({preventScroll:true});
   }
   else if(selectedBattery){
+   if(typeof nativeMode!=="undefined"&&nativeMode){jumpToUtility("nativeCoupledControls");nativeRoot.querySelector("[name=reserve]")?.focus({preventScroll:true});return;}
    jumpToUtility("solarBatteryUtility");
    $("solarBatteryCurrentA").focus({preventScroll:true});
   }
   else if(selectedFarm){
+   if(typeof nativeMode!=="undefined"&&nativeMode){jumpToUtility("assetReadout");return;}
    if(["Henhouse","Rabbit hutches","Pasture, hutches and livestock"].includes(selectedAsset))
      jumpToUtility("assetReadout");
    else{
@@ -936,10 +1019,13 @@ try{scene=makeScene($("world"),(kind,label,options={})=>{
      $(selectedAsset?.startsWith("Rabbit")?"farmStudyDoes":"farmStudyHens").focus({preventScroll:true});
    }
   }
+  else if(nativeMode && scene?.editor?.selected()?.id==="site-solar-array"){
+    jumpToUtility("nativeCoupledControls");nativeRoot.querySelector("[name=tilt]")?.focus({preventScroll:true});
+  }
   else setInspectorOpen(true);
 },farmVisual);selectArea("overview");redraw(coordinator.snapshot());
  refreshObjectEditor()}catch(e){fail(e)}
-window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),
+window.HomesteadApp=Object.freeze({snapshot:()=>activeSnapshot(),
  solarBattery:()=>lastSolarBatteryStudy,
  farmStudy:()=>farmStudyUI.study(),
  farmStudySource:()=>farmStudyUI.source(),
@@ -950,7 +1036,7 @@ window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),
  previewTime:minute=>{stop();timeline.preview(minute);updateVisibleClock()},
  resumeTime:()=>{timeline.resume();updateVisibleClock()},
  setSpeed:speed=>{timeline.setSpeed(speed);$("speedSelect").value=String(speed);updateVisibleClock()},
- time:()=>timeline.display(coordinator.snapshot()),
+ time:()=>timeline.display(activeSnapshot()),
  edit:()=>scene?.editor?.status(),
  editList:()=>scene?.editor?.list(),
  editAdd:type=>scene.editor.add(type),
@@ -960,8 +1046,61 @@ window.HomesteadApp=Object.freeze({snapshot:()=>coordinator.snapshot(),
  editSwap:type=>scene.editor.swap(type),
  editUndo:()=>scene.editor.undo(),
  reset:()=>{stop();return resetScenario()},
+ nativeReady:()=>Boolean(nativeMode),
+ nativeWorld:()=>nativeMode?.controller.snapshot()??null,
+ nativeLastBatch:()=>nativeMode?.controller.lastBatch()??null,
+ nativeSelect:id=>nativeMode?.selectSceneAsset(id),
+ nativeEditSelected:patch=>nativeMode?.editSelectedEquipment(patch),
+ nativeEditFarm:(id,key,value)=>nativeMode?.editFarmEquipment(id,key,value),
+ activateNative:()=>activateOriginalNativeWorld(),
  focusHutch:()=>scene?.go("hutch"),
  focusCoopRoof:()=>scene?.go("coopRoof"),
  world:()=>({...scene?.stats(),nativeFarm:farmVisual.stats(),farmWorldOriginM})});
+
+// DEVELOPMENT PREVIEW. Original Solar, Water, and Farm become the only
+// advancing scientific world once enabled; no approximate PV fallback runs.
+const nativeControls=$("scenarioControls");
+const nativeStartButton=document.createElement("button");
+nativeStartButton.id="nativeModeBtn";
+nativeStartButton.type="button";
+nativeStartButton.textContent="Activate original Solar → Water → Farm world (preview)";
+const nativeStatus=document.createElement("p");
+nativeStatus.id="nativeActivationStatus";
+nativeStatus.setAttribute("role","status");
+nativeStatus.className="editorNote";
+nativeStatus.textContent="Original-engine linked mode is available for verification on this development branch.";
+const nativeRoot=document.createElement("div");
+nativeRoot.id="nativeCoupledControls";
+nativeControls.append(nativeStartButton,nativeStatus,nativeRoot);
+async function activateOriginalNativeWorld(){
+  if(nativeMode)return nativeMode;
+  if(nativeStarting)throw new Error("Original native engines are already initializing");
+  stop();nativeStarting=true;nativeStartButton.disabled=true;
+  nativeStatus.textContent="Initializing original Solar minute dispatch, Water hydraulics and Farm biology…";
+  try{
+    const mode=await enableOriginalNative3D({
+      coordinator,scene,utilitiesRoot:nativeRoot,
+      onView:state=>redraw(state),
+      onError:err=>{nativeStatus.textContent="Native controller error: "+(err?.message||err);console.error(err);}
+    });
+    nativeMode=mode;
+    // Legacy scenario cloud fraction is NOT a native Solar weather parameter.
+    $("cloud").disabled=true;
+    $("cloudOut").textContent="Original Solar model";
+    // The native console exports its own complete source-measured minute ledger.
+    $("ledgerCsvBtn").disabled=true;
+    nativeStartButton.textContent="Original source engines active";
+    nativeStatus.textContent="Native Solar, Water and Farm now share the 3D clock and Utilities. Select the real pump to change source PSI.";
+    redraw(activeSnapshot());
+    return mode;
+  }catch(error){
+    nativeStatus.textContent="Original native initialization failed; no substitute engine used: "+(error?.message||error);
+    fail(error);nativeStartButton.disabled=false;
+    throw error;
+  }finally{nativeStarting=false;}
+}
+nativeStartButton.addEventListener("click",()=>activateOriginalNativeWorld().catch(()=>{}));
+if(new URLSearchParams(window.location.search).get("native")==="1")
+  window.addEventListener("load",()=>activateOriginalNativeWorld().catch(()=>{}),{once:true});
 
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(console.warn));
